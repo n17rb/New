@@ -1,4 +1,4 @@
-const BASE = "https://rabb.onrender.com/api";
+const BASE = "https://https://new-mha6.onrender.com/api";
 export const API_ORIGIN = BASE.replace(/\/api$/, "");
 
 function getToken() {
