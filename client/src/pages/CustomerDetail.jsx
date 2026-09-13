@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, API_ORIGIN } from "../api.js";
-import { FiEdit2, FiTrash2, FiCamera, FiMapPin, FiArrowRight } from "react-icons/fi";
+import { FiEdit2, FiTrash2, FiCamera, FiMapPin, FiArrowRight, FiPlusCircle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
+import OrderForm from "../components/OrderForm.jsx";
 
 export default function CustomerDetail({ user }) {
   const { id } = useParams();
@@ -10,8 +11,10 @@ export default function CustomerDetail({ user }) {
   const [customer, setCustomer] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showOrderForm, setShowOrderForm] = useState(false);
 
   const canManage = ["super_admin", "admin", "data_entry"].includes(user.role);
+  const canOrder = user.role !== "data_entry";
 
   async function load() {
     setError("");
@@ -31,6 +34,18 @@ export default function CustomerDetail({ user }) {
   if (error && !customer) return <div className="page"><div className="error-box">{error}</div></div>;
   if (!customer) return null;
 
+  if (showOrderForm) {
+    return (
+      <div className="page">
+        <OrderForm
+          customer={customer}
+          onClose={() => setShowOrderForm(false)}
+          onCreated={() => setShowOrderForm(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <button className="btn-danger-text icon-row" style={{ marginBottom: 10 }} onClick={() => navigate("/customers")}>
@@ -40,6 +55,13 @@ export default function CustomerDetail({ user }) {
       {error && <div className="error-box">{error}</div>}
 
       <CustomerHeader customer={customer} canManage={canManage} onChanged={load} onDeleted={() => navigate("/customers")} />
+
+      {canOrder && (
+        <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => setShowOrderForm(true)}>
+          <FiPlusCircle /> طلب جديد لهذا العميل
+        </button>
+      )}
+
       <LocationSection customer={customer} canManage={canManage} onChanged={load} />
     </div>
   );
