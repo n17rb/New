@@ -7,6 +7,7 @@ import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Customers from "./pages/Customers.jsx";
 import CustomerDetail from "./pages/CustomerDetail.jsx";
+import Orders from "./pages/Orders.jsx";
 import Products from "./pages/Products.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="/" element={<Dashboard user={user} />} />
         <Route path="/customers" element={<Customers user={user} />} />
         <Route path="/customers/:id" element={<CustomerDetail user={user} />} />
+        {user.role !== "data_entry" && <Route path="/orders" element={<Orders user={user} />} />}
         {isPrivileged && <Route path="/products" element={<Products />} />}
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
