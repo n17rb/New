@@ -14,16 +14,23 @@ import BottomNav from "./components/BottomNav.jsx";
 export default function App() {
   const [loadingSetup, setLoadingSetup] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem("user");
     return raw ? JSON.parse(raw) : null;
   });
 
-  useEffect(() => {
+  function checkSetup() {
+    setLoadingSetup(true);
+    setConnectionError("");
     api.setupStatus()
       .then((r) => setNeedsSetup(r.needsSetup))
-      .catch(() => setNeedsSetup(false))
+      .catch((err) => setConnectionError(err.message || "تعذّر الاتصال بالسيرفر."))
       .finally(() => setLoadingSetup(false));
+  }
+
+  useEffect(() => {
+    checkSetup();
   }, []);
 
   function handleLogout() {
@@ -34,6 +41,21 @@ export default function App() {
 
   if (loadingSetup) {
     return <div className="centered-screen">جاري التحميل...</div>;
+  }
+
+  if (connectionError) {
+    return (
+      <div className="centered-screen">
+        <div style={{ width: "100%", maxWidth: 380 }}>
+          <div className="error-box">
+            تعذّر الاتصال بالسيرفر: {connectionError}
+            <br /><br />
+            تأكد أن رابط الـ API بملف <code>src/api.js</code> صحيح ويشير لخدمة الـ Backend الصحيحة على Render، وأن السيرفر شغّال (Live).
+          </div>
+          <button className="btn-primary" onClick={checkSetup}>إعادة المحاولة</button>
+        </div>
+      </div>
+    );
   }
 
   if (needsSetup) {
