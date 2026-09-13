@@ -99,3 +99,55 @@ INSERT INTO products (name, type, unit_price, sort_order) VALUES
   ('كوبون 27', 'coupon', 25.00, 11),
   ('كوبون 55', 'coupon', 50.00, 12)
 ON CONFLICT (name) DO NOTHING;
+
+-- ============================================================
+-- Phase 2: الطلبات
+-- ============================================================
+CREATE SEQUENCE IF NOT EXISTS order_seq START 1;
+
+CREATE TABLE IF NOT EXISTS orders (
+  id SERIAL PRIMARY KEY,
+  order_number VARCHAR(10) UNIQUE NOT NULL,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  status VARCHAR(20) NOT NULL DEFAULT 'NEW'
+    CHECK (status IN ('NEW','READY','IN_ROUTE','DELIVERED','CANCELLED','FAILED','POSTPONED')),
+  priority VARCHAR(10) NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal','urgent')),
+  subtotal NUMERIC(10,2) NOT NULL DEFAULT 0,
+  discount_type VARCHAR(10) CHECK (discount_type IN ('amount','percent')),
+  discount_value NUMERIC(10,2) DEFAULT 0,
+  discount_by INTEGER REFERENCES users(id),
+  discount_reason TEXT,
+  final_total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  notes TEXT,
+  cancelled_reason TEXT,
+  failed_reason TEXT,
+  postponed_to TIMESTAMPTZ,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id),
+  product_name_snapshot VARCHAR(150) NOT NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price_snapshot NUMERIC(10,2) NOT NULL,
+  line_total NUMERIC(10,2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_edit_history (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  edited_by INTEGER REFERENCES users(id),
+  edited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  old_snapshot JSONB,
+  new_snapshot JSONB,
+  diff_summary TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
