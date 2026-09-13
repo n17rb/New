@@ -1,4 +1,4 @@
-const BASE = "https://new-mha6.onrender.com/api";
+const BASE = "https://rabb.onrender.com/api";
 export const API_ORIGIN = BASE.replace(/\/api$/, "");
 
 function getToken() {
@@ -57,4 +57,18 @@ export const api = {
   getUsers: () => request("/users"),
   createUser: (body) => request("/users", { method: "POST", body }),
   updateUser: (id, body) => request(`/users/${id}`, { method: "PUT", body }),
+
+  getOrders: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/orders${qs ? `?${qs}` : ""}`);
+  },
+  getOrder: (id) => request(`/orders/${id}`),
+  createOrder: (body) => request("/orders", { method: "POST", body }),
+  updateOrderItems: (id, items) => request(`/orders/${id}/items`, { method: "PUT", body: { items } }),
+  setOrderPriority: (id, priority) => request(`/orders/${id}/priority`, { method: "PUT", body: { priority } }),
+  applyDiscount: (id, body) => request(`/orders/${id}/discount`, { method: "PUT", body }),
+  cancelOrder: (id, reason) => request(`/orders/${id}/cancel`, { method: "POST", body: { reason } }),
+  failDelivery: (id, reason) => request(`/orders/${id}/fail`, { method: "POST", body: { reason } }),
+  postponeOrder: (id, postponed_to) => request(`/orders/${id}/postpone`, { method: "POST", body: { postponed_to } }),
+  reactivateOrder: (id) => request(`/orders/${id}/reactivate`, { method: "POST" }),
 };
