@@ -1,23 +1,60 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
+
+function formatMinutes(mins) {
+  if (mins <= 0) return "أقل من دقيقة";
+  if (mins < 60) return `~${mins} دقيقة`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `~${h} ساعة${m > 0 ? ` و${m} دقيقة` : ""}`;
+}
 
 export default function Trip() {
   const [trip, setTrip] = useState(undefined);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState(null);
+  const [banner, setBanner] = useState("");
+  const prevDeliveredRef = useRef(0);
 
-  async function load() {
-    setError("");
+  async function load(silent = false) {
+    if (!silent) setError("");
     try {
-      setTrip(await api.getActiveTrip());
+      const result = await api.getActiveTrip();
+      if (result) {
+        const deliveredCount = result.stops.filter((s) => s.order_status === "DELIVERED").length;
+        if (silent && deliveredCount > prevDeliveredRef.current) {
+          setBanner("🎉 تم تسليم طلب جديد بالرحلة");
+          setTimeout(() => setBanner(""), 5000);
+        }
+        prevDeliveredRef.current = deliveredCount;
+      }
+      setTrip(result);
     } catch (err) {
-      setError(err.message);
+      if (!silent) setError(err.message);
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => load(true), 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!trip || trip.status !== "STARTED" || !navigator.geolocation) return;
+    const sendLocation = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => api.updateTripLocation(trip.id, pos.coords.latitude, pos.coords.longitude).catch(() => {}),
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    };
+    sendLocation();
+    const interval = setInterval(sendLocation, 20000);
+    return () => clearInterval(interval);
+  }, [trip?.id, trip?.status]);
 
   if (summary) {
     return (
@@ -34,6 +71,7 @@ export default function Trip() {
   return (
     <div className="page">
       <h1 className="title-lg">الرحلة</h1>
+      {banner && <div className="success-box">{banner}</div>}
       {error && <div className="error-box">{error}</div>}
 
       {!trip ? (
@@ -144,6 +182,10 @@ function ActiveTripView({ trip, onChanged, onCompleted }) {
   const deliveredCount = trip.stops.filter((s) => s.order_status === "DELIVERED").length;
   const totalCount = trip.stops.length;
 
+  const lastLocationLink = trip.current_latitude && trip.current_longitude
+    ? `https://www.google.com/maps?q=${trip.current_latitude},${trip.current_longitude}`
+    : null;
+
   async function withBusy(fn) {
     setBusy(true);
     setError("");
@@ -186,6 +228,16 @@ function ActiveTripView({ trip, onChanged, onCompleted }) {
         <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
           {deliveredCount} / {totalCount} تم التسليم
         </div>
+        {trip.status === "STARTED" && trip.estimated_minutes_remaining != null && (
+          <div className="text-secondary" style={{ marginTop: 4 }}>
+            ⏱️ الوقت المتوقع لإنهاء الرحلة: {formatMinutes(trip.estimated_minutes_remaining)}
+          </div>
+        )}
+        {lastLocationLink && (
+          <a href={lastLocationLink} target="_blank" rel="noreferrer" className="text-secondary" style={{ display: "block", marginTop: 4, color: "var(--primary)" }}>
+            📍 آخر موقع معروف للموزع (اضغط لفتحه على الخريطة)
+          </a>
+        )}
       </div>
 
       {trip.status === "PLANNED" && (
