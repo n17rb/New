@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { FiHome, FiUsers, FiPackage, FiBox, FiShield } from "react-icons/fi";
+import { FiHome, FiUsers, FiPackage, FiTruck, FiBox, FiShield } from "react-icons/fi";
 
 export default function BottomNav({ role }) {
   const isSuperAdmin = role === "super_admin";
@@ -20,6 +20,12 @@ export default function BottomNav({ role }) {
         <NavLink to="/orders" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
           <FiPackage className="nav-icon" />
           الطلبات
+        </NavLink>
+      )}
+      {canSeeOrders && (
+        <NavLink to="/trip" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+          <FiTruck className="nav-icon" />
+          الرحلة
         </NavLink>
       )}
       {isPrivileged && (
