@@ -15,6 +15,7 @@ import regionRoutes from "./routes/regions.js";
 import userRoutes from "./routes/users.js";
 import orderRoutes from "./routes/orders.js";
 import tripRoutes from "./routes/trips.js";
+import driverRoutes from "./routes/drivers.js";
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ app.use("/api/regions", regionRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/trips", tripRoutes);
+app.use("/api/drivers", driverRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
