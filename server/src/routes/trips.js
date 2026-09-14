@@ -12,6 +12,10 @@ router.use((req, res, next) => {
   next();
 });
 
+function isPrivileged(user) {
+  return user.role === "super_admin" || user.role === "admin";
+}
+
 function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -22,7 +26,7 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function buildRoute(startLat, startLon, stops) {
+function buildRoute(startLat, startLon, stops, routeMode) {
   const withLocation = stops.filter((s) => s.latitude != null && s.longitude != null);
   const withoutLocation = stops.filter((s) => s.latitude == null || s.longitude == null);
 
@@ -38,7 +42,8 @@ function buildRoute(startLat, startLon, stops) {
 
     remaining.forEach((s, idx) => {
       const realDistance = distanceKm(current.lat, current.lon, s.latitude, s.longitude);
-      const score = s.priority === "urgent" ? realDistance * 0.7 : realDistance;
+      const isUrgentBoost = routeMode === "urgent_smart" && s.priority === "urgent";
+      const score = isUrgentBoost ? realDistance * 0.7 : realDistance;
       if (score < bestScore) {
         bestScore = score;
         bestIdx = idx;
@@ -68,7 +73,9 @@ async function getAverageStopMinutes() {
 
 router.get("/active", async (req, res) => {
   const tripResult = await query(
-    `SELECT * FROM trips WHERE status IN ('PLANNED','STARTED') ORDER BY created_at DESC LIMIT 1`
+    `SELECT t.*, u.full_name AS driver_name
+     FROM trips t LEFT JOIN users u ON u.id = t.driver_id
+     WHERE t.status IN ('PLANNED','STARTED') ORDER BY t.created_at DESC LIMIT 1`
   );
   const trip = tripResult.rows[0];
   if (!trip) return res.json(null);
@@ -111,7 +118,7 @@ router.post("/:id/location", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { order_ids, start_latitude, start_longitude } = req.body;
+  const { order_ids, start_latitude, start_longitude, route_mode, driver_id } = req.body;
 
   if (!Array.isArray(order_ids) || order_ids.length === 0) {
     return res.status(400).json({ error: "الرجاء اختيار طلب واحد على الأقل." });
@@ -120,6 +127,17 @@ router.post("/", async (req, res) => {
   const existingActive = await query(`SELECT id FROM trips WHERE status IN ('PLANNED','STARTED')`);
   if (existingActive.rows[0]) {
     return res.status(400).json({ error: "يوجد رحلة نشطة بالفعل. أنهِ الرحلة الحالية أولًا." });
+  }
+
+  let finalDriverId = null;
+  if (req.user.role === "driver") {
+    finalDriverId = req.user.id;
+  } else if (driver_id) {
+    const driverCheck = await query(`SELECT id FROM users WHERE id = $1 AND role = 'driver' AND status = 'active'`, [driver_id]);
+    if (!driverCheck.rows[0]) return res.status(400).json({ error: "السائق المحدد غير صالح." });
+    finalDriverId = driver_id;
+  } else {
+    return res.status(400).json({ error: "الرجاء اختيار السائق المسؤول عن هذه الرحلة." });
   }
 
   const client = await pool.connect();
@@ -139,12 +157,13 @@ router.post("/", async (req, res) => {
       throw new Error("لا يوجد طلبات صالحة للإضافة للرحلة.");
     }
 
+    const mode = route_mode === "nearest" ? "nearest" : "urgent_smart";
     const startLat = start_latitude ?? null;
     const startLon = start_longitude ?? null;
 
     let ordered, totalDistance;
     if (startLat != null && startLon != null) {
-      const result = buildRoute(startLat, startLon, ordersResult.rows);
+      const result = buildRoute(startLat, startLon, ordersResult.rows, mode);
       ordered = result.ordered;
       totalDistance = result.totalDistance;
     } else {
@@ -155,7 +174,7 @@ router.post("/", async (req, res) => {
     const tripResult = await client.query(
       `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, created_by)
        VALUES ('PLANNED', $1, $2, $3, $4, $5) RETURNING *`,
-      [req.user.role === "driver" ? req.user.id : null, startLat, startLon, totalDistance, req.user.id]
+      [finalDriverId, startLat, startLon, totalDistance, req.user.id]
     );
     const trip = tripResult.rows[0];
 
@@ -174,7 +193,7 @@ router.post("/", async (req, res) => {
       action: "CREATE_TRIP",
       recordType: "trip",
       recordId: trip.id,
-      newValue: { stops: ordered.length, total_distance_km: totalDistance },
+      newValue: { stops: ordered.length, total_distance_km: totalDistance, driver_id: finalDriverId },
     });
 
     res.status(201).json({ ...trip, stopsCount: ordered.length });
@@ -203,12 +222,7 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   await query("UPDATE trip_stops SET delivered_at = now() WHERE id = $1", [stop.id]);
   await query("UPDATE orders SET status = 'DELIVERED', updated_at = now() WHERE id = $1", [stop.order_id]);
 
-  await logActivity({
-    userId: req.user.id,
-    action: "DELIVER_ORDER",
-    recordType: "order",
-    recordId: stop.order_id,
-  });
+  await logActivity({ userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
 
   res.json({ message: "تم تسجيل التسليم." });
 });
@@ -233,6 +247,62 @@ router.post("/stops/:stopId/fail", async (req, res) => {
   });
 
   res.json({ message: "تم تسجيل تعذر التسليم." });
+});
+
+router.post("/stops/:stopId/postpone", async (req, res) => {
+  const { note, new_time } = req.body;
+  const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
+  const stop = stopResult.rows[0];
+  if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+
+  const maxSeqResult = await query("SELECT COALESCE(MAX(sequence_number), 0) AS max_seq FROM trip_stops WHERE trip_id = $1", [stop.trip_id]);
+  const newSeq = maxSeqResult.rows[0].max_seq + 1;
+
+  await query("UPDATE trip_stops SET sequence_number = $1 WHERE id = $2", [newSeq, stop.id]);
+
+  const noteAppend = [new_time ? `الموعد المطلوب: ${new_time}` : null, note || null].filter(Boolean).join(" — ");
+  if (noteAppend) {
+    await query(
+      "UPDATE orders SET notes = COALESCE(notes || ' | ', '') || $1, updated_at = now() WHERE id = $2",
+      [noteAppend, stop.order_id]
+    );
+  }
+
+  await logActivity({
+    userId: req.user.id,
+    action: "POSTPONE_IN_TRIP",
+    recordType: "order",
+    recordId: stop.order_id,
+    newValue: { note, new_time },
+  });
+
+  res.json({ message: "تم تأجيل التوقف لنهاية هذه الرحلة." });
+});
+
+router.post("/stops/:stopId/cancel", async (req, res) => {
+  if (!isPrivileged(req.user) && !req.user.can_cancel_order) {
+    return res.status(403).json({ error: "ليست لديك صلاحية إلغاء الطلبات." });
+  }
+
+  const { reason } = req.body;
+  const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
+  const stop = stopResult.rows[0];
+  if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+
+  await query(
+    "UPDATE orders SET status = 'CANCELLED', cancelled_reason = $1, updated_at = now() WHERE id = $2",
+    [reason || null, stop.order_id]
+  );
+
+  await logActivity({
+    userId: req.user.id,
+    action: "CANCEL_ORDER",
+    recordType: "order",
+    recordId: stop.order_id,
+    newValue: { reason },
+  });
+
+  res.json({ message: "تم إلغاء الطلب." });
 });
 
 router.post("/:id/complete", async (req, res) => {
@@ -264,10 +334,7 @@ router.post("/:id/complete", async (req, res) => {
   );
 
   if (remaining.length > 0) {
-    await query(
-      `UPDATE orders SET status = 'NEW', updated_at = now() WHERE id = ANY($1::int[])`,
-      [remaining.map((r) => r.order_id)]
-    );
+    await query(`UPDATE orders SET status = 'NEW', updated_at = now() WHERE id = ANY($1::int[])`, [remaining.map((r) => r.order_id)]);
   }
 
   await query(`UPDATE trips SET status = 'COMPLETED', completed_at = now() WHERE id = $1`, [trip.id]);
