@@ -175,3 +175,20 @@ CREATE TABLE IF NOT EXISTS trip_stops (
 
 CREATE INDEX IF NOT EXISTS idx_trip_stops_trip ON trip_stops(trip_id, sequence_number);
 CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
+
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_latitude DOUBLE PRECISION;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_longitude DOUBLE PRECISION;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS driver_ledger (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES users(id),
+  trip_id INTEGER REFERENCES trips(id),
+  entry_type VARCHAR(20) NOT NULL CHECK (entry_type IN ('trip_due','settlement')),
+  amount NUMERIC(10,2) NOT NULL,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_ledger_driver ON driver_ledger(driver_id, created_at DESC);
