@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS customers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE customers ALTER COLUMN sequential_number TYPE VARCHAR(20);
+
 CREATE SEQUENCE IF NOT EXISTS customer_seq START 1;
 
 CREATE TABLE IF NOT EXISTS customer_locations (
@@ -100,9 +102,6 @@ INSERT INTO products (name, type, unit_price, sort_order) VALUES
   ('كوبون 55', 'coupon', 50.00, 12)
 ON CONFLICT (name) DO NOTHING;
 
--- ============================================================
--- Phase 2: الطلبات
--- ============================================================
 CREATE SEQUENCE IF NOT EXISTS order_seq START 1;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -151,3 +150,28 @@ CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+
+CREATE TABLE IF NOT EXISTS trips (
+  id SERIAL PRIMARY KEY,
+  status VARCHAR(20) NOT NULL DEFAULT 'PLANNED' CHECK (status IN ('PLANNED','STARTED','COMPLETED')),
+  driver_id INTEGER REFERENCES users(id),
+  start_latitude DOUBLE PRECISION,
+  start_longitude DOUBLE PRECISION,
+  total_distance_km NUMERIC(10,2),
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS trip_stops (
+  id SERIAL PRIMARY KEY,
+  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  order_id INTEGER NOT NULL REFERENCES orders(id),
+  sequence_number INTEGER NOT NULL,
+  delivered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_trip_stops_trip ON trip_stops(trip_id, sequence_number);
+CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
