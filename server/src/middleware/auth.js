@@ -3,13 +3,22 @@ import jwt from "jsonwebtoken";
 const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
-  console.error("❌ خطأ: متغير JWT_SECRET غير موجود.");
+  console.error("❌ خطأ: متغير JWT_SECRET غير موجود في ملف .env");
   process.exit(1);
 }
 
 export function signToken(user) {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role, full_name: user.full_name },
+    {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      full_name: user.full_name,
+      can_discount: user.can_discount,
+      can_delete_customer: user.can_delete_customer,
+      can_edit_product_price: user.can_edit_product_price,
+      can_cancel_order: user.can_cancel_order,
+    },
     JWT_SECRET,
     { expiresIn: "30d" }
   );
