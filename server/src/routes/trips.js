@@ -55,6 +55,17 @@ function buildRoute(startLat, startLon, stops) {
   return { ordered: [...ordered, ...withoutLocation], totalDistance };
 }
 
+async function getAverageStopMinutes() {
+  const result = await query(`
+    SELECT AVG(diff_seconds) AS avg_seconds FROM (
+      SELECT EXTRACT(EPOCH FROM (delivered_at - LAG(delivered_at) OVER (PARTITION BY trip_id ORDER BY sequence_number))) AS diff_seconds
+      FROM trip_stops WHERE delivered_at IS NOT NULL
+    ) t WHERE diff_seconds IS NOT NULL AND diff_seconds > 0 AND diff_seconds < 3600
+  `);
+  const avgSeconds = result.rows[0]?.avg_seconds;
+  return avgSeconds ? Number(avgSeconds) / 60 : 8;
+}
+
 router.get("/active", async (req, res) => {
   const tripResult = await query(
     `SELECT * FROM trips WHERE status IN ('PLANNED','STARTED') ORDER BY created_at DESC LIMIT 1`
@@ -76,7 +87,27 @@ router.get("/active", async (req, res) => {
     [trip.id]
   );
 
-  res.json({ ...trip, stops: stopsResult.rows });
+  const remainingCount = stopsResult.rows.filter(
+    (s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED"
+  ).length;
+  const avgStopMinutes = await getAverageStopMinutes();
+  const estimatedMinutesRemaining = Math.round(remainingCount * avgStopMinutes);
+
+  res.json({ ...trip, stops: stopsResult.rows, estimated_minutes_remaining: estimatedMinutesRemaining });
+});
+
+router.post("/:id/location", async (req, res) => {
+  const { latitude, longitude } = req.body;
+  if (latitude == null || longitude == null) {
+    return res.status(400).json({ error: "الإحداثيات مطلوبة." });
+  }
+  const result = await query(
+    `UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now()
+     WHERE id = $3 RETURNING id`,
+    [latitude, longitude, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  res.json({ ok: true });
 });
 
 router.post("/", async (req, res) => {
@@ -242,6 +273,14 @@ router.post("/:id/complete", async (req, res) => {
   await query(`UPDATE trips SET status = 'COMPLETED', completed_at = now() WHERE id = $1`, [trip.id]);
 
   const totalValue = delivered.reduce((sum, s) => sum + Number(s.final_total), 0);
+
+  if (trip.driver_id && delivered.length > 0) {
+    await query(
+      `INSERT INTO driver_ledger (driver_id, trip_id, entry_type, amount, created_by)
+       VALUES ($1, $2, 'trip_due', $3, $4)`,
+      [trip.driver_id, trip.id, totalValue, req.user.id]
+    );
+  }
 
   res.json({
     trip_id: trip.id,
