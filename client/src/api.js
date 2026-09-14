@@ -78,4 +78,9 @@ export const api = {
   deliverStop: (stopId) => request(`/trips/stops/${stopId}/deliver`, { method: "POST" }),
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
   completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
+  updateTripLocation: (id, latitude, longitude) => request(`/trips/${id}/location`, { method: "POST", body: { latitude, longitude } }),
+
+  getDriverBalances: () => request("/drivers/balances"),
+  getDriverBalance: (id) => request(`/drivers/${id}/balance`),
+  settleDriver: (id, body) => request(`/drivers/${id}/settle`, { method: "POST", body }),
 };
