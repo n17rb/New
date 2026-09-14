@@ -10,6 +10,7 @@ import CustomerDetail from "./pages/CustomerDetail.jsx";
 import Orders from "./pages/Orders.jsx";
 import Trip from "./pages/Trip.jsx";
 import Products from "./pages/Products.jsx";
+import DriverBalances from "./pages/DriverBalances.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -85,6 +86,7 @@ export default function App() {
         {user.role !== "data_entry" && <Route path="/orders" element={<Orders user={user} />} />}
         {user.role !== "data_entry" && <Route path="/trip" element={<Trip />} />}
         {isPrivileged && <Route path="/products" element={<Products />} />}
+        {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
