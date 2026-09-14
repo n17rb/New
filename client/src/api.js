@@ -1,5 +1,5 @@
-const BASE = "https://new-mha6.onrender.com";
-export const API_ORIGIN = BASE;
+const BASE = "https://new-mha6.onrender.com/api";
+export const API_ORIGIN = BASE.replace(/\/api$/, "");
 
 function getToken() {
   return localStorage.getItem("token");
