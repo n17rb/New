@@ -11,6 +11,16 @@ const STATUS_LABELS = {
   POSTPONED: "مؤجل",
 };
 
+function formatOrderTime(iso) {
+  return new Date(iso).toLocaleString("ar-JO", {
+    timeZone: "Asia/Amman",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function Orders({ user }) {
   const [orders, setOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
@@ -72,7 +82,7 @@ export default function Orders({ user }) {
                 #{o.order_number} · {o.customer_name}
                 {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
               </div>
-              <div className="text-secondary tabular-num">{o.customer_phone}</div>
+              <div className="text-secondary tabular-num">{o.customer_phone} · {formatOrderTime(o.created_at)}</div>
             </div>
             <div style={{ textAlign: "left" }}>
               <div className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</div>
@@ -164,6 +174,7 @@ function OrderDetail({ orderId, user, onBack }) {
         {order.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
       </h2>
       <p className="text-secondary tabular-num">{order.customer_name} · {order.customer_phone}</p>
+      <p className="text-secondary tabular-num" style={{ marginTop: -6 }}>🕐 {formatOrderTime(order.created_at)}</p>
       <span className="badge" style={{ marginBottom: 12, display: "inline-block" }}>{STATUS_LABELS[order.status] || order.status}</span>
 
       {error && <div className="error-box">{error}</div>}
