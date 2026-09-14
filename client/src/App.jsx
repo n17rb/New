@@ -84,7 +84,7 @@ export default function App() {
         <Route path="/customers" element={<Customers user={user} />} />
         <Route path="/customers/:id" element={<CustomerDetail user={user} />} />
         {user.role !== "data_entry" && <Route path="/orders" element={<Orders user={user} />} />}
-        {user.role !== "data_entry" && <Route path="/trip" element={<Trip />} />}
+        {user.role !== "data_entry" && <Route path="/trip" element={<Trip user={user} />} />}
         {isPrivileged && <Route path="/products" element={<Products />} />}
         {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
