@@ -71,4 +71,11 @@ export const api = {
   failDelivery: (id, reason) => request(`/orders/${id}/fail`, { method: "POST", body: { reason } }),
   postponeOrder: (id, postponed_to) => request(`/orders/${id}/postpone`, { method: "POST", body: { postponed_to } }),
   reactivateOrder: (id) => request(`/orders/${id}/reactivate`, { method: "POST" }),
+
+  getActiveTrip: () => request("/trips/active"),
+  createTrip: (body) => request("/trips", { method: "POST", body }),
+  startTrip: (id) => request(`/trips/${id}/start`, { method: "POST" }),
+  deliverStop: (stopId) => request(`/trips/stops/${stopId}/deliver`, { method: "POST" }),
+  failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
+  completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
 };
