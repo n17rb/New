@@ -18,6 +18,13 @@ async function computeBalance(driverId) {
   return Number(result.rows[0].balance);
 }
 
+router.get("/list", requireRole("super_admin", "admin"), async (req, res) => {
+  const result = await query(
+    `SELECT id, full_name FROM users WHERE role = 'driver' AND status = 'active' ORDER BY full_name ASC`
+  );
+  res.json(result.rows);
+});
+
 router.get("/balances", requireRole("super_admin", "admin"), async (req, res) => {
   const driversResult = await query(
     `SELECT id, full_name, username FROM users WHERE role = 'driver' AND status = 'active' ORDER BY full_name ASC`
