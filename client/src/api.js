@@ -79,8 +79,13 @@ export const api = {
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
   completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
   updateTripLocation: (id, latitude, longitude) => request(`/trips/${id}/location`, { method: "POST", body: { latitude, longitude } }),
+  postponeStop: (stopId, body) => request(`/trips/stops/${stopId}/postpone`, { method: "POST", body }),
+  cancelStop: (stopId, reason) => request(`/trips/stops/${stopId}/cancel`, { method: "POST", body: { reason } }),
 
+  getDriversList: () => request("/drivers/list"),
   getDriverBalances: () => request("/drivers/balances"),
   getDriverBalance: (id) => request(`/drivers/${id}/balance`),
   settleDriver: (id, body) => request(`/drivers/${id}/settle`, { method: "POST", body }),
+
+  resolveMapsLink: (url) => request("/geocode/resolve-link", { method: "POST", body: { url } }),
 };
