@@ -41,6 +41,7 @@ export const api = {
   createCustomer: (body) => request("/customers", { method: "POST", body }),
   updateCustomer: (id, body) => request(`/customers/${id}`, { method: "PUT", body }),
   archiveCustomer: (id) => request(`/customers/${id}`, { method: "DELETE" }),
+  getCustomerHistory: (id) => request(`/customers/${id}/history`),
   uploadCustomerPhoto: (id, file) => {
     const form = new FormData();
     form.append("photo", file);
@@ -73,9 +74,10 @@ export const api = {
   postponeOrder: (id, postponed_to) => request(`/orders/${id}/postpone`, { method: "POST", body: { postponed_to } }),
   reactivateOrder: (id) => request(`/orders/${id}/reactivate`, { method: "POST" }),
 
-  getActiveTrip: () => request("/trips/active"),
+  getMyTrip: () => request("/trips/mine"),
+  getActiveTripsList: () => request("/trips/active-list"),
+  getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
-  startTrip: (id) => request(`/trips/${id}/start`, { method: "POST" }),
   deliverStop: (stopId) => request(`/trips/stops/${stopId}/deliver`, { method: "POST" }),
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
   completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
