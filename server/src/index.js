@@ -17,6 +17,7 @@ import orderRoutes from "./routes/orders.js";
 import tripRoutes from "./routes/trips.js";
 import driverRoutes from "./routes/drivers.js";
 import geocodeRoutes from "./routes/geocode.js";
+import reportRoutes from "./routes/reports.js";
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/drivers", driverRoutes);
 app.use("/api/geocode", geocodeRoutes);
+app.use("/api/reports", reportRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
