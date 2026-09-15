@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { FiPlus, FiEdit2 } from "react-icons/fi";
 
-export default function Products() {
+export default function Products({ user }) {
+  const canManage = user.role === "super_admin" || user.role === "admin" || user.can_edit_product_price;
+
   const [products, setProducts] = useState([]);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -46,12 +48,15 @@ export default function Products() {
     <div className="page">
       <h1 className="title-lg">المنتجات والأسعار</h1>
       {error && <div className="error-box">{error}</div>}
+      {!canManage && <p className="text-secondary" style={{ marginBottom: 14 }}>عرض فقط — التعديل متاح للمدير ومساعد المدير.</p>}
 
-      <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 16 }} onClick={() => setShowAdd(!showAdd)}>
-        {showAdd ? "إغلاق" : (<><FiPlus /> إضافة منتج جديد</>)}
-      </button>
+      {canManage && (
+        <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 16 }} onClick={() => setShowAdd(!showAdd)}>
+          {showAdd ? "إغلاق" : (<><FiPlus /> إضافة منتج جديد</>)}
+        </button>
+      )}
 
-      {showAdd && <AddProductForm onSaved={() => { setShowAdd(false); load(); }} />}
+      {canManage && showAdd && <AddProductForm onSaved={() => { setShowAdd(false); load(); }} />}
 
       <div className="card" style={{ padding: 0 }}>
         {products.map((p) => (
@@ -62,7 +67,7 @@ export default function Products() {
                 <span className="badge">{p.status === "active" ? "فعّال" : p.status === "paused" ? "موقوف" : "مؤرشف"}</span>
               </div>
 
-              {editingId === p.id ? (
+              {canManage && editingId === p.id ? (
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <input
                     style={{ width: 80, padding: 8 }}
@@ -77,15 +82,15 @@ export default function Products() {
               ) : (
                 <div
                   className="tabular-num icon-row"
-                  style={{ fontWeight: 700, cursor: "pointer" }}
-                  onClick={() => { setEditingId(p.id); setEditPrice(p.unit_price); }}
+                  style={{ fontWeight: 700, cursor: canManage ? "pointer" : "default" }}
+                  onClick={() => { if (canManage) { setEditingId(p.id); setEditPrice(p.unit_price); } }}
                 >
-                  {Number(p.unit_price).toFixed(2)} JD <FiEdit2 size={14} />
+                  {Number(p.unit_price).toFixed(2)} JD {canManage && <FiEdit2 size={14} />}
                 </div>
               )}
             </div>
 
-            {p.status !== "archived" && (
+            {canManage && p.status !== "archived" && (
               <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
                 <button className="btn-danger-text" onClick={() => toggleStatus(p)}>
                   {p.status === "active" ? "إيقاف" : "تفعيل"}
