@@ -11,6 +11,20 @@ const STATUS_LABELS = {
   POSTPONED: "مؤجل",
 };
 
+const STATUS_COLORS = {
+  DELIVERED: "var(--success)",
+  CANCELLED: "var(--urgent)",
+  IN_ROUTE: "var(--warning)",
+  POSTPONED: "#B8862E",
+  FAILED: "var(--urgent)",
+};
+
+function statusBadgeStyle(status) {
+  const color = STATUS_COLORS[status];
+  if (!color) return {};
+  return { background: color, color: "#fff", borderColor: color };
+}
+
 function formatOrderTime(iso) {
   return new Date(iso).toLocaleString("ar-JO", {
     timeZone: "Asia/Amman",
@@ -86,7 +100,7 @@ export default function Orders({ user }) {
             </div>
             <div style={{ textAlign: "left" }}>
               <div className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</div>
-              <span className="badge">{STATUS_LABELS[o.status] || o.status}</span>
+              <span className="badge" style={statusBadgeStyle(o.status)}>{STATUS_LABELS[o.status] || o.status}</span>
             </div>
           </div>
         ))}
@@ -148,9 +162,11 @@ function OrderDetail({ orderId, user, onBack }) {
   }
 
   function handlePostpone() {
+    const reason = prompt("سبب التأجيل؟ (مثال: مو موجود، طلب وقت تاني)");
+    if (reason === null) return;
     const when = prompt("أجّل لأي وقت؟ (مثال: 2026-09-15T14:00)");
     if (!when) return;
-    withBusy(() => api.postponeOrder(order.id, when));
+    withBusy(() => api.postponeOrder(order.id, when, reason));
   }
 
   function handleDiscount() {
@@ -175,7 +191,7 @@ function OrderDetail({ orderId, user, onBack }) {
       </h2>
       <p className="text-secondary tabular-num">{order.customer_name} · {order.customer_phone}</p>
       <p className="text-secondary tabular-num" style={{ marginTop: -6 }}>🕐 {formatOrderTime(order.created_at)}</p>
-      <span className="badge" style={{ marginBottom: 12, display: "inline-block" }}>{STATUS_LABELS[order.status] || order.status}</span>
+      <span className="badge" style={{ marginBottom: 12, display: "inline-block", ...statusBadgeStyle(order.status) }}>{STATUS_LABELS[order.status] || order.status}</span>
 
       {error && <div className="error-box">{error}</div>}
 
