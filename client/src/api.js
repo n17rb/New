@@ -15,6 +15,7 @@ async function request(path, { method = "GET", body, isFormData = false } = {}) 
     method,
     headers,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
   });
 
   let data = null;
