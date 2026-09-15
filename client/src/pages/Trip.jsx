@@ -124,6 +124,12 @@ function ManagerTripsOverview({ user }) {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (trips && trips.length === 1 && !selectedId) {
+      setSelectedId(trips[0].id);
+    }
+  }, [trips]);
+
   if (selectedId) {
     return (
       <div className="page">
@@ -427,12 +433,38 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         </div>
       )}
 
+      {(isSuperAdmin || isManagerViewOnly) && !trip.current_latitude && (
+        <div className="card" style={{ background: "var(--bg)" }}>
+          🚚 لسا ما وصلنا أول تحديث موقع من السائق — تأكد إنه فاتح صفحة "الرحلة" بجهازه وموافق على إذن الموقع بالمتصفح.
+        </div>
+      )}
+
       <RoutePreviewMap
         stops={trip.stops}
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
         showDriverMarker={isSuperAdmin || isManagerViewOnly}
         routeGeometry={trip.route_geometry}
       />
+
+      <div className="card">
+        <h2 className="title-md">كل توقفات الرحلة بالترتيب</h2>
+        {trip.stops.map((s, i) => (
+          <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+            <div className="icon-row">
+              <span style={{
+                width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "0.75rem", fontWeight: 700, color: "#fff",
+                background: s.order_status === "DELIVERED" ? "var(--success)" : s.order_status === "FAILED" ? "var(--urgent)" : s.order_status === "CANCELLED" ? "var(--text-secondary)" : "var(--primary)",
+              }}>
+                {i + 1}
+              </span>
+              <span>{s.customer_name}</span>
+              {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
+            </div>
+            <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
+          </div>
+        ))}
+      </div>
 
       {canOperate && trip.status === "STARTED" && currentStop && (
         <StopCard stop={currentStop} busy={busy} withBusy={withBusy} />
