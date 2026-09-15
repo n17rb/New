@@ -17,20 +17,25 @@ function formatClockTime(iso) {
 }
 
 export default function Trip({ user }) {
+  const isDriver = user.role === "driver";
+  const isPrivileged = user.role === "super_admin" || user.role === "admin";
+
+  if (isDriver) return <DriverTripView />;
+  if (isPrivileged) return <ManagerTripsOverview user={user} />;
+  return <div className="page"><p className="text-secondary">لا يوجد وصول لهذا القسم.</p></div>;
+}
+
+function DriverTripView() {
   const [trip, setTrip] = useState(undefined);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState(null);
   const [banner, setBanner] = useState("");
   const prevDeliveredRef = useRef(0);
 
-  const isDriver = user.role === "driver";
-  const isSuperAdmin = user.role === "super_admin";
-  const isManagerViewOnly = user.role === "admin";
-
   async function load(silent = false) {
     if (!silent) setError("");
     try {
-      const result = await api.getActiveTrip();
+      const result = await api.getMyTrip();
       if (result) {
         const deliveredCount = result.stops.filter((s) => s.order_status === "DELIVERED").length;
         if (silent && deliveredCount > prevDeliveredRef.current) {
@@ -52,7 +57,7 @@ export default function Trip({ user }) {
   }, []);
 
   useEffect(() => {
-    if (!trip || trip.status !== "STARTED" || !trip.can_operate || !navigator.geolocation) return;
+    if (!trip || trip.status !== "STARTED" || !navigator.geolocation) return;
     const sendLocation = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => api.updateTripLocation(trip.id, pos.coords.latitude, pos.coords.longitude).catch(() => {}),
@@ -63,7 +68,7 @@ export default function Trip({ user }) {
     sendLocation();
     const interval = setInterval(sendLocation, 20000);
     return () => clearInterval(interval);
-  }, [trip?.id, trip?.status, trip?.can_operate]);
+  }, [trip?.id, trip?.status]);
 
   if (summary) {
     return (
@@ -83,19 +88,106 @@ export default function Trip({ user }) {
       {banner && <div className="success-box">{banner}</div>}
       {error && <div className="error-box">{error}</div>}
 
-      {!trip && isDriver && <CreateTripForm onCreated={load} />}
-      {!trip && !isDriver && <p className="text-secondary">لا توجد رحلة نشطة حاليًا.</p>}
-
-      {trip && (
+      {!trip ? (
+        <CreateTripForm onCreated={load} />
+      ) : (
         <ActiveTripView
           trip={trip}
-          isSuperAdmin={isSuperAdmin}
-          isManagerViewOnly={isManagerViewOnly}
+          isSuperAdmin={false}
+          isManagerViewOnly={false}
           canOperate={trip.can_operate}
           onChanged={load}
           onCompleted={(s) => setSummary(s)}
         />
       )}
+    </div>
+  );
+}
+
+function ManagerTripsOverview({ user }) {
+  const [trips, setTrips] = useState(undefined);
+  const [selectedId, setSelectedId] = useState(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      setTrips(await api.getActiveTripsList());
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (selectedId) {
+    return (
+      <div className="page">
+        <ManagerTripDetail tripId={selectedId} isSuperAdmin={user.role === "super_admin"} onBack={() => { setSelectedId(null); load(); }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <h1 className="title-lg">الرحلات الجارية</h1>
+      {error && <div className="error-box">{error}</div>}
+
+      {trips === undefined && <p className="text-secondary">جاري التحميل...</p>}
+      {trips && trips.length === 0 && <p className="text-secondary">لا يوجد أي سائق برحلة جارية حاليًا.</p>}
+
+      <div className="card" style={{ padding: 0 }}>
+        {trips && trips.map((t) => (
+          <div key={t.id} className="customer-row" style={{ padding: "12px 14px", cursor: "pointer" }} onClick={() => setSelectedId(t.id)}>
+            <div>
+              <div style={{ fontWeight: 600 }}>{t.driver_name || "سائق غير معروف"}</div>
+              <div className="text-secondary tabular-num">{t.delivered_count} / {t.total_count} تم التسليم</div>
+            </div>
+            <span className="badge">{t.status === "STARTED" ? "جارية" : "جاهزة"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ManagerTripDetail({ tripId, isSuperAdmin, onBack }) {
+  const [trip, setTrip] = useState(undefined);
+  const [error, setError] = useState("");
+
+  async function load() {
+    try {
+      setTrip(await api.getTripDetail(tripId));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 12000);
+    return () => clearInterval(interval);
+  }, [tripId]);
+
+  if (trip === undefined) return <p className="text-secondary">جاري التحميل...</p>;
+  if (!trip) return <div className="error-box">تعذّر تحميل الرحلة.</div>;
+
+  return (
+    <div>
+      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع لقائمة الرحلات</button>
+      {error && <div className="error-box">{error}</div>}
+      <ActiveTripView
+        trip={trip}
+        isSuperAdmin={isSuperAdmin}
+        isManagerViewOnly={!isSuperAdmin}
+        canOperate={trip.can_operate}
+        onChanged={load}
+        onCompleted={() => onBack()}
+      />
     </div>
   );
 }
@@ -319,6 +411,21 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
           <div className="text-secondary" style={{ marginTop: 6, fontStyle: "italic" }}>وضع العرض فقط — التحكم بالرحلة للسائق</div>
         )}
       </div>
+
+      {trip.inventory && trip.inventory.length > 0 && (
+        <div className="card">
+          <h2 className="title-md">جرد السيارة</h2>
+          {trip.inventory.map((item, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < trip.inventory.length - 1 ? "1px solid var(--border)" : "none" }}>
+              <span>{item.product_name_snapshot}</span>
+              <span className="tabular-num">
+                <span style={{ fontWeight: 700, color: item.remaining_quantity === 0 ? "var(--success)" : "inherit" }}>{item.remaining_quantity}</span>
+                <span className="text-secondary"> / {item.loaded_quantity} متبقي</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <RoutePreviewMap
         stops={trip.stops}
