@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 
-export default function OrderForm({ customer, onClose, onCreated }) {
+export default function OrderForm({ customer, user, onClose, onCreated }) {
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [priority, setPriority] = useState("normal");
@@ -70,6 +70,9 @@ export default function OrderForm({ customer, onClose, onCreated }) {
         <p className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>
           الإجمالي: {Number(success.final_total).toFixed(2)} JD
         </p>
+        {user?.role === "driver" && (
+          <AddToActiveTripButton orderId={success.id} onDone={onCreated} />
+        )}
         <button className="btn-primary" onClick={onCreated}>تم</button>
       </div>
     );
@@ -168,6 +171,46 @@ export default function OrderForm({ customer, onClose, onCreated }) {
         {loading ? "جاري الإرسال..." : "إرسال الطلب"}
       </button>
       <button type="button" className="btn-secondary" onClick={onClose}>إلغاء</button>
+    </div>
+  );
+}
+
+function AddToActiveTripButton({ orderId, onDone }) {
+  const [trip, setTrip] = useState(undefined);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState("");
+  const [added, setAdded] = useState(false);
+
+  useEffect(() => {
+    api.getActiveTrip().then(setTrip).catch(() => setTrip(null));
+  }, []);
+
+  async function handleAdd() {
+    setAdding(true);
+    setError("");
+    try {
+      await api.addOrderToTrip(trip.id, orderId);
+      setAdded(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  if (trip === undefined) return null;
+  if (!trip || trip.status !== "STARTED" || !trip.can_operate) return null;
+
+  if (added) {
+    return <div className="success-box">تمت إضافة الطلب لرحلتك الجارية بأفضل موضع ممكن.</div>;
+  }
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      {error && <div className="error-box">{error}</div>}
+      <button className="btn-secondary" disabled={adding} onClick={handleAdd}>
+        {adding ? "جاري الإضافة..." : "🚚 أضف هذا الطلب لرحلتي الجارية الآن"}
+      </button>
     </div>
   );
 }
