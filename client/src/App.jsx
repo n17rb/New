@@ -14,6 +14,7 @@ import Products from "./pages/Products.jsx";
 import DriverBalances from "./pages/DriverBalances.jsx";
 import MyBalance from "./pages/MyBalance.jsx";
 import Reports from "./pages/Reports.jsx";
+import Cash from "./pages/Cash.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -214,6 +215,7 @@ export default function App() {
         {canSeeProducts && <Route path="/products" element={<Products user={user} />} />}
         {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
         {isPrivileged && <Route path="/reports" element={<Reports />} />}
+        {isPrivileged && <Route path="/cash" element={<Cash />} />}
         {isDriver && <Route path="/my-balance" element={<MyBalance user={user} />} />}
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
         <Route path="*" element={<Navigate to={isDriver ? "/customers" : "/"} replace />} />
