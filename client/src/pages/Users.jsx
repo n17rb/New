@@ -13,6 +13,7 @@ export default function Users() {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   async function load() {
     try {
@@ -24,9 +25,15 @@ export default function Users() {
 
   useEffect(() => { load(); }, []);
 
-  async function toggleStatus(u) {
-    await api.updateUser(u.id, { status: u.status === "active" ? "disabled" : "active" });
-    load();
+  if (selectedUser) {
+    return (
+      <div className="page">
+        <EditUserForm
+          user={selectedUser}
+          onBack={() => { setSelectedUser(null); load(); }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -42,18 +49,107 @@ export default function Users() {
 
       <div className="card" style={{ padding: 0 }}>
         {users.map((u) => (
-          <div key={u.id} className="customer-row" style={{ padding: "12px 14px" }}>
+          <div key={u.id} className="customer-row" style={{ padding: "12px 14px", cursor: "pointer" }} onClick={() => setSelectedUser(u)}>
             <div>
               <div style={{ fontWeight: 600 }}>{u.full_name}</div>
               <div className="text-secondary">
                 {u.username} · {ROLE_LABELS[u.role] || u.role}
               </div>
             </div>
-            <button className="btn-danger-text" onClick={() => toggleStatus(u)}>
-              {u.status === "active" ? "تعطيل" : "تفعيل"}
-            </button>
+            <span className="badge">{u.status === "active" ? "فعّال" : "معطّل"}</span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function EditUserForm({ user, onBack }) {
+  const [username, setUsername] = useState(user.username);
+  const [fullName, setFullName] = useState(user.full_name);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    setInfo("");
+    try {
+      await api.updateUser(user.id, {
+        username: username !== user.username ? username.trim() : undefined,
+        full_name: fullName,
+        password: password || undefined,
+      });
+      setInfo("تم حفظ التعديلات بنجاح.");
+      setPassword("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleStatus() {
+    setSaving(true);
+    setError("");
+    try {
+      await api.updateUser(user.id, { status: user.status === "active" ? "disabled" : "active" });
+      onBack();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`متأكد إنك بدك تحذف حساب "${user.full_name}"؟ هذا الإجراء لا يمكن التراجع عنه.`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api.deleteUser(user.id);
+      alert(result.message);
+      onBack();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع لقائمة المستخدمين</button>
+
+      <div className="card">
+        <h2 className="title-md">{ROLE_LABELS[user.role] || user.role}</h2>
+        {error && <div className="error-box">{error}</div>}
+        {info && <div className="success-box">{info}</div>}
+
+        <div className="field">
+          <label>اسم المستخدم</label>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>الاسم الكامل</label>
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>كلمة مرور جديدة (اتركها فاضية لعدم التغيير)</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} />
+        </div>
+
+        <button className="btn-primary" style={{ marginBottom: 10 }} disabled={saving} onClick={handleSave}>
+          {saving ? "جاري الحفظ..." : "حفظ التعديلات"}
+        </button>
+        <button className="btn-secondary" style={{ marginBottom: 10 }} disabled={saving} onClick={toggleStatus}>
+          {user.status === "active" ? "تعطيل الحساب" : "تفعيل الحساب"}
+        </button>
+        <button className="btn-danger-text" disabled={saving} onClick={handleDelete}>
+          حذف الحساب نهائيًا
+        </button>
       </div>
     </div>
   );
