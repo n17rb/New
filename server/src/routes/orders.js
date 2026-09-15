@@ -9,13 +9,6 @@ function isPrivileged(user) {
   return user.role === "super_admin" || user.role === "admin";
 }
 
-router.use((req, res, next) => {
-  if (req.user.role === "data_entry") {
-    return res.status(403).json({ error: "ليست لديك صلاحية الوصول لهذا القسم." });
-  }
-  next();
-});
-
 async function nextOrderNumber(client) {
   const result = await client.query("SELECT nextval('order_seq') AS n");
   return String(result.rows[0].n).padStart(6, "0");
