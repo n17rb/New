@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, API_ORIGIN } from "../api.js";
-import { FiEdit2, FiTrash2, FiCamera, FiMapPin, FiArrowRight, FiPlusCircle } from "react-icons/fi";
+import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import OrderForm from "../components/OrderForm.jsx";
 
@@ -128,11 +128,19 @@ function CustomerHeader({ customer, canManage, onChanged, onDeleted }) {
             style={{ width: "100%", borderRadius: 8, marginBottom: 12 }}
           />
         )}
-        <label className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 16 }}>
-          <FiCamera />
-          {photoFile ? "تم اختيار صورة جديدة — اضغط حفظ لتثبيتها" : "تغيير صورة العمارة"}
-          <input type="file" accept="image/*" capture="environment" onChange={handlePickPhoto} style={{ display: "none" }} />
-        </label>
+        <div className="icon-row" style={{ marginBottom: 16 }}>
+          <label className="btn-secondary icon-row" style={{ justifyContent: "center", flex: 1 }}>
+            <FiCamera />
+            التقاط صورة
+            <input type="file" accept="image/*" capture="environment" onChange={handlePickPhoto} style={{ display: "none" }} />
+          </label>
+          <label className="btn-secondary icon-row" style={{ justifyContent: "center", flex: 1 }}>
+            <FiImage />
+            من المعرض
+            <input type="file" accept="image/*" onChange={handlePickPhoto} style={{ display: "none" }} />
+          </label>
+        </div>
+        {photoFile && <p className="text-secondary" style={{ marginTop: -10, marginBottom: 16 }}>تم اختيار صورة جديدة — اضغط حفظ لتثبيتها</p>}
 
         <div className="field">
           <label>اسم العميل</label>
@@ -180,6 +188,9 @@ function CustomerHeader({ customer, canManage, onChanged, onDeleted }) {
         <div className="icon-row">
           <a className="icon-btn whatsapp" href={whatsappLink} target="_blank" rel="noreferrer" title="فتح واتساب">
             <FaWhatsapp size={18} />
+          </a>
+          <a className="icon-btn" href={`tel:${customer.phone_display}`} title="اتصال">
+            <FiPhone size={16} />
           </a>
           {canManage && (
             <button className="icon-btn" onClick={() => setEditing(true)} title="تعديل">
