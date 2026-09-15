@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -191,15 +191,7 @@ async function getAverageStopMinutes() {
   return avgSeconds ? Number(avgSeconds) / 60 : 8;
 }
 
-router.get("/active", async (req, res) => {
-  const tripResult = await query(
-    `SELECT t.*, u.full_name AS driver_name
-     FROM trips t LEFT JOIN users u ON u.id = t.driver_id
-     WHERE t.status IN ('PLANNED','STARTED') ORDER BY t.created_at DESC LIMIT 1`
-  );
-  const trip = tripResult.rows[0];
-  if (!trip) return res.json(null);
-
+async function buildTripDetailResponse(trip, requestingUser) {
   const stopsResult = await query(
     `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes,
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display,
@@ -214,18 +206,104 @@ router.get("/active", async (req, res) => {
     [trip.id]
   );
 
+  const inventoryResult = await query(
+    `SELECT ti.product_name_snapshot, ti.loaded_quantity,
+            COALESCE(SUM(oi.quantity) FILTER (WHERE o.status = 'DELIVERED'), 0)::int AS delivered_quantity
+     FROM trip_inventory ti
+     LEFT JOIN order_items oi ON oi.product_name_snapshot = ti.product_name_snapshot
+     LEFT JOIN trip_stops ts ON ts.order_id = oi.order_id AND ts.trip_id = ti.trip_id
+     LEFT JOIN orders o ON o.id = oi.order_id
+     WHERE ti.trip_id = $1
+     GROUP BY ti.id, ti.product_name_snapshot, ti.loaded_quantity
+     ORDER BY ti.product_name_snapshot ASC`,
+    [trip.id]
+  );
+
   const remainingCount = stopsResult.rows.filter(
     (s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED"
   ).length;
   const avgStopMinutes = await getAverageStopMinutes();
   const estimatedMinutesRemaining = Math.round(remainingCount * avgStopMinutes);
 
-  res.json({
+  return {
     ...trip,
     stops: stopsResult.rows,
+    inventory: inventoryResult.rows.map((r) => ({
+      ...r,
+      remaining_quantity: r.loaded_quantity - r.delivered_quantity,
+    })),
     estimated_minutes_remaining: estimatedMinutesRemaining,
-    can_operate: canOperateTrip(req.user, trip),
+    can_operate: canOperateTrip(requestingUser, trip),
+  };
+}
+
+router.get("/mine", async (req, res) => {
+  if (req.user.role !== "driver") return res.status(403).json({ error: "هذا المسار للسائقين فقط." });
+
+  const tripResult = await query(
+    `SELECT t.*, u.full_name AS driver_name
+     FROM trips t LEFT JOIN users u ON u.id = t.driver_id
+     WHERE t.status IN ('PLANNED','STARTED') AND t.driver_id = $1
+     ORDER BY t.created_at DESC LIMIT 1`,
+    [req.user.id]
+  );
+  const trip = tripResult.rows[0];
+  if (!trip) return res.json(null);
+
+  res.json(await buildTripDetailResponse(trip, req.user));
+});
+
+router.get("/active-list", requireRole("super_admin", "admin"), async (req, res) => {
+  const tripsResult = await query(
+    `SELECT t.*, u.full_name AS driver_name
+     FROM trips t LEFT JOIN users u ON u.id = t.driver_id
+     WHERE t.status IN ('PLANNED','STARTED')
+     ORDER BY t.created_at DESC`
+  );
+  const trips = tripsResult.rows;
+  if (trips.length === 0) return res.json([]);
+
+  const tripIds = trips.map((t) => t.id);
+  const stopsResult = await query(
+    `SELECT ts.id, ts.trip_id, ts.delivered_at, o.status AS order_status, c.name AS customer_name
+     FROM trip_stops ts
+     JOIN orders o ON o.id = ts.order_id
+     JOIN customers c ON c.id = o.customer_id
+     WHERE ts.trip_id = ANY($1::int[])`,
+    [tripIds]
+  );
+
+  const result = trips.map((t) => {
+    const stops = stopsResult.rows.filter((s) => s.trip_id === t.id);
+    return {
+      ...t,
+      delivered_count: stops.filter((s) => s.order_status === "DELIVERED").length,
+      total_count: stops.length,
+      stops,
+    };
   });
+
+  res.json(result);
+});
+
+router.get("/:id", async (req, res) => {
+  const tripResult = await query(
+    `SELECT t.*, u.full_name AS driver_name
+     FROM trips t LEFT JOIN users u ON u.id = t.driver_id
+     WHERE t.id = $1`,
+    [req.params.id]
+  );
+  const trip = tripResult.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+
+  if (req.user.role === "driver" && trip.driver_id !== req.user.id) {
+    return res.status(403).json({ error: "هذه رحلة سائق آخر." });
+  }
+  if (req.user.role === "data_entry") {
+    return res.status(403).json({ error: "ليست لديك صلاحية الوصول لهذا القسم." });
+  }
+
+  res.json(await buildTripDetailResponse(trip, req.user));
 });
 
 router.post("/:id/location", async (req, res) => {
@@ -259,9 +337,12 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "الرجاء اختيار طلب واحد على الأقل." });
   }
 
-  const existingActive = await query(`SELECT id FROM trips WHERE status IN ('PLANNED','STARTED')`);
+  const existingActive = await query(
+    `SELECT id FROM trips WHERE status IN ('PLANNED','STARTED') AND driver_id = $1`,
+    [req.user.id]
+  );
   if (existingActive.rows[0]) {
-    return res.status(400).json({ error: "يوجد رحلة نشطة بالفعل. أنهِ الرحلة الحالية أولًا." });
+    return res.status(400).json({ error: "عندك رحلة نشطة بالفعل. أنهِها أولًا قبل ما تبدأ رحلة جديدة." });
   }
 
   const client = await pool.connect();
@@ -302,6 +383,20 @@ router.post("/", async (req, res) => {
       await client.query(`UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1`, [ordered[i].id]);
     }
 
+    const inventoryResult = await client.query(
+      `SELECT oi.product_id, oi.product_name_snapshot, SUM(oi.quantity)::int AS total_quantity
+       FROM order_items oi
+       WHERE oi.order_id = ANY($1::int[])
+       GROUP BY oi.product_id, oi.product_name_snapshot`,
+      [order_ids]
+    );
+    for (const item of inventoryResult.rows) {
+      await client.query(
+        `INSERT INTO trip_inventory (trip_id, product_id, product_name_snapshot, loaded_quantity) VALUES ($1,$2,$3,$4)`,
+        [trip.id, item.product_id, item.product_name_snapshot, item.total_quantity]
+      );
+    }
+
     await client.query("COMMIT");
 
     await logActivity({
@@ -319,20 +414,6 @@ router.post("/", async (req, res) => {
   } finally {
     client.release();
   }
-});
-
-router.post("/:id/start", async (req, res) => {
-  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
-  const trip = tripResult.rows[0];
-  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
-  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
-
-  const result = await query(
-    `UPDATE trips SET status = 'STARTED', started_at = now() WHERE id = $1 AND status = 'PLANNED' RETURNING *`,
-    [req.params.id]
-  );
-  if (!result.rows[0]) return res.status(404).json({ error: "الرحلة بدأت مسبقًا." });
-  res.json(result.rows[0]);
 });
 
 router.post("/stops/:stopId/deliver", async (req, res) => {
@@ -507,6 +588,25 @@ router.post("/:id/add-order", async (req, res) => {
   await query("UPDATE trip_stops SET sequence_number = sequence_number + 1 WHERE trip_id = $1 AND sequence_number > $2", [trip.id, insertAfterSeq]);
   await query("INSERT INTO trip_stops (trip_id, order_id, sequence_number) VALUES ($1, $2, $3)", [trip.id, newOrder.id, insertAfterSeq + 1]);
   await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [newOrder.id]);
+
+  const newItemsResult = await query(
+    `SELECT product_id, product_name_snapshot, SUM(quantity)::int AS qty FROM order_items WHERE order_id = $1 GROUP BY product_id, product_name_snapshot`,
+    [newOrder.id]
+  );
+  for (const item of newItemsResult.rows) {
+    const existing = await query(
+      `SELECT id, loaded_quantity FROM trip_inventory WHERE trip_id = $1 AND product_name_snapshot = $2`,
+      [trip.id, item.product_name_snapshot]
+    );
+    if (existing.rows[0]) {
+      await query(`UPDATE trip_inventory SET loaded_quantity = loaded_quantity + $1 WHERE id = $2`, [item.qty, existing.rows[0].id]);
+    } else {
+      await query(
+        `INSERT INTO trip_inventory (trip_id, product_id, product_name_snapshot, loaded_quantity) VALUES ($1,$2,$3,$4)`,
+        [trip.id, item.product_id, item.product_name_snapshot, item.qty]
+      );
+    }
+  }
 
   await logActivity({
     userId: req.user.id,
