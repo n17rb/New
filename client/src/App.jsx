@@ -11,6 +11,7 @@ import Orders from "./pages/Orders.jsx";
 import Trip from "./pages/Trip.jsx";
 import Products from "./pages/Products.jsx";
 import DriverBalances from "./pages/DriverBalances.jsx";
+import MyBalance from "./pages/MyBalance.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -71,6 +72,8 @@ export default function App() {
 
   const isPrivileged = user.role === "super_admin" || user.role === "admin";
   const isSuperAdmin = user.role === "super_admin";
+  const isDriver = user.role === "driver";
+  const canSeeProducts = isPrivileged || user.role === "data_entry";
 
   return (
     <div className="app-shell">
@@ -80,15 +83,16 @@ export default function App() {
       </div>
 
       <Routes>
-        <Route path="/" element={<Dashboard user={user} />} />
+        <Route path="/" element={isDriver ? <Navigate to="/customers" replace /> : <Dashboard user={user} />} />
         <Route path="/customers" element={<Customers user={user} />} />
         <Route path="/customers/:id" element={<CustomerDetail user={user} />} />
-        {user.role !== "data_entry" && <Route path="/orders" element={<Orders user={user} />} />}
-        {user.role !== "data_entry" && <Route path="/trip" element={<Trip user={user} />} />}
-        {isPrivileged && <Route path="/products" element={<Products />} />}
+        <Route path="/orders" element={<Orders user={user} />} />
+        <Route path="/trip" element={<Trip user={user} />} />
+        {canSeeProducts && <Route path="/products" element={<Products user={user} />} />}
         {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
+        {isDriver && <Route path="/my-balance" element={<MyBalance user={user} />} />}
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to={isDriver ? "/customers" : "/"} replace />} />
       </Routes>
 
       <BottomNav role={user.role} />
