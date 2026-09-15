@@ -207,8 +207,8 @@ router.post("/", async (req, res) => {
     const { ordered, totalDistance } = await buildRoute(startLat, startLon, ordersResult.rows, mode);
 
     const tripResult = await client.query(
-      `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, created_by)
-       VALUES ('PLANNED', $1, $2, $3, $4, $5) RETURNING *`,
+      `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, created_by, started_at)
+       VALUES ('STARTED', $1, $2, $3, $4, $5, now()) RETURNING *`,
       [req.user.id, startLat, startLon, totalDistance, req.user.id]
     );
     const trip = tripResult.rows[0];
