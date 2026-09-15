@@ -5,15 +5,12 @@ import { requireAuth } from "../middleware/auth.js";
 const router = Router();
 router.use(requireAuth);
 
-router.use((req, res, next) => {
-  if (req.user.role === "data_entry") {
-    return res.status(403).json({ error: "ليست لديك صلاحية الوصول لهذا القسم." });
-  }
-  next();
-});
-
 function isPrivileged(user) {
   return user.role === "super_admin" || user.role === "admin";
+}
+
+function canOperateTrip(user, trip) {
+  return user.role === "super_admin" || (user.role === "driver" && trip.driver_id === user.id);
 }
 
 function distanceKm(lat1, lon1, lat2, lon2) {
@@ -26,38 +23,80 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function buildRoute(startLat, startLon, stops, routeMode) {
+async function getRoadDistanceMatrix(points) {
+  if (points.length > 25) return null;
+  try {
+    const coords = points.map((p) => `${p.lon},${p.lat}`).join(";");
+    const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.code !== "Ok" || !data.distances) return null;
+    return data.distances;
+  } catch {
+    return null;
+  }
+}
+
+async function buildRoute(startLat, startLon, stops, routeMode) {
   const withLocation = stops.filter((s) => s.latitude != null && s.longitude != null);
   const withoutLocation = stops.filter((s) => s.latitude == null || s.longitude == null);
 
-  const remaining = [...withLocation];
-  const ordered = [];
-  let current = { lat: startLat, lon: startLon };
-  let totalDistance = 0;
+  if (withLocation.length === 0) {
+    return { ordered: [...stops], totalDistance: 0 };
+  }
 
-  while (remaining.length) {
-    let bestIdx = 0;
+  const ordered = [];
+  let remaining = [...withLocation];
+  let anchorLat = startLat;
+  let anchorLon = startLon;
+
+  if (anchorLat == null || anchorLon == null) {
+    const first = remaining.shift();
+    ordered.push(first);
+    anchorLat = first.latitude;
+    anchorLon = first.longitude;
+  }
+
+  const allPoints = [{ lat: anchorLat, lon: anchorLon }, ...remaining.map((s) => ({ lat: s.latitude, lon: s.longitude }))];
+  const roadMatrix = await getRoadDistanceMatrix(allPoints);
+
+  function distanceBetween(i, j) {
+    if (roadMatrix) return roadMatrix[i][j];
+    return distanceKm(allPoints[i].lat, allPoints[i].lon, allPoints[j].lat, allPoints[j].lon) * 1000;
+  }
+
+  const remainingIdx = remaining.map((_, i) => i + 1);
+  let currentIdx = 0;
+  let totalDistanceMeters = 0;
+
+  while (remainingIdx.length) {
+    let bestPos = 0;
     let bestScore = Infinity;
     let bestRealDistance = 0;
 
-    remaining.forEach((s, idx) => {
-      const realDistance = distanceKm(current.lat, current.lon, s.latitude, s.longitude);
-      const isUrgentBoost = routeMode === "urgent_smart" && s.priority === "urgent";
+    remainingIdx.forEach((idx, pos) => {
+      const stop = remaining[idx - 1];
+      const realDistance = distanceBetween(currentIdx, idx);
+      const isUrgentBoost = routeMode === "urgent_smart" && stop.priority === "urgent";
       const score = isUrgentBoost ? realDistance * 0.7 : realDistance;
       if (score < bestScore) {
         bestScore = score;
-        bestIdx = idx;
+        bestPos = pos;
         bestRealDistance = realDistance;
       }
     });
 
-    const [next] = remaining.splice(bestIdx, 1);
-    ordered.push(next);
-    totalDistance += bestRealDistance;
-    current = { lat: next.latitude, lon: next.longitude };
+    const chosenIdx = remainingIdx.splice(bestPos, 1)[0];
+    ordered.push(remaining[chosenIdx - 1]);
+    totalDistanceMeters += bestRealDistance;
+    currentIdx = chosenIdx;
   }
 
-  return { ordered: [...ordered, ...withoutLocation], totalDistance };
+  return { ordered: [...ordered, ...withoutLocation], totalDistance: totalDistanceMeters / 1000 };
 }
 
 async function getAverageStopMinutes() {
@@ -100,7 +139,12 @@ router.get("/active", async (req, res) => {
   const avgStopMinutes = await getAverageStopMinutes();
   const estimatedMinutesRemaining = Math.round(remainingCount * avgStopMinutes);
 
-  res.json({ ...trip, stops: stopsResult.rows, estimated_minutes_remaining: estimatedMinutesRemaining });
+  res.json({
+    ...trip,
+    stops: stopsResult.rows,
+    estimated_minutes_remaining: estimatedMinutesRemaining,
+    can_operate: canOperateTrip(req.user, trip),
+  });
 });
 
 router.post("/:id/location", async (req, res) => {
@@ -108,17 +152,27 @@ router.post("/:id/location", async (req, res) => {
   if (latitude == null || longitude == null) {
     return res.status(400).json({ error: "الإحداثيات مطلوبة." });
   }
-  const result = await query(
-    `UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now()
-     WHERE id = $3 RETURNING id`,
+
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
+  const trip = tripResult.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!canOperateTrip(req.user, trip)) {
+    return res.status(403).json({ error: "غير مصرح." });
+  }
+
+  await query(
+    `UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now() WHERE id = $3`,
     [latitude, longitude, req.params.id]
   );
-  if (!result.rows[0]) return res.status(404).json({ error: "الرحلة غير موجودة." });
   res.json({ ok: true });
 });
 
 router.post("/", async (req, res) => {
-  const { order_ids, start_latitude, start_longitude, route_mode, driver_id } = req.body;
+  if (req.user.role !== "driver") {
+    return res.status(403).json({ error: "إنشاء الرحلة متاح للسائق فقط." });
+  }
+
+  const { order_ids, start_latitude, start_longitude, route_mode } = req.body;
 
   if (!Array.isArray(order_ids) || order_ids.length === 0) {
     return res.status(400).json({ error: "الرجاء اختيار طلب واحد على الأقل." });
@@ -127,17 +181,6 @@ router.post("/", async (req, res) => {
   const existingActive = await query(`SELECT id FROM trips WHERE status IN ('PLANNED','STARTED')`);
   if (existingActive.rows[0]) {
     return res.status(400).json({ error: "يوجد رحلة نشطة بالفعل. أنهِ الرحلة الحالية أولًا." });
-  }
-
-  let finalDriverId = null;
-  if (req.user.role === "driver") {
-    finalDriverId = req.user.id;
-  } else if (driver_id) {
-    const driverCheck = await query(`SELECT id FROM users WHERE id = $1 AND role = 'driver' AND status = 'active'`, [driver_id]);
-    if (!driverCheck.rows[0]) return res.status(400).json({ error: "السائق المحدد غير صالح." });
-    finalDriverId = driver_id;
-  } else {
-    return res.status(400).json({ error: "الرجاء اختيار السائق المسؤول عن هذه الرحلة." });
   }
 
   const client = await pool.connect();
@@ -161,20 +204,12 @@ router.post("/", async (req, res) => {
     const startLat = start_latitude ?? null;
     const startLon = start_longitude ?? null;
 
-    let ordered, totalDistance;
-    if (startLat != null && startLon != null) {
-      const result = buildRoute(startLat, startLon, ordersResult.rows, mode);
-      ordered = result.ordered;
-      totalDistance = result.totalDistance;
-    } else {
-      ordered = [...ordersResult.rows].sort((a, b) => (a.priority === "urgent" ? -1 : 1));
-      totalDistance = null;
-    }
+    const { ordered, totalDistance } = await buildRoute(startLat, startLon, ordersResult.rows, mode);
 
     const tripResult = await client.query(
       `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, created_by)
        VALUES ('PLANNED', $1, $2, $3, $4, $5) RETURNING *`,
-      [finalDriverId, startLat, startLon, totalDistance, req.user.id]
+      [req.user.id, startLat, startLon, totalDistance, req.user.id]
     );
     const trip = tripResult.rows[0];
 
@@ -193,7 +228,7 @@ router.post("/", async (req, res) => {
       action: "CREATE_TRIP",
       recordType: "trip",
       recordId: trip.id,
-      newValue: { stops: ordered.length, total_distance_km: totalDistance, driver_id: finalDriverId },
+      newValue: { stops: ordered.length, total_distance_km: totalDistance },
     });
 
     res.status(201).json({ ...trip, stopsCount: ordered.length });
@@ -206,11 +241,16 @@ router.post("/", async (req, res) => {
 });
 
 router.post("/:id/start", async (req, res) => {
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
+  const trip = tripResult.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
+
   const result = await query(
     `UPDATE trips SET status = 'STARTED', started_at = now() WHERE id = $1 AND status = 'PLANNED' RETURNING *`,
     [req.params.id]
   );
-  if (!result.rows[0]) return res.status(404).json({ error: "الرحلة غير موجودة أو بدأت مسبقًا." });
+  if (!result.rows[0]) return res.status(404).json({ error: "الرحلة بدأت مسبقًا." });
   res.json(result.rows[0]);
 });
 
@@ -218,6 +258,9 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
+  if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
 
   await query("UPDATE trip_stops SET delivered_at = now() WHERE id = $1", [stop.id]);
   await query("UPDATE orders SET status = 'DELIVERED', updated_at = now() WHERE id = $1", [stop.order_id]);
@@ -228,11 +271,14 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
 });
 
 router.post("/stops/:stopId/fail", async (req, res) => {
-  const { reason } = req.body;
   const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
 
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
+  if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
+
+  const { reason } = req.body;
   await query(
     "UPDATE orders SET status = 'FAILED', failed_reason = $1, updated_at = now() WHERE id = $2",
     [reason || null, stop.order_id]
@@ -250,11 +296,14 @@ router.post("/stops/:stopId/fail", async (req, res) => {
 });
 
 router.post("/stops/:stopId/postpone", async (req, res) => {
-  const { note, new_time } = req.body;
   const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
 
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
+  if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
+
+  const { note, new_time } = req.body;
   const maxSeqResult = await query("SELECT COALESCE(MAX(sequence_number), 0) AS max_seq FROM trip_stops WHERE trip_id = $1", [stop.trip_id]);
   const newSeq = maxSeqResult.rows[0].max_seq + 1;
 
@@ -309,6 +358,7 @@ router.post("/:id/complete", async (req, res) => {
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
   const trip = tripResult.rows[0];
   if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
 
   const stopsResult = await query(
     `SELECT ts.*, o.status AS order_status, o.final_total
@@ -337,7 +387,10 @@ router.post("/:id/complete", async (req, res) => {
     await query(`UPDATE orders SET status = 'NEW', updated_at = now() WHERE id = ANY($1::int[])`, [remaining.map((r) => r.order_id)]);
   }
 
-  await query(`UPDATE trips SET status = 'COMPLETED', completed_at = now() WHERE id = $1`, [trip.id]);
+  const completedResult = await query(
+    `UPDATE trips SET status = 'COMPLETED', completed_at = now() WHERE id = $1 RETURNING started_at, completed_at`,
+    [trip.id]
+  );
 
   const totalValue = delivered.reduce((sum, s) => sum + Number(s.final_total), 0);
 
@@ -351,6 +404,8 @@ router.post("/:id/complete", async (req, res) => {
 
   res.json({
     trip_id: trip.id,
+    started_at: completedResult.rows[0].started_at,
+    completed_at: completedResult.rows[0].completed_at,
     total_stops: stops.length,
     delivered: delivered.length,
     failed: failed.length,
