@@ -59,6 +59,7 @@ export const api = {
   getUsers: () => request("/users"),
   createUser: (body) => request("/users", { method: "POST", body }),
   updateUser: (id, body) => request(`/users/${id}`, { method: "PUT", body }),
+  deleteUser: (id) => request(`/users/${id}`, { method: "DELETE" }),
 
   getOrders: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
@@ -71,7 +72,7 @@ export const api = {
   applyDiscount: (id, body) => request(`/orders/${id}/discount`, { method: "PUT", body }),
   cancelOrder: (id, reason) => request(`/orders/${id}/cancel`, { method: "POST", body: { reason } }),
   failDelivery: (id, reason) => request(`/orders/${id}/fail`, { method: "POST", body: { reason } }),
-  postponeOrder: (id, postponed_to) => request(`/orders/${id}/postpone`, { method: "POST", body: { postponed_to } }),
+  postponeOrder: (id, postponed_to, reason) => request(`/orders/${id}/postpone`, { method: "POST", body: { postponed_to, reason } }),
   reactivateOrder: (id) => request(`/orders/${id}/reactivate`, { method: "POST" }),
 
   getMyTrip: () => request("/trips/mine"),
@@ -94,4 +95,9 @@ export const api = {
   resolveMapsLink: (url) => request("/geocode/resolve-link", { method: "POST", body: { url } }),
 
   getReportsSummary: (period) => request(`/reports/summary?period=${period}`),
+
+  getCashCurrent: () => request("/cash/current"),
+  saveCashEntry: (body) => request("/cash/entries", { method: "POST", body }),
+  resetCashPeriod: () => request("/cash/reset", { method: "POST" }),
+  getCashHistory: () => request("/cash/history"),
 };
