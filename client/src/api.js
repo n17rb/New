@@ -90,4 +90,6 @@ export const api = {
   settleDriver: (id, body) => request(`/drivers/${id}/settle`, { method: "POST", body }),
 
   resolveMapsLink: (url) => request("/geocode/resolve-link", { method: "POST", body: { url } }),
+
+  getReportsSummary: (period) => request(`/reports/summary?period=${period}`),
 };
