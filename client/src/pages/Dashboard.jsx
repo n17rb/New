@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { FiSearch, FiBox, FiUsers } from "react-icons/fi";
+import { FiSearch, FiBox, FiUsers, FiBarChart2 } from "react-icons/fi";
 
 const ROLE_LABELS = {
   super_admin: "مدير",
@@ -49,8 +49,14 @@ export default function Dashboard({ user }) {
       )}
 
       {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} onClick={() => navigate("/driver-balances")}>
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => navigate("/driver-balances")}>
           <FiUsers /> أرصدة السائقين
+        </button>
+      )}
+
+      {isPrivileged && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} onClick={() => navigate("/reports")}>
+          <FiBarChart2 /> التقارير
         </button>
       )}
     </div>
