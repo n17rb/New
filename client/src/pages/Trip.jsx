@@ -107,15 +107,25 @@ function CreateTripForm({ onCreated }) {
   const [useLocation, setUseLocation] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
-  useEffect(() => {
-    api.getOrders({ status: "NEW", limit: 200 }).then((list) => {
+  async function loadOrders() {
+    setFetching(true);
+    setError("");
+    try {
+      const list = await api.getOrders({ status: "NEW", limit: 200 });
       setOrders(list);
       const all = {};
       list.forEach((o) => { all[o.id] = true; });
       setSelected(all);
-    }).catch((err) => setError(err.message));
-  }, []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  useEffect(() => { loadOrders(); }, []);
 
   function toggle(id) {
     setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -151,14 +161,26 @@ function CreateTripForm({ onCreated }) {
     }
   }
 
+  if (fetching) {
+    return <p className="text-secondary">جاري تحميل الطلبات الجديدة...</p>;
+  }
+
   if (orders.length === 0) {
-    return <p className="text-secondary">لا يوجد طلبات جديدة جاهزة للتوزيع حاليًا.</p>;
+    return (
+      <div>
+        <p className="text-secondary" style={{ marginBottom: 10 }}>لا يوجد طلبات جديدة جاهزة للتوزيع حاليًا.</p>
+        <button className="btn-secondary" onClick={loadOrders}>🔄 تحديث</button>
+      </div>
+    );
   }
 
   return (
     <div className="card">
       {error && <div className="error-box">{error}</div>}
-      <h2 className="title-md">إنشاء رحلة جديدة</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <h2 className="title-md" style={{ margin: 0 }}>إنشاء رحلة جديدة</h2>
+        <button className="btn-secondary" style={{ width: "auto", padding: "8px 12px" }} onClick={loadOrders}>🔄 تحديث</button>
+      </div>
 
       <div className="field">
         <label>طريقة الترتيب</label>
