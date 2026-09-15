@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
-import LiveMap from "../components/LiveMap.jsx";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
 
 function formatMinutes(mins) {
@@ -13,8 +12,8 @@ function formatMinutes(mins) {
   return `~${h} ساعة${m > 0 ? ` و${m} دقيقة` : ""}`;
 }
 
-function formatClockTime(date) {
-  return date.toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "2-digit", minute: "2-digit" });
+function formatClockTime(iso) {
+  return new Date(iso).toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function Trip({ user }) {
@@ -24,7 +23,9 @@ export default function Trip({ user }) {
   const [banner, setBanner] = useState("");
   const prevDeliveredRef = useRef(0);
 
-  const isPrivileged = user.role === "super_admin" || user.role === "admin";
+  const isDriver = user.role === "driver";
+  const isSuperAdmin = user.role === "super_admin";
+  const isManagerViewOnly = user.role === "admin";
 
   async function load(silent = false) {
     if (!silent) setError("");
@@ -51,7 +52,7 @@ export default function Trip({ user }) {
   }, []);
 
   useEffect(() => {
-    if (!trip || trip.status !== "STARTED" || !navigator.geolocation) return;
+    if (!trip || trip.status !== "STARTED" || !trip.can_operate || !navigator.geolocation) return;
     const sendLocation = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => api.updateTripLocation(trip.id, pos.coords.latitude, pos.coords.longitude).catch(() => {}),
@@ -62,7 +63,7 @@ export default function Trip({ user }) {
     sendLocation();
     const interval = setInterval(sendLocation, 20000);
     return () => clearInterval(interval);
-  }, [trip?.id, trip?.status]);
+  }, [trip?.id, trip?.status, trip?.can_operate]);
 
   if (summary) {
     return (
@@ -82,21 +83,26 @@ export default function Trip({ user }) {
       {banner && <div className="success-box">{banner}</div>}
       {error && <div className="error-box">{error}</div>}
 
-      {!trip ? (
-        <CreateTripForm user={user} onCreated={load} />
-      ) : (
-        <ActiveTripView trip={trip} user={user} isPrivileged={isPrivileged} onChanged={load} onCompleted={(s) => setSummary(s)} />
+      {!trip && isDriver && <CreateTripForm onCreated={load} />}
+      {!trip && !isDriver && <p className="text-secondary">لا توجد رحلة نشطة حاليًا.</p>}
+
+      {trip && (
+        <ActiveTripView
+          trip={trip}
+          isSuperAdmin={isSuperAdmin}
+          isManagerViewOnly={isManagerViewOnly}
+          canOperate={trip.can_operate}
+          onChanged={load}
+          onCompleted={(s) => setSummary(s)}
+        />
       )}
     </div>
   );
 }
 
-function CreateTripForm({ user, onCreated }) {
-  const isDriver = user.role === "driver";
+function CreateTripForm({ onCreated }) {
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState({});
-  const [drivers, setDrivers] = useState([]);
-  const [driverId, setDriverId] = useState("");
   const [routeMode, setRouteMode] = useState("urgent_smart");
   const [useLocation, setUseLocation] = useState(true);
   const [error, setError] = useState("");
@@ -109,10 +115,6 @@ function CreateTripForm({ user, onCreated }) {
       list.forEach((o) => { all[o.id] = true; });
       setSelected(all);
     }).catch((err) => setError(err.message));
-
-    if (!isDriver) {
-      api.getDriversList().then(setDrivers).catch(() => {});
-    }
   }, []);
 
   function toggle(id) {
@@ -124,10 +126,6 @@ function CreateTripForm({ user, onCreated }) {
     const orderIds = Object.entries(selected).filter(([, v]) => v).map(([id]) => Number(id));
     if (orderIds.length === 0) {
       setError("اختر طلب واحد على الأقل.");
-      return;
-    }
-    if (!isDriver && !driverId) {
-      setError("اختر السائق المسؤول عن هذه الرحلة.");
       return;
     }
 
@@ -144,13 +142,7 @@ function CreateTripForm({ user, onCreated }) {
         }
       }
 
-      await api.createTrip({
-        order_ids: orderIds,
-        start_latitude,
-        start_longitude,
-        route_mode: routeMode,
-        driver_id: isDriver ? undefined : Number(driverId),
-      });
+      await api.createTrip({ order_ids: orderIds, start_latitude, start_longitude, route_mode: routeMode });
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -167,18 +159,6 @@ function CreateTripForm({ user, onCreated }) {
     <div className="card">
       {error && <div className="error-box">{error}</div>}
       <h2 className="title-md">إنشاء رحلة جديدة</h2>
-
-      {!isDriver && (
-        <div className="field">
-          <label>السائق المسؤول عن الرحلة</label>
-          <select value={driverId} onChange={(e) => setDriverId(e.target.value)}>
-            <option value="">اختر السائق...</option>
-            {drivers.map((d) => (
-              <option key={d.id} value={d.id}>{d.full_name}</option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <div className="field">
         <label>طريقة الترتيب</label>
@@ -225,7 +205,7 @@ function CreateTripForm({ user, onCreated }) {
 
       <label className="icon-row" style={{ marginBottom: 16, fontWeight: 600 }}>
         <input type="checkbox" checked={useLocation} onChange={(e) => setUseLocation(e.target.checked)} />
-        ابدأ الترتيب من موقعي الحالي (يعطي أدق نتيجة)
+        ابدأ الترتيب من موقعي الحالي (يحسّن أول نقطة، مو ضروري)
       </label>
 
       <button className="btn-primary" disabled={loading} onClick={handleCreate}>
@@ -235,15 +215,18 @@ function CreateTripForm({ user, onCreated }) {
   );
 }
 
-function ActiveTripView({ trip, user, isPrivileged, onChanged, onCompleted }) {
+function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onChanged, onCompleted }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const currentStop = trip.stops.find((s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED");
   const deliveredCount = trip.stops.filter((s) => s.order_status === "DELIVERED").length;
   const totalCount = trip.stops.length;
+  const remainingCount = totalCount - deliveredCount - trip.stops.filter((s) => s.order_status === "FAILED").length;
 
-  const canCancel = isPrivileged || user.can_cancel_order;
+  const remainingKm = trip.total_distance_km && totalCount > 0
+    ? (Number(trip.total_distance_km) * (remainingCount / totalCount)).toFixed(1)
+    : null;
 
   let estimatedFinishLabel = null;
   if (trip.status === "STARTED" && trip.estimated_minutes_remaining != null) {
@@ -265,7 +248,7 @@ function ActiveTripView({ trip, user, isPrivileged, onChanged, onCompleted }) {
   }
 
   async function handleComplete() {
-    const remaining = totalCount - deliveredCount - trip.stops.filter((s) => s.order_status === "FAILED").length;
+    const remaining = remainingCount;
     if (remaining > 0 && !confirm(`يوجد ${remaining} طلب لم يُسلَّم بعد. إنهاء الرحلة رح يرجعهم لقائمة الطلبات الجديدة. متابعة؟`)) {
       return;
     }
@@ -293,48 +276,50 @@ function ActiveTripView({ trip, user, isPrivileged, onChanged, onCompleted }) {
         <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
           {deliveredCount} / {totalCount} تم التسليم
         </div>
-        {trip.total_distance_km > 0 && (
-          <div className="text-secondary">المسافة التقريبية: {Number(trip.total_distance_km).toFixed(1)} كم</div>
+        {trip.started_at && (
+          <div className="text-secondary">🕐 وقت البدء: {formatClockTime(trip.started_at)}</div>
+        )}
+        {remainingKm && (
+          <div className="text-secondary">المسافة المتبقية التقريبية: {remainingKm} كم</div>
         )}
         {estimatedFinishLabel && (
           <div className="text-secondary" style={{ marginTop: 4 }}>⏱️ الوقت المتوقع لإنهاء الرحلة: {estimatedFinishLabel}</div>
         )}
+        {isManagerViewOnly && (
+          <div className="text-secondary" style={{ marginTop: 6, fontStyle: "italic" }}>وضع العرض فقط — التحكم بالرحلة للسائق</div>
+        )}
       </div>
-
-      {isPrivileged && trip.current_latitude && trip.current_longitude && (
-        <>
-          <p className="text-secondary" style={{ marginBottom: 6 }}>📍 آخر موقع معروف للسائق (حي، يتحدث تلقائيًا)</p>
-          <LiveMap latitude={trip.current_latitude} longitude={trip.current_longitude} />
-        </>
-      )}
 
       <RoutePreviewMap
         stops={trip.stops}
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
+        showDriverMarker={isSuperAdmin || isManagerViewOnly}
       />
 
-      {trip.status === "PLANNED" && (
+      {canOperate && trip.status === "PLANNED" && (
         <button className="btn-primary" style={{ marginBottom: 12 }} disabled={busy} onClick={() => withBusy(() => api.startTrip(trip.id))}>
           ▶️ بدء الرحلة
         </button>
       )}
 
-      {trip.status === "STARTED" && currentStop && (
-        <StopCard stop={currentStop} busy={busy} withBusy={withBusy} canCancel={canCancel} />
+      {canOperate && trip.status === "STARTED" && currentStop && (
+        <StopCard stop={currentStop} busy={busy} withBusy={withBusy} />
       )}
 
-      {trip.status === "STARTED" && !currentStop && (
+      {canOperate && trip.status === "STARTED" && !currentStop && (
         <div className="success-box">كل التوقفات انتهت — جاهز لإنهاء الرحلة.</div>
       )}
 
-      <button className="btn-danger-text" style={{ marginTop: 16 }} disabled={busy} onClick={handleComplete}>
-        إنهاء الرحلة
-      </button>
+      {canOperate && (
+        <button className="btn-danger-text" style={{ marginTop: 16 }} disabled={busy} onClick={handleComplete}>
+          إنهاء الرحلة
+        </button>
+      )}
     </div>
   );
 }
 
-function StopCard({ stop, busy, withBusy, canCancel }) {
+function StopCard({ stop, busy, withBusy }) {
   const [showFailMenu, setShowFailMenu] = useState(false);
   const [showPostponeForm, setShowPostponeForm] = useState(false);
   const [postponeTime, setPostponeTime] = useState("");
@@ -350,11 +335,6 @@ function StopCard({ stop, busy, withBusy, canCancel }) {
       setPostponeTime("");
       setPostponeNote("");
     });
-  }
-
-  function handleCancelClick() {
-    const reason = prompt("سبب الإلغاء (اختياري)؟") || "";
-    withBusy(() => api.cancelStop(stop.id, reason));
   }
 
   return (
@@ -418,11 +398,6 @@ function StopCard({ stop, busy, withBusy, canCancel }) {
           <button className="btn-secondary" disabled={busy} onClick={() => setShowPostponeForm(true)}>
             ⏰ تأجيل (يرجعله بنفس الرحلة لاحقًا)
           </button>
-          {canCancel && (
-            <button className="btn-danger-text" disabled={busy} onClick={handleCancelClick}>
-              ❌ إلغاء الطلب نهائيًا
-            </button>
-          )}
           <button className="btn-secondary" onClick={() => setShowFailMenu(false)}>رجوع</button>
         </div>
       )}
@@ -451,6 +426,12 @@ function TripSummary({ summary, onDone }) {
   return (
     <div className="card">
       <h2 className="title-md">ملخص الرحلة</h2>
+
+      {summary.started_at && summary.completed_at && (
+        <p className="text-secondary">
+          🕐 من {formatClockTime(summary.started_at)} إلى {formatClockTime(summary.completed_at)}
+        </p>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
         <span>إجمالي التوقفات</span>
