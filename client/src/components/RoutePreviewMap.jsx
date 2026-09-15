@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -11,7 +11,7 @@ function numberIcon(label, color) {
   });
 }
 
-export default function RoutePreviewMap({ stops, driverLocation, showDriverMarker }) {
+export default function RoutePreviewMap({ stops, driverLocation, showDriverMarker, routeGeometry }) {
   const visibleStops = stops
     .map((s, i) => ({ ...s, originalIndex: i + 1 }))
     .filter((s) => !s.delivered_at && s.latitude != null && s.longitude != null);
@@ -21,6 +21,10 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
   const center = visibleStops[0]
     ? [visibleStops[0].latitude, visibleStops[0].longitude]
     : [driverLocation.lat, driverLocation.lng];
+
+  const polylinePoints = Array.isArray(routeGeometry)
+    ? routeGeometry.map(([lon, lat]) => [lat, lon])
+    : null;
 
   return (
     <div style={{ height: 280, borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
@@ -32,6 +36,11 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
         scrollWheelZoom={false}
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
+
+        {polylinePoints && (
+          <Polyline positions={polylinePoints} pathOptions={{ color: "#0094FF", weight: 4, opacity: 0.7 }} />
+        )}
+
         {visibleStops.map((s) => {
           const color = s.order_status === "FAILED" ? "#C1443C" : s.order_status === "CANCELLED" ? "#6B7B80" : "#0094FF";
           return (
