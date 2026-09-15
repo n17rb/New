@@ -18,12 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ترقية آمنة لقاعدة بيانات موجودة مسبقًا: نضيف الدور الجديد 'data_entry'
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin', 'admin', 'driver', 'data_entry'));
 
--- ترقية أول حساب تم إنشاؤه إلى "مدير" (super_admin) تلقائيًا إذا لا يوجد أي مدير بالنظام بعد.
--- آمن للتكرار: بعد أول مرة يصبح هناك مدير، هذا السطر لا يفعل شيئًا بعدها.
 UPDATE users SET role = 'super_admin'
 WHERE id = (SELECT MIN(id) FROM users)
   AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'super_admin');
@@ -51,7 +48,6 @@ CREATE TABLE IF NOT EXISTS customers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ترقية آمنة: توسيع طول الرقم التسلسلي لجدول موجود مسبقًا (كان محدود بـ10 خانات)
 ALTER TABLE customers ALTER COLUMN sequential_number TYPE VARCHAR(20);
 
 CREATE SEQUENCE IF NOT EXISTS customer_seq START 1;
@@ -108,17 +104,11 @@ CREATE INDEX IF NOT EXISTS idx_customers_seq ON customers(sequential_number);
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
 CREATE INDEX IF NOT EXISTS idx_activity_log_record ON activity_log(record_type, record_id);
 
--- ============================================================
--- تنظيف أي تكرار سابق قبل إضافة القيد الفريد (آمن، لا يمس منتج داخل طلب)
--- ============================================================
 DELETE FROM products a USING products b
 WHERE a.id > b.id AND a.name = b.name;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_unique ON products(name);
 
--- ============================================================
--- Seed Data: المنتجات الابتدائية (قابلة للتعديل لاحقًا من لوحة الإدارة)
--- ============================================================
 INSERT INTO products (name, type, unit_price, sort_order) VALUES
   ('قارورة 19 لتر (تعبئة)', 'standard', 1.00, 1),
   ('قارورة 10 لتر (تعبئة)', 'standard', 0.75, 2),
@@ -235,3 +225,16 @@ CREATE TABLE IF NOT EXISTS driver_ledger (
 );
 
 CREATE INDEX IF NOT EXISTS idx_driver_ledger_driver ON driver_ledger(driver_id, created_at DESC);
+
+-- ============================================================
+-- Phase 5: جرد القوارير على السيارة
+-- ============================================================
+CREATE TABLE IF NOT EXISTS trip_inventory (
+  id SERIAL PRIMARY KEY,
+  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id),
+  product_name_snapshot VARCHAR(150) NOT NULL,
+  loaded_quantity INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_trip_inventory_trip ON trip_inventory(trip_id);
