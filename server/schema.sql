@@ -3,7 +3,6 @@
 -- Phase 1: Foundation (Users, Customers, Products, Regions, Log)
 -- ============================================================
 
--- ---------- المستخدمون ----------
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(100) UNIQUE NOT NULL,
@@ -25,7 +24,6 @@ UPDATE users SET role = 'super_admin'
 WHERE id = (SELECT MIN(id) FROM users)
   AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'super_admin');
 
--- ---------- المناطق (قابلة للإضافة من الإدارة) ----------
 CREATE TABLE IF NOT EXISTS regions (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) UNIQUE NOT NULL,
@@ -33,7 +31,6 @@ CREATE TABLE IF NOT EXISTS regions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------- العملاء ----------
 CREATE TABLE IF NOT EXISTS customers (
   id SERIAL PRIMARY KEY,
   sequential_number VARCHAR(20) UNIQUE NOT NULL,
@@ -52,7 +49,6 @@ ALTER TABLE customers ALTER COLUMN sequential_number TYPE VARCHAR(20);
 
 CREATE SEQUENCE IF NOT EXISTS customer_seq START 1;
 
--- ---------- موقع العميل ----------
 CREATE TABLE IF NOT EXISTS customer_locations (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -71,7 +67,6 @@ CREATE TABLE IF NOT EXISTS customer_locations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------- المنتجات ----------
 CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
@@ -84,7 +79,6 @@ CREATE TABLE IF NOT EXISTS products (
   updated_by INTEGER REFERENCES users(id)
 );
 
--- ---------- سجل النشاطات ----------
 CREATE TABLE IF NOT EXISTS activity_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id),
@@ -96,7 +90,6 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------- فهارس للأداء ----------
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_normalized);
 CREATE INDEX IF NOT EXISTS idx_customers_phone_display_pattern ON customers(phone_display text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
@@ -238,3 +231,31 @@ CREATE TABLE IF NOT EXISTS trip_inventory (
 );
 
 CREATE INDEX IF NOT EXISTS idx_trip_inventory_trip ON trip_inventory(trip_id);
+
+-- ============================================================
+-- Phase 6: الحساب اليومي (مبيعات/صرفيات/كاش)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cash_periods (
+  id SERIAL PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at TIMESTAMPTZ,
+  closed_by INTEGER REFERENCES users(id),
+  final_sales NUMERIC(10,2),
+  final_expenses NUMERIC(10,2),
+  final_cash NUMERIC(10,2)
+);
+
+CREATE TABLE IF NOT EXISTS cash_entries (
+  id SERIAL PRIMARY KEY,
+  period_id INTEGER NOT NULL REFERENCES cash_periods(id),
+  entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  sales_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  expense_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_entries_period_date ON cash_entries(period_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_cash_periods_open ON cash_periods(ended_at);
