@@ -209,7 +209,7 @@ function CreateTripForm({ onCreated }) {
       </label>
 
       <button className="btn-primary" disabled={loading} onClick={handleCreate}>
-        {loading ? "جاري إنشاء الرحلة..." : "🚚 إنشاء الرحلة وترتيبها"}
+        {loading ? "جاري البدء..." : "🚀 بدء الرحلة"}
       </button>
     </div>
   );
@@ -270,7 +270,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
 
       <div className="card">
         <div className="text-secondary">
-          {trip.status === "PLANNED" ? "رحلة جاهزة للبدء" : "رحلة جارية"}
+          رحلة جارية
           {trip.driver_name && ` · السائق: ${trip.driver_name}`}
         </div>
         <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
@@ -295,12 +295,6 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
         showDriverMarker={isSuperAdmin || isManagerViewOnly}
       />
-
-      {canOperate && trip.status === "PLANNED" && (
-        <button className="btn-primary" style={{ marginBottom: 12 }} disabled={busy} onClick={() => withBusy(() => api.startTrip(trip.id))}>
-          ▶️ بدء الرحلة
-        </button>
-      )}
 
       {canOperate && trip.status === "STARTED" && currentStop && (
         <StopCard stop={currentStop} busy={busy} withBusy={withBusy} />
