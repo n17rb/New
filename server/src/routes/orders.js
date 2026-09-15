@@ -312,12 +312,14 @@ router.post("/:id/fail", async (req, res) => {
 });
 
 router.post("/:id/postpone", async (req, res) => {
-  const { postponed_to } = req.body;
+  const { postponed_to, reason } = req.body;
   if (!postponed_to) return res.status(400).json({ error: "الرجاء تحديد الوقت الجديد." });
 
   const result = await query(
-    "UPDATE orders SET status = 'POSTPONED', postponed_to = $1, updated_at = now() WHERE id = $2 RETURNING *",
-    [postponed_to, req.params.id]
+    `UPDATE orders SET status = 'POSTPONED', postponed_to = $1,
+       notes = COALESCE(notes || ' | ', '') || $2, updated_at = now()
+     WHERE id = $3 RETURNING *`,
+    [postponed_to, reason ? `سبب التأجيل: ${reason}` : "تم التأجيل", req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: "الطلب غير موجود." });
 
@@ -326,7 +328,7 @@ router.post("/:id/postpone", async (req, res) => {
     action: "POSTPONE_ORDER",
     recordType: "order",
     recordId: req.params.id,
-    newValue: { postponed_to },
+    newValue: { postponed_to, reason },
   });
 
   res.json(result.rows[0]);
