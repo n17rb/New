@@ -39,6 +39,7 @@ export default function CustomerDetail({ user }) {
       <div className="page">
         <OrderForm
           customer={customer}
+          user={user}
           onClose={() => setShowOrderForm(false)}
           onCreated={() => setShowOrderForm(false)}
         />
@@ -63,6 +64,7 @@ export default function CustomerDetail({ user }) {
       )}
 
       <LocationSection customer={customer} canManage={canManage} onChanged={load} />
+      <OrderHistorySection customerId={customer.id} />
     </div>
   );
 }
@@ -292,7 +294,17 @@ function LocationSection({ customer, canManage, onChanged }) {
 
       if (pastedLink.trim()) {
         finalMapsUrl = pastedLink.trim();
-        const parsed = tryParseCoordsFromLink(pastedLink.trim());
+        let parsed = tryParseCoordsFromLink(pastedLink.trim());
+
+        if (!parsed) {
+          try {
+            const resolved = await api.resolveMapsLink(pastedLink.trim());
+            parsed = tryParseCoordsFromLink(resolved.resolved_url);
+          } catch {
+            // إذا فشل فك الرابط، نحفظ الرابط الأصلي فقط بدون إحداثيات دقيقة
+          }
+        }
+
         if (parsed) {
           finalLat = parsed.lat;
           finalLng = parsed.lng;
@@ -467,6 +479,76 @@ function LocationSection({ customer, canManage, onChanged }) {
       </button>
       {hasSavedLocation && (
         <button type="button" className="btn-secondary" onClick={() => setEditingLocation(false)}>إلغاء</button>
+      )}
+    </div>
+  );
+}
+
+function OrderHistorySection({ customerId }) {
+  const [history, setHistory] = useState(null);
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    api.getCustomerHistory(customerId).then(setHistory).catch((err) => setError(err.message));
+  }, [customerId]);
+
+  if (error) return <div className="card"><div className="error-box">{error}</div></div>;
+  if (!history) return null;
+
+  const topProduct = history.product_stats[0];
+
+  return (
+    <div className="card">
+      <h2 className="title-md">تاريخ الطلبات والاستهلاك</h2>
+
+      <div style={{ lineHeight: 1.9 }}>
+        <div>عدد الطلبات الكلي: <strong className="tabular-num">{history.total_orders}</strong></div>
+        {history.last_order_at && (
+          <div>آخر طلب: <strong className="tabular-num">{new Date(history.last_order_at).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman" })}</strong></div>
+        )}
+        {history.avg_days_between_orders != null && (
+          <div className="text-secondary">
+            📊 معدل الطلب تقريبًا: كل <strong className="tabular-num">{history.avg_days_between_orders.toFixed(1)}</strong> يوم
+            {topProduct && <> — بمعدل <strong className="tabular-num">{topProduct.avg_quantity_per_order}</strong> من "{topProduct.product_name_snapshot}"</>}
+          </div>
+        )}
+      </div>
+
+      {history.product_stats.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="text-secondary" style={{ marginBottom: 6 }}>المنتجات المعتادة (من الطلبات المسلَّمة):</div>
+          {history.product_stats.map((p, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+              <span>{p.product_name_snapshot}</span>
+              <span className="text-secondary tabular-num">{p.order_count} طلب · معدل {p.avg_quantity_per_order}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {history.orders.length > 0 && (
+        <>
+          <button className="btn-secondary" style={{ marginTop: 14 }} onClick={() => setExpanded(!expanded)}>
+            {expanded ? "إخفاء" : "عرض"} كل الطلبات ({history.orders.length})
+          </button>
+
+          {expanded && (
+            <div style={{ marginTop: 10 }}>
+              {history.orders.map((o) => (
+                <div key={o.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>#{o.order_number} · {new Date(o.created_at).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman" })}</span>
+                    <span className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</span>
+                  </div>
+                  <div className="text-secondary" style={{ fontSize: "0.85rem" }}>
+                    {o.items.map((it) => `${it.product_name_snapshot} ×${it.quantity}`).join("، ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
