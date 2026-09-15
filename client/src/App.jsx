@@ -67,24 +67,26 @@ export default function App() {
 
     async function poll() {
       try {
-        const trip = await api.getActiveTrip();
-        if (!trip) return;
+        const trips = await api.getActiveTripsList();
+        if (!trips || trips.length === 0) return;
 
-        const deliveredStops = trip.stops.filter((s) => s.order_status === "DELIVERED");
+        const allDeliveredStops = trips.flatMap((trip) =>
+          trip.stops
+            .filter((s) => s.order_status === "DELIVERED")
+            .map((s) => ({ ...s, tripDriverName: trip.driver_name, tripDeliveredCount: trip.delivered_count, tripTotalCount: trip.total_count }))
+        );
 
         if (firstLoadRef.current) {
-          deliveredStops.forEach((s) => deliveredIdsRef.current.add(s.id));
+          allDeliveredStops.forEach((s) => deliveredIdsRef.current.add(s.id));
           firstLoadRef.current = false;
           return;
         }
 
-        const newlyDelivered = deliveredStops.filter((s) => !deliveredIdsRef.current.has(s.id));
+        const newlyDelivered = allDeliveredStops.filter((s) => !deliveredIdsRef.current.has(s.id));
         if (newlyDelivered.length > 0) {
-          const deliveredCount = deliveredStops.length;
-          const totalCount = trip.stops.length;
           const newNotifications = newlyDelivered.map((s) => ({
-            id: `${trip.id}-${s.id}`,
-            text: `✅ تم تسليم طلب ${s.customer_name} — رحلة ${deliveredCount}/${totalCount}`,
+            id: s.id,
+            text: `✅ ${s.tripDriverName || "سائق"} سلّم طلب ${s.customer_name} — ${s.tripDeliveredCount}/${s.tripTotalCount}`,
             time: new Date(),
             read: false,
           }));
@@ -93,7 +95,7 @@ export default function App() {
           newlyDelivered.forEach((s) => deliveredIdsRef.current.add(s.id));
         }
       } catch {
-        // تجاهل صامت
+        // تجاهل صامت — لا نريد إزعاج المستخدم بأخطاء خلفية غير حرجة
       }
     }
 
