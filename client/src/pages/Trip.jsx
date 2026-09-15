@@ -298,6 +298,14 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
           {deliveredCount} / {totalCount} تم التسليم
         </div>
+        {trip.total_distance_km > 0 && (
+          <div className="text-secondary">
+            المسافة الكلية: {Number(trip.total_distance_km).toFixed(1)} كم
+            {trip.distance_before_km > trip.total_distance_km && (
+              <> · وفّرنا {(Number(trip.distance_before_km) - Number(trip.total_distance_km)).toFixed(1)} كم بالتحسين ✅</>
+            )}
+          </div>
+        )}
         {trip.started_at && (
           <div className="text-secondary">🕐 وقت البدء: {formatClockTime(trip.started_at)}</div>
         )}
@@ -316,6 +324,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         stops={trip.stops}
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
         showDriverMarker={isSuperAdmin || isManagerViewOnly}
+        routeGeometry={trip.route_geometry}
       />
 
       {canOperate && trip.status === "STARTED" && currentStop && (
