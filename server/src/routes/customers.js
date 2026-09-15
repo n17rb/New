@@ -72,6 +72,60 @@ router.get("/:id", async (req, res) => {
   res.json(result.rows[0]);
 });
 
+router.get("/:id/history", async (req, res) => {
+  const customerId = req.params.id;
+
+  const ordersResult = await query(
+    `SELECT id, order_number, status, final_total, created_at
+     FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 100`,
+    [customerId]
+  );
+
+  const itemsResult = await query(
+    `SELECT o.id AS order_id, oi.product_name_snapshot, oi.quantity
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.customer_id = $1
+     ORDER BY o.created_at DESC`,
+    [customerId]
+  );
+
+  const itemsByOrder = {};
+  for (const row of itemsResult.rows) {
+    if (!itemsByOrder[row.order_id]) itemsByOrder[row.order_id] = [];
+    itemsByOrder[row.order_id].push({ product_name_snapshot: row.product_name_snapshot, quantity: row.quantity });
+  }
+
+  const orders = ordersResult.rows.map((o) => ({ ...o, items: itemsByOrder[o.id] || [] }));
+
+  const avgDaysResult = await query(
+    `SELECT AVG(diff_days) AS avg_days FROM (
+       SELECT EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (ORDER BY created_at))) / 86400 AS diff_days
+       FROM orders WHERE customer_id = $1 AND status = 'DELIVERED'
+     ) t WHERE diff_days IS NOT NULL AND diff_days > 0`,
+    [customerId]
+  );
+  const avgDaysBetweenOrders = avgDaysResult.rows[0].avg_days ? Number(avgDaysResult.rows[0].avg_days) : null;
+
+  const productStatsResult = await query(
+    `SELECT oi.product_name_snapshot, COUNT(DISTINCT o.id)::int AS order_count,
+            SUM(oi.quantity)::int AS total_quantity,
+            ROUND(AVG(oi.quantity), 1)::float AS avg_quantity_per_order
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.customer_id = $1 AND o.status = 'DELIVERED'
+     GROUP BY oi.product_name_snapshot
+     ORDER BY total_quantity DESC`,
+    [customerId]
+  );
+
+  res.json({
+    orders,
+    total_orders: orders.length,
+    last_order_at: orders[0]?.created_at || null,
+    avg_days_between_orders: avgDaysBetweenOrders,
+    product_stats: productStatsResult.rows,
+  });
+});
+
 router.post("/", requireCanManageCustomers, async (req, res) => {
   const { name, phone, phone_alt, notes, sequential_number } = req.body;
 
