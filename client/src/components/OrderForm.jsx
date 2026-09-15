@@ -182,7 +182,7 @@ function AddToActiveTripButton({ orderId, onDone }) {
   const [added, setAdded] = useState(false);
 
   useEffect(() => {
-    api.getActiveTrip().then(setTrip).catch(() => setTrip(null));
+    api.getMyTrip().then(setTrip).catch(() => setTrip(null));
   }, []);
 
   async function handleAdd() {
