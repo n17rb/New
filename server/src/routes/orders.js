@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { tryAutoAddToActiveTrip } from "./trips.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -133,6 +134,8 @@ router.post("/", async (req, res) => {
     });
 
     res.status(201).json({ ...order, items: preparedItems });
+
+    tryAutoAddToActiveTrip(order.id).catch(() => {});
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(400).json({ error: err.message || "تعذّر إنشاء الطلب." });
