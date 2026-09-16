@@ -42,6 +42,7 @@ export const api = {
   updateCustomer: (id, body) => request(`/customers/${id}`, { method: "PUT", body }),
   archiveCustomer: (id) => request(`/customers/${id}`, { method: "DELETE" }),
   getCustomerHistory: (id) => request(`/customers/${id}/history`),
+  fixCustomerLocations: () => request("/customers/fix-locations", { method: "POST" }),
   uploadCustomerPhoto: (id, file) => {
     const form = new FormData();
     form.append("photo", file);
