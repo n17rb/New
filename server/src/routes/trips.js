@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -10,7 +10,8 @@ function isPrivileged(user) {
 }
 
 function canOperateTrip(user, trip) {
-  return user.role === "super_admin" || (user.role === "driver" && trip.driver_id === user.id);
+  if (user.role === "super_admin") return true;
+  return trip.driver_id === user.id;
 }
 
 function distanceKm(lat1, lon1, lat2, lon2) {
@@ -120,14 +121,21 @@ async function buildRoute(startLat, startLon, stops, routeMode) {
 
   let anchorLat = startLat;
   let anchorLon = startLon;
-  const points = withLocation;
+  let remainingPoints = withLocation;
+  let firstStopIsAnchor = null;
 
   if (anchorLat == null || anchorLon == null) {
-    anchorLat = points[0].latitude;
-    anchorLon = points[0].longitude;
+    firstStopIsAnchor = withLocation[0];
+    anchorLat = firstStopIsAnchor.latitude;
+    anchorLon = firstStopIsAnchor.longitude;
+    remainingPoints = withLocation.slice(1);
   }
 
-  const allPoints = [{ lat: anchorLat, lon: anchorLon }, ...points.map((s) => ({ lat: s.latitude, lon: s.longitude }))];
+  if (remainingPoints.length === 0) {
+    return { ordered: [firstStopIsAnchor, ...withoutLocation], totalDistance: 0, distanceBefore: 0, geometry: null };
+  }
+
+  const allPoints = [{ lat: anchorLat, lon: anchorLon }, ...remainingPoints.map((s) => ({ lat: s.latitude, lon: s.longitude }))];
   const roadMatrix = await getRoadDistanceMatrix(allPoints);
 
   function realDist(i, j) {
@@ -136,7 +144,7 @@ async function buildRoute(startLat, startLon, stops, routeMode) {
   }
 
   function effectiveDist(i, j) {
-    if (routeMode === "urgent_smart" && j > 0 && points[j - 1].priority === "urgent") {
+    if (routeMode === "urgent_smart" && j > 0 && remainingPoints[j - 1].priority === "urgent") {
       return realDist(i, j) * 0.7;
     }
     return realDist(i, j);
@@ -148,7 +156,7 @@ async function buildRoute(startLat, startLon, stops, routeMode) {
     return total;
   }
 
-  const remainingIdx = points.map((_, i) => i + 1);
+  const remainingIdx = remainingPoints.map((_, i) => i + 1);
   let route = [0];
   let current = 0;
   while (remainingIdx.length) {
@@ -168,12 +176,14 @@ async function buildRoute(startLat, startLon, stops, routeMode) {
   improvedRoute = twoOpt(improvedRoute, effectiveDist);
 
   const totalDistance = routeRealDistance(improvedRoute);
-  const orderedStops = improvedRoute.slice(1).map((idx) => points[idx - 1]);
+  const orderedStops = improvedRoute.slice(1).map((idx) => remainingPoints[idx - 1]);
   const orderedAllPoints = improvedRoute.map((idx) => allPoints[idx]);
   const geometry = await getRouteGeometry(orderedAllPoints);
 
+  const finalOrdered = firstStopIsAnchor ? [firstStopIsAnchor, ...orderedStops] : orderedStops;
+
   return {
-    ordered: [...orderedStops, ...withoutLocation],
+    ordered: [...finalOrdered, ...withoutLocation],
     totalDistance: totalDistance / 1000,
     distanceBefore: distanceBefore / 1000,
     geometry,
@@ -205,41 +215,51 @@ async function buildTripDetailResponse(trip, requestingUser) {
      ORDER BY ts.sequence_number ASC`,
     [trip.id]
   );
+  const stops = stopsResult.rows;
 
-  const inventoryResult = await query(
-    `SELECT ti.product_name_snapshot, ti.loaded_quantity,
-            COALESCE(SUM(oi.quantity) FILTER (WHERE o.status = 'DELIVERED'), 0)::int AS delivered_quantity
-     FROM trip_inventory ti
-     LEFT JOIN order_items oi ON oi.product_name_snapshot = ti.product_name_snapshot
-     LEFT JOIN trip_stops ts ON ts.order_id = oi.order_id AND ts.trip_id = ti.trip_id
-     LEFT JOIN orders o ON o.id = oi.order_id
-     WHERE ti.trip_id = $1
-     GROUP BY ti.id, ti.product_name_snapshot, ti.loaded_quantity
-     ORDER BY ti.product_name_snapshot ASC`,
-    [trip.id]
-  );
+  const orderIds = stops.map((s) => s.order_id);
+  const itemsResult = orderIds.length
+    ? await query(
+        `SELECT order_id, product_name_snapshot, quantity FROM order_items WHERE order_id = ANY($1::int[]) ORDER BY id ASC`,
+        [orderIds]
+      )
+    : { rows: [] };
+  const itemsByOrder = {};
+  for (const row of itemsResult.rows) {
+    if (!itemsByOrder[row.order_id]) itemsByOrder[row.order_id] = [];
+    itemsByOrder[row.order_id].push({ product_name_snapshot: row.product_name_snapshot, quantity: row.quantity });
+  }
 
-  const remainingCount = stopsResult.rows.filter(
+  const avgStopMinutes = await getAverageStopMinutes();
+
+  let cumulativeMinutes = 0;
+  const stopsWithEta = stops.map((s) => {
+    const isPending = !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED";
+    if (isPending) cumulativeMinutes += avgStopMinutes;
+    return {
+      ...s,
+      items: itemsByOrder[s.order_id] || [],
+      estimated_eta_minutes: isPending ? Math.round(cumulativeMinutes) : null,
+    };
+  });
+
+  const remainingCount = stops.filter(
     (s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED"
   ).length;
-  const avgStopMinutes = await getAverageStopMinutes();
   const estimatedMinutesRemaining = Math.round(remainingCount * avgStopMinutes);
+
+  const lastDelivered = [...stops].filter((s) => s.delivered_at).sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at))[0];
 
   return {
     ...trip,
-    stops: stopsResult.rows,
-    inventory: inventoryResult.rows.map((r) => ({
-      ...r,
-      remaining_quantity: r.loaded_quantity - r.delivered_quantity,
-    })),
+    stops: stopsWithEta,
     estimated_minutes_remaining: estimatedMinutesRemaining,
     can_operate: canOperateTrip(requestingUser, trip),
+    last_delivered_stop_id: lastDelivered ? lastDelivered.id : null,
   };
 }
 
 router.get("/mine", async (req, res) => {
-  if (req.user.role !== "driver") return res.status(403).json({ error: "هذا المسار للسائقين فقط." });
-
   const tripResult = await query(
     `SELECT t.*, u.full_name AS driver_name
      FROM trips t LEFT JOIN users u ON u.id = t.driver_id
@@ -253,7 +273,9 @@ router.get("/mine", async (req, res) => {
   res.json(await buildTripDetailResponse(trip, req.user));
 });
 
-router.get("/active-list", requireRole("super_admin", "admin"), async (req, res) => {
+router.get("/active-list", async (req, res) => {
+  if (!isPrivileged(req.user)) return res.status(403).json({ error: "غير مصرح." });
+
   const tripsResult = await query(
     `SELECT t.*, u.full_name AS driver_name
      FROM trips t LEFT JOIN users u ON u.id = t.driver_id
@@ -286,6 +308,12 @@ router.get("/active-list", requireRole("super_admin", "admin"), async (req, res)
   res.json(result);
 });
 
+router.get("/available-drivers", async (req, res) => {
+  if (!isPrivileged(req.user)) return res.status(403).json({ error: "غير مصرح." });
+  const result = await query(`SELECT id, full_name FROM users WHERE role = 'driver' AND status = 'active' ORDER BY full_name ASC`);
+  res.json(result.rows);
+});
+
 router.get("/:id", async (req, res) => {
   const tripResult = await query(
     `SELECT t.*, u.full_name AS driver_name
@@ -296,11 +324,11 @@ router.get("/:id", async (req, res) => {
   const trip = tripResult.rows[0];
   if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
 
-  if (req.user.role === "driver" && trip.driver_id !== req.user.id) {
-    return res.status(403).json({ error: "هذه رحلة سائق آخر." });
-  }
   if (req.user.role === "data_entry") {
     return res.status(403).json({ error: "ليست لديك صلاحية الوصول لهذا القسم." });
+  }
+  if (req.user.role === "driver" && trip.driver_id !== req.user.id) {
+    return res.status(403).json({ error: "هذه رحلة سائق آخر." });
   }
 
   res.json(await buildTripDetailResponse(trip, req.user));
@@ -327,11 +355,16 @@ router.post("/:id/location", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  if (req.user.role !== "driver") {
-    return res.status(403).json({ error: "إنشاء الرحلة متاح للسائق فقط." });
-  }
+  const { order_ids, start_latitude, start_longitude, route_mode, driver_id } = req.body;
 
-  const { order_ids, start_latitude, start_longitude, route_mode } = req.body;
+  let finalDriverId;
+  if (req.user.role === "driver") {
+    finalDriverId = req.user.id;
+  } else if (isPrivileged(req.user)) {
+    finalDriverId = driver_id || req.user.id;
+  } else {
+    return res.status(403).json({ error: "ليست لديك صلاحية إنشاء رحلة." });
+  }
 
   if (!Array.isArray(order_ids) || order_ids.length === 0) {
     return res.status(400).json({ error: "الرجاء اختيار طلب واحد على الأقل." });
@@ -339,10 +372,10 @@ router.post("/", async (req, res) => {
 
   const existingActive = await query(
     `SELECT id FROM trips WHERE status IN ('PLANNED','STARTED') AND driver_id = $1`,
-    [req.user.id]
+    [finalDriverId]
   );
   if (existingActive.rows[0]) {
-    return res.status(400).json({ error: "عندك رحلة نشطة بالفعل. أنهِها أولًا قبل ما تبدأ رحلة جديدة." });
+    return res.status(400).json({ error: "يوجد رحلة نشطة بالفعل لهذا السائق. أنهِها أولًا قبل ما تبدأ رحلة جديدة." });
   }
 
   const client = await pool.connect();
@@ -371,7 +404,7 @@ router.post("/", async (req, res) => {
     const tripResult = await client.query(
       `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, distance_before_km, route_geometry, created_by, started_at)
        VALUES ('STARTED', $1, $2, $3, $4, $5, $6, $7, now()) RETURNING *`,
-      [req.user.id, startLat, startLon, totalDistance, distanceBefore, geometry ? JSON.stringify(geometry) : null, req.user.id]
+      [finalDriverId, startLat, startLon, totalDistance, distanceBefore, geometry ? JSON.stringify(geometry) : null, req.user.id]
     );
     const trip = tripResult.rows[0];
 
@@ -383,20 +416,6 @@ router.post("/", async (req, res) => {
       await client.query(`UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1`, [ordered[i].id]);
     }
 
-    const inventoryResult = await client.query(
-      `SELECT oi.product_id, oi.product_name_snapshot, SUM(oi.quantity)::int AS total_quantity
-       FROM order_items oi
-       WHERE oi.order_id = ANY($1::int[])
-       GROUP BY oi.product_id, oi.product_name_snapshot`,
-      [order_ids]
-    );
-    for (const item of inventoryResult.rows) {
-      await client.query(
-        `INSERT INTO trip_inventory (trip_id, product_id, product_name_snapshot, loaded_quantity) VALUES ($1,$2,$3,$4)`,
-        [trip.id, item.product_id, item.product_name_snapshot, item.total_quantity]
-      );
-    }
-
     await client.query("COMMIT");
 
     await logActivity({
@@ -404,7 +423,7 @@ router.post("/", async (req, res) => {
       action: "CREATE_TRIP",
       recordType: "trip",
       recordId: trip.id,
-      newValue: { stops: ordered.length, total_distance_km: totalDistance, distance_before_km: distanceBefore },
+      newValue: { stops: ordered.length, total_distance_km: totalDistance, distance_before_km: distanceBefore, driver_id: finalDriverId },
     });
 
     res.status(201).json({ ...trip, stopsCount: ordered.length });
@@ -430,6 +449,23 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   await logActivity({ userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
 
   res.json({ message: "تم تسجيل التسليم." });
+});
+
+router.post("/stops/:stopId/undo-deliver", async (req, res) => {
+  const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
+  const stop = stopResult.rows[0];
+  if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+  if (!stop.delivered_at) return res.status(400).json({ error: "هذا التوقف لسا ما تسلّم أصلًا." });
+
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
+  if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
+
+  await query("UPDATE trip_stops SET delivered_at = NULL WHERE id = $1", [stop.id]);
+  await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [stop.order_id]);
+
+  await logActivity({ userId: req.user.id, action: "UNDO_DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
+
+  res.json({ message: "تم التراجع عن التسليم." });
 });
 
 router.post("/stops/:stopId/fail", async (req, res) => {
@@ -516,29 +552,7 @@ router.post("/stops/:stopId/cancel", async (req, res) => {
   res.json({ message: "تم إلغاء الطلب." });
 });
 
-router.post("/:id/add-order", async (req, res) => {
-  const { order_id } = req.body;
-  if (!order_id) return res.status(400).json({ error: "رقم الطلب مطلوب." });
-
-  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
-  const trip = tripResult.rows[0];
-  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
-  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
-  if (trip.status !== "STARTED") return res.status(400).json({ error: "الرحلة ليست جارية حاليًا." });
-
-  const orderResult = await query(
-    `SELECT o.id, o.status, l.latitude, l.longitude
-     FROM orders o
-     JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
-     WHERE o.id = $1`,
-    [order_id]
-  );
-  const newOrder = orderResult.rows[0];
-  if (!newOrder || !["NEW", "READY"].includes(newOrder.status)) {
-    return res.status(400).json({ error: "هذا الطلب غير صالح للإضافة لرحلة جارية." });
-  }
-
+async function cheapestInsert(trip, newOrder) {
   const remainingResult = await query(
     `SELECT ts.sequence_number, l.latitude, l.longitude
      FROM trip_stops ts
@@ -588,25 +602,32 @@ router.post("/:id/add-order", async (req, res) => {
   await query("UPDATE trip_stops SET sequence_number = sequence_number + 1 WHERE trip_id = $1 AND sequence_number > $2", [trip.id, insertAfterSeq]);
   await query("INSERT INTO trip_stops (trip_id, order_id, sequence_number) VALUES ($1, $2, $3)", [trip.id, newOrder.id, insertAfterSeq + 1]);
   await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [newOrder.id]);
+}
 
-  const newItemsResult = await query(
-    `SELECT product_id, product_name_snapshot, SUM(quantity)::int AS qty FROM order_items WHERE order_id = $1 GROUP BY product_id, product_name_snapshot`,
-    [newOrder.id]
+router.post("/:id/add-order", async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) return res.status(400).json({ error: "رقم الطلب مطلوب." });
+
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
+  const trip = tripResult.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
+  if (trip.status !== "STARTED") return res.status(400).json({ error: "الرحلة ليست جارية حاليًا." });
+
+  const orderResult = await query(
+    `SELECT o.id, o.status, l.latitude, l.longitude
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN customer_locations l ON l.customer_id = c.id
+     WHERE o.id = $1`,
+    [order_id]
   );
-  for (const item of newItemsResult.rows) {
-    const existing = await query(
-      `SELECT id, loaded_quantity FROM trip_inventory WHERE trip_id = $1 AND product_name_snapshot = $2`,
-      [trip.id, item.product_name_snapshot]
-    );
-    if (existing.rows[0]) {
-      await query(`UPDATE trip_inventory SET loaded_quantity = loaded_quantity + $1 WHERE id = $2`, [item.qty, existing.rows[0].id]);
-    } else {
-      await query(
-        `INSERT INTO trip_inventory (trip_id, product_id, product_name_snapshot, loaded_quantity) VALUES ($1,$2,$3,$4)`,
-        [trip.id, item.product_id, item.product_name_snapshot, item.qty]
-      );
-    }
+  const newOrder = orderResult.rows[0];
+  if (!newOrder || !["NEW", "READY"].includes(newOrder.status)) {
+    return res.status(400).json({ error: "هذا الطلب غير صالح للإضافة لرحلة جارية." });
   }
+
+  await cheapestInsert(trip, newOrder);
 
   await logActivity({
     userId: req.user.id,
@@ -618,6 +639,27 @@ router.post("/:id/add-order", async (req, res) => {
 
   res.json({ message: "تمت إضافة الطلب للرحلة بأفضل موضع ممكن." });
 });
+
+export async function tryAutoAddToActiveTrip(orderId) {
+  const activeResult = await query(`SELECT * FROM trips WHERE status = 'STARTED'`);
+  if (activeResult.rows.length !== 1) return false;
+  const trip = activeResult.rows[0];
+
+  const orderResult = await query(
+    `SELECT o.id, o.status, l.latitude, l.longitude
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN customer_locations l ON l.customer_id = c.id
+     WHERE o.id = $1`,
+    [orderId]
+  );
+  const order = orderResult.rows[0];
+  if (!order || order.status !== "NEW") return false;
+
+  await cheapestInsert(trip, order);
+  await logActivity({ userId: null, action: "AUTO_ADD_ORDER_TO_TRIP", recordType: "trip", recordId: trip.id, newValue: { order_id: orderId } });
+  return true;
+}
 
 router.post("/:id/complete", async (req, res) => {
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
