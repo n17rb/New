@@ -9,6 +9,8 @@ export default function Customers({ user }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [fixing, setFixing] = useState(false);
+  const [fixResult, setFixResult] = useState("");
   const navigate = useNavigate();
 
   const canAdd = ["super_admin", "admin", "data_entry"].includes(user.role);
@@ -36,6 +38,19 @@ export default function Customers({ user }) {
     search(q);
   }
 
+  async function handleFixLocations() {
+    setFixing(true);
+    setFixResult("");
+    try {
+      const result = await api.fixCustomerLocations();
+      setFixResult(result.message);
+    } catch (err) {
+      setFixResult("خطأ: " + err.message);
+    } finally {
+      setFixing(false);
+    }
+  }
+
   return (
     <div className="page">
       <h1 className="title-lg">العملاء</h1>
@@ -53,10 +68,17 @@ export default function Customers({ user }) {
           </div>
 
           {canAdd && (
-            <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 16 }} onClick={() => setShowAddForm(true)}>
+            <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => setShowAddForm(true)}>
               <FiUserPlus /> زبون جديد
             </button>
           )}
+
+          {canAdd && (
+            <button className="btn-secondary" style={{ marginBottom: 16, fontSize: "0.85rem" }} disabled={fixing} onClick={handleFixLocations}>
+              {fixing ? "جاري الإصلاح..." : "🔧 إصلاح مواقع العملاء القدامى الناقصة"}
+            </button>
+          )}
+          {fixResult && <div className="success-box">{fixResult}</div>}
 
           {error && <div className="error-box">{error}</div>}
           {loading && <p className="text-secondary">جاري البحث...</p>}
