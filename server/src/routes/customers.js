@@ -8,12 +8,23 @@ const router = Router();
 router.use(requireAuth);
 
 function canManageCustomers(user) {
-  return ["super_admin", "admin", "data_entry"].includes(user.role);
+  return ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
+}
+
+function canDeleteCustomer(user) {
+  return user.role === "super_admin" || user.role === "admin" || user.can_delete_customer;
 }
 
 function requireCanManageCustomers(req, res, next) {
   if (!canManageCustomers(req.user)) {
     return res.status(403).json({ error: "ليست لديك صلاحية إضافة أو تعديل بيانات العملاء." });
+  }
+  next();
+}
+
+function requireCanDeleteCustomer(req, res, next) {
+  if (!canDeleteCustomer(req.user)) {
+    return res.status(403).json({ error: "ليست لديك صلاحية حذف العملاء." });
   }
   next();
 }
@@ -312,7 +323,7 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
   res.json(updated.rows[0]);
 });
 
-router.delete("/:id", requireCanManageCustomers, async (req, res) => {
+router.delete("/:id", requireCanDeleteCustomer, async (req, res) => {
   const result = await query(
     "UPDATE customers SET status = 'archived', updated_at = now() WHERE id = $1 RETURNING *",
     [req.params.id]
