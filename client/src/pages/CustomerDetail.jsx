@@ -281,10 +281,20 @@ function LocationSection({ customer, canManage, onChanged }) {
   }
 
   function tryParseCoordsFromLink(link) {
-    const match = link.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
-    if (match) {
-      return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    if (!link) return null;
+
+    // الصيغة الشائعة فعليًا برابط قوقل ماب النهائي (خصوصًا روابط الأماكن /place/...): !3d<lat>!4d<lng>
+    const dPattern = link.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if (dPattern) {
+      return { lat: parseFloat(dPattern[1]), lng: parseFloat(dPattern[2]) };
     }
+
+    // الصيغة العادية: lat,lng متجاورين (مثال: @31.9,35.9 أو q=31.9,35.9)
+    const commaPattern = link.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if (commaPattern) {
+      return { lat: parseFloat(commaPattern[1]), lng: parseFloat(commaPattern[2]) };
+    }
+
     return null;
   }
 
