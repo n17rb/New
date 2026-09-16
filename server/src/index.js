@@ -19,6 +19,8 @@ import driverRoutes from "./routes/drivers.js";
 import geocodeRoutes from "./routes/geocode.js";
 import reportRoutes from "./routes/reports.js";
 import cashRoutes from "./routes/cash.js";
+import activityRoutes from "./routes/activity.js";
+import backupRoutes, { createScheduledSnapshot } from "./routes/backup.js";
 
 dotenv.config();
 
@@ -42,6 +44,8 @@ app.use("/api/drivers", driverRoutes);
 app.use("/api/geocode", geocodeRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/cash", cashRoutes);
+app.use("/api/activity-log", activityRoutes);
+app.use("/api/backup", backupRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -65,4 +69,9 @@ initDbIfNeeded().then(() => {
   app.listen(PORT, () => {
     console.log(`✅ السيرفر شغال على المنفذ ${PORT}`);
   });
+
+  createScheduledSnapshot().catch((err) => console.error("❌ فشل النسخة الاحتياطية الأولية:", err.message));
+  setInterval(() => {
+    createScheduledSnapshot().catch((err) => console.error("❌ فشل النسخة الاحتياطية المجدولة:", err.message));
+  }, 24 * 60 * 60 * 1000);
 });
