@@ -1,6 +1,5 @@
 -- ============================================================
 -- نظام إدارة محل مياه وتوزيع — Database Schema
--- Phase 1: Foundation (Users, Customers, Products, Regions, Log)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -117,9 +116,6 @@ INSERT INTO products (name, type, unit_price, sort_order) VALUES
   ('كوبون 55', 'coupon', 50.00, 12)
 ON CONFLICT (name) DO NOTHING;
 
--- ============================================================
--- Phase 2: الطلبات
--- ============================================================
 CREATE SEQUENCE IF NOT EXISTS order_seq START 1;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -169,9 +165,6 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
--- ============================================================
--- Phase 3: الرحلات
--- ============================================================
 CREATE TABLE IF NOT EXISTS trips (
   id SERIAL PRIMARY KEY,
   status VARCHAR(20) NOT NULL DEFAULT 'PLANNED' CHECK (status IN ('PLANNED','STARTED','COMPLETED')),
@@ -203,9 +196,6 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS route_geometry JSONB;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS distance_before_km NUMERIC(10,2);
 
--- ============================================================
--- Phase 4: كشف حساب السائق
--- ============================================================
 CREATE TABLE IF NOT EXISTS driver_ledger (
   id SERIAL PRIMARY KEY,
   driver_id INTEGER NOT NULL REFERENCES users(id),
@@ -219,9 +209,6 @@ CREATE TABLE IF NOT EXISTS driver_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_driver_ledger_driver ON driver_ledger(driver_id, created_at DESC);
 
--- ============================================================
--- Phase 5: جرد القوارير على السيارة
--- ============================================================
 CREATE TABLE IF NOT EXISTS trip_inventory (
   id SERIAL PRIMARY KEY,
   trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -232,9 +219,6 @@ CREATE TABLE IF NOT EXISTS trip_inventory (
 
 CREATE INDEX IF NOT EXISTS idx_trip_inventory_trip ON trip_inventory(trip_id);
 
--- ============================================================
--- Phase 6: الحساب اليومي (مبيعات/صرفيات/كاش)
--- ============================================================
 CREATE TABLE IF NOT EXISTS cash_periods (
   id SERIAL PRIMARY KEY,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -259,3 +243,21 @@ CREATE TABLE IF NOT EXISTS cash_entries (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_entries_period_date ON cash_entries(period_id, entry_date);
 CREATE INDEX IF NOT EXISTS idx_cash_periods_open ON cash_periods(ended_at);
+
+ALTER TABLE customer_locations ADD COLUMN IF NOT EXISTS preferred_delivery_note TEXT;
+
+CREATE TABLE IF NOT EXISTS customer_product_prices (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  custom_price NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_product_price ON customer_product_prices(customer_id, product_id);
+
+CREATE TABLE IF NOT EXISTS backup_snapshots (
+  id SERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_backup_snapshots_created ON backup_snapshots(created_at DESC);
