@@ -78,9 +78,11 @@ export const api = {
 
   getMyTrip: () => request("/trips/mine"),
   getActiveTripsList: () => request("/trips/active-list"),
+  getAvailableDrivers: () => request("/trips/available-drivers"),
   getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
   deliverStop: (stopId) => request(`/trips/stops/${stopId}/deliver`, { method: "POST" }),
+  undoDeliver: (stopId) => request(`/trips/stops/${stopId}/undo-deliver`, { method: "POST" }),
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
   completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
   updateTripLocation: (id, latitude, longitude) => request(`/trips/${id}/location`, { method: "POST", body: { latitude, longitude } }),
@@ -88,7 +90,6 @@ export const api = {
   cancelStop: (stopId, reason) => request(`/trips/stops/${stopId}/cancel`, { method: "POST", body: { reason } }),
   addOrderToTrip: (tripId, orderId) => request(`/trips/${tripId}/add-order`, { method: "POST", body: { order_id: orderId } }),
 
-  getDriversList: () => request("/drivers/list"),
   getDriverBalances: () => request("/drivers/balances"),
   getDriverBalance: (id) => request(`/drivers/${id}/balance`),
   settleDriver: (id, body) => request(`/drivers/${id}/settle`, { method: "POST", body }),
