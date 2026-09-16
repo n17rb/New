@@ -36,8 +36,9 @@ async function nextAutoSequentialNumber() {
 
 router.get("/", async (req, res) => {
   const q = (req.query.q || "").trim();
+  const regionId = req.query.region_id;
 
-  if (!q) {
+  if (!q && !regionId) {
     const result = await query(
       `SELECT c.*, l.region_id, l.maps_url, r.name AS region_name
        FROM customers c
@@ -50,20 +51,27 @@ router.get("/", async (req, res) => {
     return res.json(result.rows);
   }
 
+  const conditions = ["c.status = 'active'"];
+  const params = [];
+
+  if (q) {
+    params.push(q);
+    conditions.push(`(c.phone_display LIKE $${params.length} || '%' OR c.sequential_number = $${params.length} OR c.name ILIKE '%' || $${params.length} || '%')`);
+  }
+  if (regionId) {
+    params.push(regionId);
+    conditions.push(`l.region_id = $${params.length}`);
+  }
+
   const result = await query(
     `SELECT c.*, l.region_id, l.maps_url, r.name AS region_name
      FROM customers c
      LEFT JOIN customer_locations l ON l.customer_id = c.id
      LEFT JOIN regions r ON r.id = l.region_id
-     WHERE c.status = 'active'
-       AND (
-         c.phone_display LIKE $1 || '%'
-         OR c.sequential_number = $1
-         OR c.name ILIKE '%' || $1 || '%'
-       )
+     WHERE ${conditions.join(" AND ")}
      ORDER BY c.created_at DESC
-     LIMIT 30`,
-    [q]
+     LIMIT 50`,
+    params
   );
   res.json(result.rows);
 });
@@ -73,7 +81,7 @@ router.get("/:id", async (req, res) => {
     `SELECT c.*,
             l.latitude, l.longitude, l.maps_url, l.region_id,
             l.street, l.building_number, l.building_name, l.floor,
-            l.apartment, l.side, l.access_notes, l.building_photo_url
+            l.apartment, l.side, l.access_notes, l.building_photo_url, l.preferred_delivery_note
      FROM customers c
      LEFT JOIN customer_locations l ON l.customer_id = c.id
      WHERE c.id = $1`,
@@ -249,7 +257,7 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
     name, phone, sequential_number, notes,
     region_id, street, building_number, building_name,
     floor, apartment, side, access_notes,
-    latitude, longitude, maps_url,
+    latitude, longitude, maps_url, preferred_delivery_note,
   } = req.body;
 
   let phoneNormalized = before.rows[0].phone_normalized;
@@ -305,10 +313,11 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
       latitude = COALESCE($9, latitude),
       longitude = COALESCE($10, longitude),
       maps_url = COALESCE($11, maps_url),
+      preferred_delivery_note = COALESCE($13, preferred_delivery_note),
       updated_at = now()
      WHERE customer_id = $12`,
     [region_id, street, building_number, building_name, floor, apartment, side,
-     access_notes, latitude, longitude, maps_url, id]
+     access_notes, latitude, longitude, maps_url, id, preferred_delivery_note]
   );
 
   await logActivity({
@@ -358,6 +367,144 @@ router.post("/:id/photo", requireCanManageCustomers, uploadSingleImage, async (r
   });
 
   res.json({ photoUrl });
+});
+
+router.get("/all-locations", async (req, res) => {
+  const result = await query(
+    `SELECT c.id, c.name, l.latitude, l.longitude, r.name AS region_name
+     FROM customers c
+     JOIN customer_locations l ON l.customer_id = c.id
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE c.status = 'active' AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL`
+  );
+  res.json(result.rows);
+});
+
+router.get("/overdue", async (req, res) => {
+  const result = await query(`
+    WITH stats AS (
+      SELECT customer_id,
+             AVG(diff_days) AS avg_days,
+             MAX(created_at) AS last_order_at,
+             COUNT(*) AS delivered_count
+      FROM (
+        SELECT customer_id, created_at,
+               EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY customer_id ORDER BY created_at))) / 86400 AS diff_days
+        FROM orders WHERE status = 'DELIVERED'
+      ) t
+      WHERE diff_days IS NULL OR diff_days > 0
+      GROUP BY customer_id
+      HAVING COUNT(*) >= 3
+    )
+    SELECT c.id, c.name, c.phone_display, c.sequential_number,
+           s.avg_days, s.last_order_at,
+           EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 AS days_since_last_order
+    FROM stats s
+    JOIN customers c ON c.id = s.customer_id
+    WHERE c.status = 'active'
+      AND EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 > s.avg_days
+    ORDER BY (EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 - s.avg_days) DESC
+    LIMIT 100
+  `);
+  res.json(result.rows.map((r) => ({
+    ...r,
+    avg_days: Number(r.avg_days),
+    days_since_last_order: Math.floor(Number(r.days_since_last_order)),
+  })));
+});
+
+router.get("/:id/prices", async (req, res) => {
+  const result = await query(
+    `SELECT cpp.*, p.name AS product_name, p.unit_price AS default_price
+     FROM customer_product_prices cpp JOIN products p ON p.id = cpp.product_id
+     WHERE cpp.customer_id = $1 ORDER BY p.sort_order ASC`,
+    [req.params.id]
+  );
+  res.json(result.rows);
+});
+
+router.post("/:id/prices", requireCanManageCustomers, async (req, res) => {
+  const { product_id, custom_price } = req.body;
+  if (!product_id || custom_price == null) {
+    return res.status(400).json({ error: "المنتج والسعر الخاص مطلوبان." });
+  }
+
+  const result = await query(
+    `INSERT INTO customer_product_prices (customer_id, product_id, custom_price)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (customer_id, product_id) DO UPDATE SET custom_price = $3
+     RETURNING *`,
+    [req.params.id, product_id, custom_price]
+  );
+
+  await logActivity({
+    userId: req.user.id,
+    action: "SET_CUSTOMER_PRICE",
+    recordType: "customer",
+    recordId: req.params.id,
+    newValue: { product_id, custom_price },
+  });
+
+  res.json(result.rows[0]);
+});
+
+router.delete("/:id/prices/:productId", requireCanManageCustomers, async (req, res) => {
+  await query(
+    "DELETE FROM customer_product_prices WHERE customer_id = $1 AND product_id = $2",
+    [req.params.id, req.params.productId]
+  );
+  res.json({ message: "تم حذف السعر الخاص — رجع للسعر العام." });
+});
+
+router.post("/bulk-import", requireCanManageCustomers, async (req, res) => {
+  const { rows } = req.body;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ error: "لا يوجد بيانات للاستيراد." });
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  const errors = [];
+
+  for (const row of rows) {
+    const name = (row.name || "").trim();
+    const phone = (row.phone || "").trim();
+    if (!name || !phone) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      const normalized = normalizePhone(phone);
+      const existing = await query("SELECT id FROM customers WHERE phone_normalized = $1", [normalized]);
+      if (existing.rows[0]) {
+        skipped++;
+        continue;
+      }
+
+      const seqNumber = await nextAutoSequentialNumber();
+      const inserted = await query(
+        `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, created_by)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [seqNumber, name, normalized, formatPhoneForDisplay(normalized), req.user.id]
+      );
+      await query(`INSERT INTO customer_locations (customer_id) VALUES ($1)`, [inserted.rows[0].id]);
+      imported++;
+    } catch (err) {
+      errors.push(`${name}: ${err.message}`);
+      skipped++;
+    }
+  }
+
+  await logActivity({
+    userId: req.user.id,
+    action: "BULK_IMPORT_CUSTOMERS",
+    recordType: "customer",
+    recordId: null,
+    newValue: { imported, skipped },
+  });
+
+  res.json({ imported, skipped, errors: errors.slice(0, 10) });
 });
 
 export default router;
