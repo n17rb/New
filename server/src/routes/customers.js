@@ -126,6 +126,55 @@ router.get("/:id/history", async (req, res) => {
   });
 });
 
+function tryParseCoordsFromLink(link) {
+  if (!link) return null;
+  const dPattern = link.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (dPattern) return { lat: parseFloat(dPattern[1]), lng: parseFloat(dPattern[2]) };
+  const commaPattern = link.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  if (commaPattern) return { lat: parseFloat(commaPattern[1]), lng: parseFloat(commaPattern[2]) };
+  return null;
+}
+
+router.post("/fix-locations", requireCanManageCustomers, async (req, res) => {
+  const brokenResult = await query(
+    `SELECT cl.id, cl.customer_id, cl.maps_url
+     FROM customer_locations cl
+     WHERE cl.maps_url IS NOT NULL AND (cl.latitude IS NULL OR cl.longitude IS NULL)`
+  );
+
+  let fixed = 0;
+  const stillBroken = [];
+
+  for (const row of brokenResult.rows) {
+    let parsed = tryParseCoordsFromLink(row.maps_url);
+
+    if (!parsed) {
+      try {
+        const response = await fetch(row.maps_url, { method: "GET", redirect: "follow" });
+        parsed = tryParseCoordsFromLink(response.url);
+      } catch {
+        // تجاهل — يبقى بقائمة الفاشلين
+      }
+    }
+
+    if (parsed) {
+      await query(
+        "UPDATE customer_locations SET latitude = $1, longitude = $2, updated_at = now() WHERE id = $3",
+        [parsed.lat, parsed.lng, row.id]
+      );
+      fixed++;
+    } else {
+      stillBroken.push(row.customer_id);
+    }
+  }
+
+  res.json({
+    message: `تم إصلاح ${fixed} من أصل ${brokenResult.rows.length}.`,
+    fixed_count: fixed,
+    still_broken_customer_ids: stillBroken,
+  });
+});
+
 router.post("/", requireCanManageCustomers, async (req, res) => {
   const { name, phone, phone_alt, notes, sequential_number } = req.body;
 
