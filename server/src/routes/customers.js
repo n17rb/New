@@ -150,7 +150,13 @@ router.post("/fix-locations", requireCanManageCustomers, async (req, res) => {
 
     if (!parsed) {
       try {
-        const response = await fetch(row.maps_url, { method: "GET", redirect: "follow" });
+        const response = await fetch(row.maps_url, {
+          method: "GET",
+          redirect: "follow",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        });
         parsed = tryParseCoordsFromLink(response.url);
       } catch {
         // تجاهل — يبقى بقائمة الفاشلين
