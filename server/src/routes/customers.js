@@ -87,6 +87,30 @@ router.get("/all-locations", async (req, res) => {
   res.json(result.rows);
 });
 
+router.get("/growth", async (req, res) => {
+  const groupBy = ["week", "month", "year"].includes(req.query.groupBy) ? req.query.groupBy : "month";
+
+  const result = await query(
+    `SELECT date_trunc($1, created_at) AS bucket, COUNT(*)::int AS new_customers
+     FROM customers
+     GROUP BY bucket
+     ORDER BY bucket ASC`,
+    [groupBy]
+  );
+
+  const rows = result.rows;
+  const latest = rows[rows.length - 1];
+  const previous = rows[rows.length - 2];
+
+  res.json({
+    group_by: groupBy,
+    rows,
+    latest_count: latest ? latest.new_customers : 0,
+    previous_count: previous ? previous.new_customers : 0,
+    difference: latest && previous ? latest.new_customers - previous.new_customers : null,
+  });
+});
+
 router.get("/overdue", async (req, res) => {
   const result = await query(`
     WITH stats AS (
