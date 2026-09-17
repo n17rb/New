@@ -18,6 +18,25 @@ async function computeBalance(driverId) {
   return Number(result.rows[0].balance);
 }
 
+router.get("/performance", requireRole("super_admin", "admin"), async (req, res) => {
+  const result = await query(`
+    SELECT u.id, u.full_name,
+           COUNT(DISTINCT t.id)::int AS trips_count,
+           COALESCE(SUM(t.total_distance_km), 0)::float AS total_distance_km,
+           COUNT(ts.id) FILTER (WHERE ts.delivered_at IS NOT NULL)::int AS delivered_count,
+           COUNT(ts.id) FILTER (WHERE o.status = 'FAILED')::int AS failed_count
+    FROM users u
+    LEFT JOIN trips t ON t.driver_id = u.id AND t.status = 'COMPLETED'
+    LEFT JOIN trip_stops ts ON ts.trip_id = t.id
+    LEFT JOIN orders o ON o.id = ts.order_id
+    WHERE u.role = 'driver'
+    GROUP BY u.id, u.full_name
+    ORDER BY delivered_count DESC
+  `);
+
+  res.json(result.rows);
+});
+
 router.get("/list", requireRole("super_admin", "admin"), async (req, res) => {
   const result = await query(
     `SELECT id, full_name FROM users WHERE role = 'driver' AND status = 'active' ORDER BY full_name ASC`
