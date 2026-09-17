@@ -103,6 +103,7 @@ export const api = {
   getMyTrip: () => request("/trips/mine"),
   getActiveTripsList: () => request("/trips/active-list"),
   getAvailableDrivers: () => request("/trips/available-drivers"),
+  getTripArchive: () => request("/trips/archive"),
   getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
   deliverStop: (stopId) => request(`/trips/stops/${stopId}/deliver`, { method: "POST" }),
@@ -137,5 +138,17 @@ export const api = {
   saveCashEntry: (body) => request("/cash/entries", { method: "POST", body }),
   resetCashPeriod: () => request("/cash/reset", { method: "POST" }),
   getCashHistory: () => request("/cash/history"),
-  getCashTrend: (groupBy) => request(`/cash/trend?groupBy=${groupBy}`),
+  getCashTrend: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/cash/trend${qs ? `?${qs}` : ""}`);
+  },
+
+  getCustomerGrowth: (groupBy) => request(`/customers/growth?groupBy=${groupBy}`),
+
+  getNotifications: () => request("/notifications"),
+  markNotificationsRead: () => request("/notifications/mark-read", { method: "POST" }),
+
+  getCustomerReminder: (customerId) => request(`/reminders/${customerId}`),
+  setCustomerReminder: (customerId, body) => request(`/reminders/${customerId}`, { method: "POST", body }),
+  deleteCustomerReminder: (customerId) => request(`/reminders/${customerId}`, { method: "DELETE" }),
 };
