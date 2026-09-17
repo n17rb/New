@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { FiSearch, FiBox, FiUsers, FiBarChart2, FiDollarSign, FiClock, FiTrendingUp, FiMap, FiDatabase, FiList } from "react-icons/fi";
+import { FiSearch, FiBox, FiUsers, FiBarChart2, FiDollarSign, FiClock, FiTrendingUp, FiMap, FiDatabase, FiList, FiArchive, FiUserPlus } from "react-icons/fi";
 
 const ROLE_LABELS = {
   super_admin: "مدير",
@@ -17,10 +17,8 @@ export default function Dashboard({ user }) {
   const [myBalance, setMyBalance] = useState(null);
 
   useEffect(() => {
-    if (isDriver) {
-      api.getDriverBalance(user.id).then((d) => setMyBalance(d.balance)).catch(() => {});
-    }
-  }, [isDriver, user.id]);
+    api.getDriverBalance(user.id).then((d) => setMyBalance(d.balance)).catch(() => {});
+  }, [user.id]);
 
   return (
     <div className="page">
@@ -29,9 +27,9 @@ export default function Dashboard({ user }) {
         أهلًا {user.full_name} — {ROLE_LABELS[user.role] || user.role}
       </p>
 
-      {isDriver && myBalance !== null && (
+      {myBalance !== null && myBalance !== 0 && (
         <div className="card">
-          <div className="text-secondary">رصيدك الحالي المستحق للمحل</div>
+          <div className="text-secondary">{isDriver ? "رصيدك الحالي المستحق للمحل" : "رصيدك الشخصي (من رحلات وصّلتها بنفسك)"}</div>
           <div className="tabular-num" style={{ fontSize: "1.6rem", fontWeight: 700, color: myBalance > 0 ? "var(--urgent)" : "var(--success)" }}>
             {myBalance.toFixed(2)} JD
           </div>
@@ -81,6 +79,18 @@ export default function Dashboard({ user }) {
       {isPrivileged && (
         <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/customers-map")}>
           <FiMap /> خريطة العملاء
+        </button>
+      )}
+
+      {isPrivileged && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/customer-growth")}>
+          <FiUserPlus /> نمو العملاء
+        </button>
+      )}
+
+      {isPrivileged && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/trip-archive")}>
+          <FiArchive /> أرشيف الرحلات
         </button>
       )}
 
