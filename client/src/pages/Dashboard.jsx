@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { FiSearch, FiBox, FiUsers, FiBarChart2, FiDollarSign } from "react-icons/fi";
+import { FiSearch, FiBox, FiUsers, FiBarChart2, FiDollarSign, FiClock, FiTrendingUp, FiMap, FiDatabase, FiList } from "react-icons/fi";
 
 const ROLE_LABELS = {
   super_admin: "مدير",
@@ -63,6 +63,36 @@ export default function Dashboard({ user }) {
       {isPrivileged && (
         <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/cash")}>
           <FiDollarSign /> الحساب اليومي
+        </button>
+      )}
+
+      {isPrivileged && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/overdue-customers")}>
+          <FiClock /> عملاء متأخرين
+        </button>
+      )}
+
+      {isPrivileged && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/driver-performance")}>
+          <FiTrendingUp /> أداء السائقين
+        </button>
+      )}
+
+      {isPrivileged && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/customers-map")}>
+          <FiMap /> خريطة العملاء
+        </button>
+      )}
+
+      {user.role === "super_admin" && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/activity-log")}>
+          <FiList /> سجل النشاطات
+        </button>
+      )}
+
+      {user.role === "super_admin" && (
+        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/backup")}>
+          <FiDatabase /> النسخ الاحتياطية
         </button>
       )}
     </div>
