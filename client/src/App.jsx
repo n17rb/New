@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { api } from "./api.js";
-import { FiBell } from "react-icons/fi";
+import { FiBell, FiMoon, FiSun } from "react-icons/fi";
 
 import Setup from "./pages/Setup.jsx";
 import Login from "./pages/Login.jsx";
@@ -15,6 +15,11 @@ import DriverBalances from "./pages/DriverBalances.jsx";
 import MyBalance from "./pages/MyBalance.jsx";
 import Reports from "./pages/Reports.jsx";
 import Cash from "./pages/Cash.jsx";
+import OverdueCustomers from "./pages/OverdueCustomers.jsx";
+import DriverPerformance from "./pages/DriverPerformance.jsx";
+import CustomersMap from "./pages/CustomersMap.jsx";
+import ActivityLog from "./pages/ActivityLog.jsx";
+import Backup from "./pages/Backup.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -48,6 +53,13 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const deliveredIdsRef = useRef(new Set());
   const firstLoadRef = useRef(true);
+
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("darkMode") === "true");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+    localStorage.setItem("darkMode", darkMode ? "true" : "false");
+  }, [darkMode]);
 
   function checkSetup() {
     setLoadingSetup(true);
@@ -91,7 +103,10 @@ export default function App() {
             time: new Date(),
             read: false,
           }));
-          setNotifications((prev) => [...newNotifications, ...prev].slice(0, 30));
+          setNotifications((prev) => {
+            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+            return [...newNotifications, ...prev].filter((n) => n.time.getTime() > cutoff).slice(0, 50);
+          });
           playNotificationSound();
           newlyDelivered.forEach((s) => deliveredIdsRef.current.add(s.id));
         }
@@ -104,6 +119,16 @@ export default function App() {
     const interval = setInterval(poll, 15000);
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      setNotifications((prev) => {
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        return prev.filter((n) => n.time.getTime() > cutoff);
+      });
+    }, 60000);
+    return () => clearInterval(cleanup);
+  }, []);
 
   function handleLogout() {
     localStorage.removeItem("token");
@@ -160,6 +185,9 @@ export default function App() {
       <div className="top-bar">
         <strong>جوهرة الرابية</strong>
         <div className="icon-row">
+          <button className="icon-btn" onClick={() => setDarkMode(!darkMode)} title="الوضع الليلي">
+            {darkMode ? <FiSun size={16} /> : <FiMoon size={16} />}
+          </button>
           {isPrivileged && (
             <div style={{ position: "relative" }}>
               <button
@@ -216,6 +244,11 @@ export default function App() {
         {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
         {isPrivileged && <Route path="/reports" element={<Reports />} />}
         {isPrivileged && <Route path="/cash" element={<Cash />} />}
+        {isPrivileged && <Route path="/overdue-customers" element={<OverdueCustomers />} />}
+        {isPrivileged && <Route path="/driver-performance" element={<DriverPerformance />} />}
+        {isPrivileged && <Route path="/customers-map" element={<CustomersMap />} />}
+        {isSuperAdmin && <Route path="/activity-log" element={<ActivityLog />} />}
+        {isSuperAdmin && <Route path="/backup" element={<Backup />} />}
         {isDriver && <Route path="/my-balance" element={<MyBalance user={user} />} />}
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
         <Route path="*" element={<Navigate to={isDriver ? "/customers" : "/"} replace />} />
