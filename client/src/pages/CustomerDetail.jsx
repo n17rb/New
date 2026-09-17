@@ -578,17 +578,47 @@ function OrderHistorySection({ customerId }) {
   );
 }
 
+const DAYS = [
+  { value: 0, label: "أحد" },
+  { value: 1, label: "اثنين" },
+  { value: 2, label: "ثلاثاء" },
+  { value: 3, label: "أربعاء" },
+  { value: 4, label: "خميس" },
+  { value: 5, label: "جمعة" },
+  { value: 6, label: "سبت" },
+];
+
 function ReminderNoteSection({ customer, canManage, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState(customer.preferred_delivery_note || "");
+  const [selectedDays, setSelectedDays] = useState([]);
+  const [savedDays, setSavedDays] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.getCustomerReminder(customer.id).then((r) => {
+      const days = r ? r.days_of_week : [];
+      setSelectedDays(days);
+      setSavedDays(days);
+    }).catch(() => {});
+  }, [customer.id]);
+
+  function toggleDay(day) {
+    setSelectedDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]);
+  }
 
   async function handleSave() {
     setSaving(true);
     setError("");
     try {
       await api.updateCustomer(customer.id, { preferred_delivery_note: note });
+      if (selectedDays.length > 0) {
+        await api.setCustomerReminder(customer.id, { days_of_week: selectedDays, notes: note });
+      } else if (savedDays.length > 0) {
+        await api.deleteCustomerReminder(customer.id);
+      }
+      setSavedDays(selectedDays);
       setEditing(false);
       onChanged();
     } catch (err) {
@@ -598,13 +628,13 @@ function ReminderNoteSection({ customer, canManage, onChanged }) {
     }
   }
 
-  if (!editing && !customer.preferred_delivery_note && !canManage) return null;
+  if (!editing && !customer.preferred_delivery_note && savedDays.length === 0 && !canManage) return null;
 
   return (
     <div className="card">
       {error && <div className="error-box">{error}</div>}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 className="title-md" style={{ margin: 0 }}>⏰ تذكير التوصيل المعتاد</h2>
+        <h2 className="title-md" style={{ margin: 0 }}>⏰ منبّه التوصيل المعتاد</h2>
         {canManage && !editing && (
           <button className="icon-btn" onClick={() => setEditing(true)} title="تعديل">
             <FiEdit2 size={16} />
@@ -613,22 +643,46 @@ function ReminderNoteSection({ customer, canManage, onChanged }) {
       </div>
 
       {!editing ? (
-        <p className="text-secondary" style={{ margin: "8px 0 0" }}>
-          {customer.preferred_delivery_note || "لا يوجد ملاحظة — مثال: يحب التوصيل كل أحد وخميس بعد العصر."}
-        </p>
+        <>
+          <p className="text-secondary" style={{ margin: "8px 0 0" }}>
+            {customer.preferred_delivery_note || "لا يوجد ملاحظة."}
+          </p>
+          {savedDays.length > 0 && (
+            <p className="text-secondary" style={{ margin: "4px 0 0" }}>
+              🔔 منبّه فعّال أيام: {savedDays.map((d) => DAYS.find((x) => x.value === d)?.label).join("، ")}
+            </p>
+          )}
+        </>
       ) : (
         <>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>أي أيام تحب نذكّرك بهذا الزبون؟ (اختياري — بدون اختيار = بدون منبّه)</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {DAYS.map((d) => (
+                <button
+                  key={d.value}
+                  type="button"
+                  className={selectedDays.includes(d.value) ? "btn-primary" : "btn-secondary"}
+                  style={{ width: "auto", padding: "8px 12px", fontSize: "0.85rem" }}
+                  onClick={() => toggleDay(d.value)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <textarea
             rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="مثال: يحب التوصيل كل أحد وخميس بعد العصر"
+            placeholder="مثال: يطلب قارورتين مي"
             style={{ marginTop: 8 }}
           />
           <button className="btn-primary" style={{ marginTop: 8, marginBottom: 8 }} disabled={saving} onClick={handleSave}>
             {saving ? "جاري الحفظ..." : "حفظ"}
           </button>
-          <button className="btn-secondary" onClick={() => { setEditing(false); setNote(customer.preferred_delivery_note || ""); }}>إلغاء</button>
+          <button className="btn-secondary" onClick={() => { setEditing(false); setNote(customer.preferred_delivery_note || ""); setSelectedDays(savedDays); }}>إلغاء</button>
         </>
       )}
     </div>
