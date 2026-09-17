@@ -120,7 +120,12 @@ export default function Customers({ user }) {
             {customers.map((c) => (
               <div key={c.id} className="customer-row" onClick={() => navigate(`/customers/${c.id}`)} style={{ cursor: "pointer", padding: "10px 14px" }}>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{c.name}</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {c.name}
+                    {!c.latitude && (
+                      <span style={{ color: "var(--urgent)", fontSize: "0.75rem", marginRight: 6 }}> ⚠️ الموقع غير محفوظ</span>
+                    )}
+                  </div>
                   <div className="text-secondary tabular-num">{c.phone_display} · #{c.sequential_number}</div>
                 </div>
                 {c.region_name && <span className="badge">{c.region_name}</span>}
