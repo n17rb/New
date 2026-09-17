@@ -21,6 +21,8 @@ import reportRoutes from "./routes/reports.js";
 import cashRoutes from "./routes/cash.js";
 import activityRoutes from "./routes/activity.js";
 import backupRoutes, { createScheduledSnapshot } from "./routes/backup.js";
+import notificationRoutes from "./routes/notifications.js";
+import reminderRoutes, { checkAndFireReminders } from "./routes/reminders.js";
 
 dotenv.config();
 
@@ -46,6 +48,8 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/cash", cashRoutes);
 app.use("/api/activity-log", activityRoutes);
 app.use("/api/backup", backupRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/reminders", reminderRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -74,4 +78,10 @@ initDbIfNeeded().then(() => {
   setInterval(() => {
     createScheduledSnapshot().catch((err) => console.error("❌ فشل النسخة الاحتياطية المجدولة:", err.message));
   }, 24 * 60 * 60 * 1000);
+
+  checkAndFireReminders().catch((err) => console.error("❌ فشل فحص التذكيرات الأولي:", err.message));
+  setInterval(() => {
+    checkAndFireReminders().catch((err) => console.error("❌ فشل فحص التذكيرات:", err.message));
+    pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'").catch(() => {});
+  }, 60 * 60 * 1000);
 });
