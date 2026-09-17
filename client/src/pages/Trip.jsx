@@ -12,21 +12,23 @@ function formatMinutes(mins) {
   return `~${h} ساعة${m > 0 ? ` و${m} دقيقة` : ""}`;
 }
 
-function formatClockTime(iso) {
-  return new Date(iso).toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "2-digit", minute: "2-digit" });
+function formatClockTime(input) {
+  const d = typeof input === "number" ? new Date(Date.now() + input * 60000) : new Date(input);
+  return d.toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function Trip({ user }) {
-  const isDriver = user.role === "driver";
   const isPrivileged = user.role === "super_admin" || user.role === "admin";
-
-  if (isDriver) return <DriverTripView />;
-  if (isPrivileged) return <ManagerTripsOverview user={user} />;
-  return <div className="page"><p className="text-secondary">لا يوجد وصول لهذا القسم.</p></div>;
+  if (user.role === "data_entry") {
+    return <div className="page"><p className="text-secondary">لا يوجد وصول لهذا القسم.</p></div>;
+  }
+  return <UnifiedTripView user={user} isPrivileged={isPrivileged} />;
 }
 
-function DriverTripView() {
-  const [trip, setTrip] = useState(undefined);
+function UnifiedTripView({ user, isPrivileged }) {
+  const [myTrip, setMyTrip] = useState(undefined);
+  const [otherTrips, setOtherTrips] = useState([]);
+  const [selectedOtherId, setSelectedOtherId] = useState(null);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState(null);
   const [banner, setBanner] = useState("");
@@ -35,16 +37,21 @@ function DriverTripView() {
   async function load(silent = false) {
     if (!silent) setError("");
     try {
-      const result = await api.getMyTrip();
-      if (result) {
-        const deliveredCount = result.stops.filter((s) => s.order_status === "DELIVERED").length;
+      const mine = await api.getMyTrip();
+      if (mine) {
+        const deliveredCount = mine.stops.filter((s) => s.order_status === "DELIVERED").length;
         if (silent && deliveredCount > prevDeliveredRef.current) {
           setBanner("🎉 تم تسليم طلب جديد بالرحلة");
           setTimeout(() => setBanner(""), 5000);
         }
         prevDeliveredRef.current = deliveredCount;
       }
-      setTrip(result);
+      setMyTrip(mine);
+
+      if (isPrivileged) {
+        const all = await api.getActiveTripsList();
+        setOtherTrips(all.filter((t) => t.driver_id !== user.id));
+      }
     } catch (err) {
       if (!silent) setError(err.message);
     }
@@ -57,10 +64,10 @@ function DriverTripView() {
   }, []);
 
   useEffect(() => {
-    if (!trip || trip.status !== "STARTED" || !navigator.geolocation) return;
+    if (!myTrip || myTrip.status !== "STARTED" || !navigator.geolocation) return;
     const sendLocation = () => {
       navigator.geolocation.getCurrentPosition(
-        (pos) => api.updateTripLocation(trip.id, pos.coords.latitude, pos.coords.longitude).catch(() => {}),
+        (pos) => api.updateTripLocation(myTrip.id, pos.coords.latitude, pos.coords.longitude).catch(() => {}),
         () => {},
         { enableHighAccuracy: true, timeout: 10000 }
       );
@@ -68,7 +75,15 @@ function DriverTripView() {
     sendLocation();
     const interval = setInterval(sendLocation, 20000);
     return () => clearInterval(interval);
-  }, [trip?.id, trip?.status]);
+  }, [myTrip?.id, myTrip?.status]);
+
+  if (selectedOtherId) {
+    return (
+      <div className="page">
+        <OtherTripDetail tripId={selectedOtherId} isSuperAdmin={user.role === "super_admin"} onBack={() => { setSelectedOtherId(null); load(); }} />
+      </div>
+    );
+  }
 
   if (summary) {
     return (
@@ -78,7 +93,7 @@ function DriverTripView() {
     );
   }
 
-  if (trip === undefined) {
+  if (myTrip === undefined) {
     return <div className="page"><p className="text-secondary">جاري التحميل...</p></div>;
   }
 
@@ -88,80 +103,38 @@ function DriverTripView() {
       {banner && <div className="success-box">{banner}</div>}
       {error && <div className="error-box">{error}</div>}
 
-      {!trip ? (
-        <CreateTripForm onCreated={load} />
+      {!myTrip ? (
+        <CreateTripForm isPrivileged={isPrivileged} onCreated={load} />
       ) : (
         <ActiveTripView
-          trip={trip}
-          isSuperAdmin={false}
+          trip={myTrip}
+          isSuperAdmin={user.role === "super_admin"}
           isManagerViewOnly={false}
-          canOperate={trip.can_operate}
+          canOperate={myTrip.can_operate}
           onChanged={load}
           onCompleted={(s) => setSummary(s)}
         />
+      )}
+
+      {isPrivileged && otherTrips.length > 0 && (
+        <div className="card">
+          <h2 className="title-md">رحلات سائقين آخرين (عرض فقط)</h2>
+          {otherTrips.map((t) => (
+            <div key={t.id} className="customer-row" style={{ padding: "10px 0", cursor: "pointer" }} onClick={() => setSelectedOtherId(t.id)}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{t.driver_name || "سائق غير معروف"}</div>
+                <div className="text-secondary tabular-num">{t.delivered_count} / {t.total_count} تم التسليم</div>
+              </div>
+              <span className="badge">{t.status === "STARTED" ? "جارية" : "جاهزة"}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
-function ManagerTripsOverview({ user }) {
-  const [trips, setTrips] = useState(undefined);
-  const [selectedId, setSelectedId] = useState(null);
-  const [error, setError] = useState("");
-
-  async function load() {
-    setError("");
-    try {
-      setTrips(await api.getActiveTripsList());
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (trips && trips.length === 1 && !selectedId) {
-      setSelectedId(trips[0].id);
-    }
-  }, [trips]);
-
-  if (selectedId) {
-    return (
-      <div className="page">
-        <ManagerTripDetail tripId={selectedId} isSuperAdmin={user.role === "super_admin"} onBack={() => { setSelectedId(null); load(); }} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="page">
-      <h1 className="title-lg">الرحلات الجارية</h1>
-      {error && <div className="error-box">{error}</div>}
-
-      {trips === undefined && <p className="text-secondary">جاري التحميل...</p>}
-      {trips && trips.length === 0 && <p className="text-secondary">لا يوجد أي سائق برحلة جارية حاليًا.</p>}
-
-      <div className="card" style={{ padding: 0 }}>
-        {trips && trips.map((t) => (
-          <div key={t.id} className="customer-row" style={{ padding: "12px 14px", cursor: "pointer" }} onClick={() => setSelectedId(t.id)}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{t.driver_name || "سائق غير معروف"}</div>
-              <div className="text-secondary tabular-num">{t.delivered_count} / {t.total_count} تم التسليم</div>
-            </div>
-            <span className="badge">{t.status === "STARTED" ? "جارية" : "جاهزة"}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ManagerTripDetail({ tripId, isSuperAdmin, onBack }) {
+function OtherTripDetail({ tripId, isSuperAdmin, onBack }) {
   const [trip, setTrip] = useState(undefined);
   const [error, setError] = useState("");
 
@@ -184,7 +157,7 @@ function ManagerTripDetail({ tripId, isSuperAdmin, onBack }) {
 
   return (
     <div>
-      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع لقائمة الرحلات</button>
+      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع</button>
       {error && <div className="error-box">{error}</div>}
       <ActiveTripView
         trip={trip}
@@ -198,11 +171,13 @@ function ManagerTripDetail({ tripId, isSuperAdmin, onBack }) {
   );
 }
 
-function CreateTripForm({ onCreated }) {
+function CreateTripForm({ isPrivileged, onCreated }) {
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState({});
   const [routeMode, setRouteMode] = useState("urgent_smart");
   const [useLocation, setUseLocation] = useState(true);
+  const [drivers, setDrivers] = useState([]);
+  const [assignTo, setAssignTo] = useState("self");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -223,7 +198,12 @@ function CreateTripForm({ onCreated }) {
     }
   }
 
-  useEffect(() => { loadOrders(); }, []);
+  useEffect(() => {
+    loadOrders();
+    if (isPrivileged) {
+      api.getAvailableDrivers().then(setDrivers).catch(() => {});
+    }
+  }, []);
 
   function toggle(id) {
     setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -234,6 +214,10 @@ function CreateTripForm({ onCreated }) {
     const orderIds = Object.entries(selected).filter(([, v]) => v).map(([id]) => Number(id));
     if (orderIds.length === 0) {
       setError("اختر طلب واحد على الأقل.");
+      return;
+    }
+    if (isPrivileged && assignTo !== "self" && !assignTo) {
+      setError("اختر السائق المسؤول عن الرحلة.");
       return;
     }
 
@@ -250,7 +234,13 @@ function CreateTripForm({ onCreated }) {
         }
       }
 
-      await api.createTrip({ order_ids: orderIds, start_latitude, start_longitude, route_mode: routeMode });
+      await api.createTrip({
+        order_ids: orderIds,
+        start_latitude,
+        start_longitude,
+        route_mode: routeMode,
+        driver_id: isPrivileged && assignTo !== "self" ? Number(assignTo) : undefined,
+      });
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -279,6 +269,18 @@ function CreateTripForm({ onCreated }) {
         <h2 className="title-md" style={{ margin: 0 }}>إنشاء رحلة جديدة</h2>
         <button className="btn-secondary" style={{ width: "auto", padding: "8px 12px" }} onClick={loadOrders}>🔄 تحديث</button>
       </div>
+
+      {isPrivileged && (
+        <div className="field">
+          <label>مين اللي رح يوصّل هذه الرحلة؟</label>
+          <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)}>
+            <option value="self">أنا بنفسي</option>
+            {drivers.map((d) => (
+              <option key={d.id} value={d.id}>{d.full_name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="field">
         <label>طريقة الترتيب</label>
@@ -350,8 +352,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
 
   let estimatedFinishLabel = null;
   if (trip.status === "STARTED" && trip.estimated_minutes_remaining != null) {
-    const finishDate = new Date(Date.now() + trip.estimated_minutes_remaining * 60000);
-    estimatedFinishLabel = `${formatMinutes(trip.estimated_minutes_remaining)} (حوالي الساعة ${formatClockTime(finishDate)})`;
+    estimatedFinishLabel = `${formatMinutes(trip.estimated_minutes_remaining)} (حوالي الساعة ${formatClockTime(trip.estimated_minutes_remaining)})`;
   }
 
   async function withBusy(fn) {
@@ -418,21 +419,6 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         )}
       </div>
 
-      {trip.inventory && trip.inventory.length > 0 && (
-        <div className="card">
-          <h2 className="title-md">جرد السيارة</h2>
-          {trip.inventory.map((item, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < trip.inventory.length - 1 ? "1px solid var(--border)" : "none" }}>
-              <span>{item.product_name_snapshot}</span>
-              <span className="tabular-num">
-                <span style={{ fontWeight: 700, color: item.remaining_quantity === 0 ? "var(--success)" : "inherit" }}>{item.remaining_quantity}</span>
-                <span className="text-secondary"> / {item.loaded_quantity} متبقي</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {(isSuperAdmin || isManagerViewOnly) && !trip.current_latitude && (
         <div className="card" style={{ background: "var(--bg)" }}>
           🚚 لسا ما وصلنا أول تحديث موقع من السائق — تأكد إنه فاتح صفحة "الرحلة" بجهازه وموافق على إذن الموقع بالمتصفح.
@@ -461,17 +447,35 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
               <span>{s.customer_name}</span>
               {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
             </div>
-            <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
+            <div style={{ textAlign: "left" }}>
+              <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
+              {s.estimated_eta_minutes != null && (
+                <div className="text-secondary tabular-num" style={{ fontSize: "0.7rem", marginTop: 2 }}>
+                  متوقع: {formatClockTime(s.estimated_eta_minutes)}
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
 
       {canOperate && trip.status === "STARTED" && currentStop && (
-        <StopCard stop={currentStop} busy={busy} withBusy={withBusy} />
+        <StopCard stop={currentStop} busy={busy} withBusy={withBusy} lastDeliveredStopId={trip.last_delivered_stop_id} />
       )}
 
       {canOperate && trip.status === "STARTED" && !currentStop && (
         <div className="success-box">كل التوقفات انتهت — جاهز لإنهاء الرحلة.</div>
+      )}
+
+      {canOperate && trip.last_delivered_stop_id && (
+        <button
+          className="btn-secondary"
+          style={{ marginTop: 10 }}
+          disabled={busy}
+          onClick={() => withBusy(() => api.undoDeliver(trip.last_delivered_stop_id))}
+        >
+          ↩️ تراجع عن آخر تسليم (لو ضغطت بالغلط)
+        </button>
       )}
 
       {canOperate && (
@@ -513,11 +517,24 @@ function StopCard({ stop, busy, withBusy }) {
       </h2>
       <p className="tabular-num text-secondary">#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
 
+      {stop.items && stop.items.length > 0 && (
+        <div className="card" style={{ background: "var(--bg)" }}>
+          <div className="text-secondary" style={{ marginBottom: 4 }}>محتوى الطلب:</div>
+          {stop.items.map((it, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{it.product_name_snapshot}</span>
+              <span className="tabular-num" style={{ fontWeight: 700 }}>× {it.quantity}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <p className="text-secondary" style={{ lineHeight: 1.8 }}>
         {stop.street && <>الشارع: {stop.street}<br /></>}
         {stop.building_number && <>عمارة: {stop.building_number} {stop.building_name && `(${stop.building_name})`}<br /></>}
         {stop.floor && <>الطابق: {stop.floor}<br /></>}
-        {stop.apartment && <>شقة: {stop.apartment} {stop.side && `— ${stop.side}`}<br /></>}
+        {stop.apartment && <>شقة: {stop.apartment}<br /></>}
+        {stop.side && <>الجهة: {stop.side}<br /></>}
         {stop.access_notes && <>ملاحظة: {stop.access_notes}<br /></>}
         {stop.order_notes && <>📝 {stop.order_notes}</>}
       </p>
