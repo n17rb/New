@@ -1,0 +1,17 @@
+{
+  "name": "جوهرة الرابية",
+  "short_name": "جوهرة الرابية",
+  "description": "نظام إدارة محل مياه وتوزيع",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F6F8FA",
+  "theme_color": "#0094FF",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
