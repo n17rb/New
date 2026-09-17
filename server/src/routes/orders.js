@@ -70,7 +70,7 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { customer_id, items, priority, notes } = req.body;
+  const { customer_id, items, priority, notes, requested_time } = req.body;
 
   if (!customer_id || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "العميل والمنتجات مطلوبة (منتج واحد على الأقل)." });
@@ -116,9 +116,9 @@ router.post("/", async (req, res) => {
     const finalTotal = subtotal;
 
     const orderResult = await client.query(
-      `INSERT INTO orders (order_number, customer_id, priority, subtotal, final_total, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [orderNumber, customer_id, priority === "urgent" ? "urgent" : "normal", subtotal, finalTotal, notes || null, req.user.id]
+      `INSERT INTO orders (order_number, customer_id, priority, subtotal, final_total, notes, requested_time, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [orderNumber, customer_id, priority === "urgent" ? "urgent" : "normal", subtotal, finalTotal, notes || null, requested_time || null, req.user.id]
     );
     const order = orderResult.rows[0];
 
