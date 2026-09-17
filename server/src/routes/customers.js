@@ -76,6 +76,50 @@ router.get("/", async (req, res) => {
   res.json(result.rows);
 });
 
+router.get("/all-locations", async (req, res) => {
+  const result = await query(
+    `SELECT c.id, c.name, l.latitude, l.longitude, r.name AS region_name
+     FROM customers c
+     JOIN customer_locations l ON l.customer_id = c.id
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE c.status = 'active' AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL`
+  );
+  res.json(result.rows);
+});
+
+router.get("/overdue", async (req, res) => {
+  const result = await query(`
+    WITH stats AS (
+      SELECT customer_id,
+             AVG(diff_days) AS avg_days,
+             MAX(created_at) AS last_order_at,
+             COUNT(*) AS delivered_count
+      FROM (
+        SELECT customer_id, created_at,
+               EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY customer_id ORDER BY created_at))) / 86400 AS diff_days
+        FROM orders WHERE status = 'DELIVERED'
+      ) t
+      WHERE diff_days IS NULL OR diff_days > 0
+      GROUP BY customer_id
+      HAVING COUNT(*) >= 3
+    )
+    SELECT c.id, c.name, c.phone_display, c.sequential_number,
+           s.avg_days, s.last_order_at,
+           EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 AS days_since_last_order
+    FROM stats s
+    JOIN customers c ON c.id = s.customer_id
+    WHERE c.status = 'active'
+      AND EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 > s.avg_days
+    ORDER BY (EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 - s.avg_days) DESC
+    LIMIT 100
+  `);
+  res.json(result.rows.map((r) => ({
+    ...r,
+    avg_days: Number(r.avg_days),
+    days_since_last_order: Math.floor(Number(r.days_since_last_order)),
+  })));
+});
+
 router.get("/:id", async (req, res) => {
   const result = await query(
     `SELECT c.*,
@@ -367,50 +411,6 @@ router.post("/:id/photo", requireCanManageCustomers, uploadSingleImage, async (r
   });
 
   res.json({ photoUrl });
-});
-
-router.get("/all-locations", async (req, res) => {
-  const result = await query(
-    `SELECT c.id, c.name, l.latitude, l.longitude, r.name AS region_name
-     FROM customers c
-     JOIN customer_locations l ON l.customer_id = c.id
-     LEFT JOIN regions r ON r.id = l.region_id
-     WHERE c.status = 'active' AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL`
-  );
-  res.json(result.rows);
-});
-
-router.get("/overdue", async (req, res) => {
-  const result = await query(`
-    WITH stats AS (
-      SELECT customer_id,
-             AVG(diff_days) AS avg_days,
-             MAX(created_at) AS last_order_at,
-             COUNT(*) AS delivered_count
-      FROM (
-        SELECT customer_id, created_at,
-               EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY customer_id ORDER BY created_at))) / 86400 AS diff_days
-        FROM orders WHERE status = 'DELIVERED'
-      ) t
-      WHERE diff_days IS NULL OR diff_days > 0
-      GROUP BY customer_id
-      HAVING COUNT(*) >= 3
-    )
-    SELECT c.id, c.name, c.phone_display, c.sequential_number,
-           s.avg_days, s.last_order_at,
-           EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 AS days_since_last_order
-    FROM stats s
-    JOIN customers c ON c.id = s.customer_id
-    WHERE c.status = 'active'
-      AND EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 > s.avg_days
-    ORDER BY (EXTRACT(EPOCH FROM (now() - s.last_order_at)) / 86400 - s.avg_days) DESC
-    LIMIT 100
-  `);
-  res.json(result.rows.map((r) => ({
-    ...r,
-    avg_days: Number(r.avg_days),
-    days_since_last_order: Math.floor(Number(r.days_since_last_order)),
-  })));
 });
 
 router.get("/:id/prices", async (req, res) => {
