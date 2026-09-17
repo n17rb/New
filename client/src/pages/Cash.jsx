@@ -27,21 +27,43 @@ function formatBucketLabel(bucket, groupBy) {
 
 function TrendSection() {
   const [groupBy, setGroupBy] = useState("month");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getCashTrend(groupBy).then(setData).catch((err) => setError(err.message));
-  }, [groupBy]);
+    const params = { groupBy };
+    if (fromDate) params.from = fromDate;
+    if (toDate) params.to = toDate;
+    api.getCashTrend(params).then(setData).catch((err) => setError(err.message));
+  }, [groupBy, fromDate, toDate]);
 
-  const maxNet = data ? Math.max(1, ...data.rows.map((r) => Math.abs(r.net))) : 1;
+  const width = 320;
+  const height = 110;
+  const padding = 10;
+
+  let pathD = "";
+  let points = [];
+  if (data && data.rows.length > 0) {
+    const values = data.rows.map((r) => r.net);
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 0);
+    const range = max - min || 1;
+    points = data.rows.map((r, i) => {
+      const x = data.rows.length === 1 ? width / 2 : padding + (i / (data.rows.length - 1)) * (width - padding * 2);
+      const y = height - padding - ((r.net - min) / range) * (height - padding * 2);
+      return { x, y, net: r.net, bucket: r.bucket };
+    });
+    pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  }
 
   return (
     <div className="card">
       <h2 className="title-md">اتجاه الشغل عبر الوقت</h2>
       {error && <div className="error-box">{error}</div>}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         {Object.entries(GROUP_LABELS).map(([key, label]) => (
           <button
             key={key}
@@ -52,6 +74,17 @@ function TrendSection() {
             {label}
           </button>
         ))}
+      </div>
+
+      <div className="field-row" style={{ marginBottom: 14 }}>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>من تاريخ (اختياري)</label>
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        </div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>إلى تاريخ (اختياري)</label>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        </div>
       </div>
 
       {!data && <p className="text-secondary">جاري التحميل...</p>}
@@ -66,20 +99,13 @@ function TrendSection() {
             {TREND_LABELS[data.trend].text}
           </div>
 
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 100, marginBottom: 10 }}>
-            {data.rows.map((r, i) => (
-              <div
-                key={i}
-                title={`${formatBucketLabel(r.bucket, groupBy)}: ${r.net.toFixed(2)} JD`}
-                style={{
-                  flex: 1,
-                  height: `${Math.max(4, (Math.abs(r.net) / maxNet) * 100)}%`,
-                  background: r.net >= 0 ? "var(--success)" : "var(--urgent)",
-                  borderRadius: "3px 3px 0 0",
-                }}
-              />
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: 130, marginBottom: 10 }}>
+            <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke="var(--border)" strokeWidth="1" />
+            <path d={pathD} fill="none" stroke={data.trend === "down" ? "var(--urgent)" : "var(--success)"} strokeWidth="2.5" />
+            {points.map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r="3" fill={data.trend === "down" ? "var(--urgent)" : "var(--success)"} />
             ))}
-          </div>
+          </svg>
 
           <div style={{ maxHeight: 220, overflowY: "auto" }}>
             {[...data.rows].reverse().map((r, i) => (
