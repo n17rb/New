@@ -493,7 +493,9 @@ function StopCard({ stop, busy, withBusy }) {
   const [postponeTime, setPostponeTime] = useState("");
   const [postponeNote, setPostponeNote] = useState("");
 
-  const mapLink = stop.maps_url || (stop.latitude && stop.longitude ? `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}` : null);
+  const mapLink = (stop.latitude && stop.longitude)
+    ? `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}`
+    : stop.maps_url || null;
   const whatsappLink = `https://wa.me/${stop.phone_normalized}`;
 
   function handlePostponeSubmit() {
