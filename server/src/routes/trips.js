@@ -214,7 +214,7 @@ async function insertNotification({ type, message, customerId, tripId }) {
 
 async function buildTripDetailResponse(trip, requestingUser) {
   const stopsResult = await query(
-    `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes,
+    `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes, o.requested_time,
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
             l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url
@@ -243,8 +243,10 @@ async function buildTripDetailResponse(trip, requestingUser) {
 
   let cumulativeKm = 0;
   let cumulativeMinutes = 0;
+  const now = new Date();
   const stopsWithEta = stops.map((s) => {
     const isPending = !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED";
+    const isTimeLocked = isPending && s.requested_time && new Date(s.requested_time) > now;
     if (isPending) {
       const legKm = s.leg_distance_km != null ? Number(s.leg_distance_km) : 0;
       cumulativeKm += legKm;
@@ -256,6 +258,7 @@ async function buildTripDetailResponse(trip, requestingUser) {
       items: itemsByOrder[s.order_id] || [],
       estimated_eta_minutes: isPending ? Math.round(cumulativeMinutes) : null,
       remaining_distance_km: isPending ? Number(cumulativeKm.toFixed(1)) : null,
+      is_time_locked: isTimeLocked,
     };
   });
 
@@ -557,12 +560,14 @@ router.post("/stops/:stopId/postpone", async (req, res) => {
   await query("UPDATE trip_stops SET sequence_number = $1 WHERE id = $2", [newSeq, stop.id]);
 
   const noteAppend = [new_time ? `الموعد المطلوب: ${new_time}` : null, note || null].filter(Boolean).join(" — ");
-  if (noteAppend) {
-    await query(
-      "UPDATE orders SET notes = COALESCE(notes || ' | ', '') || $1, updated_at = now() WHERE id = $2",
-      [noteAppend, stop.order_id]
-    );
-  }
+  await query(
+    `UPDATE orders SET
+       requested_time = COALESCE($1, requested_time),
+       notes = COALESCE(notes || ' | ', '') || $2,
+       updated_at = now()
+     WHERE id = $3`,
+    [new_time || null, noteAppend || "تم التأجيل", stop.order_id]
+  );
 
   await logActivity({
     userId: req.user.id,
