@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
 import { FiBell, FiMoon, FiSun } from "react-icons/fi";
 
@@ -20,6 +20,9 @@ import DriverPerformance from "./pages/DriverPerformance.jsx";
 import CustomersMap from "./pages/CustomersMap.jsx";
 import ActivityLog from "./pages/ActivityLog.jsx";
 import Backup from "./pages/Backup.jsx";
+import Notifications from "./pages/Notifications.jsx";
+import TripArchive from "./pages/TripArchive.jsx";
+import CustomerGrowth from "./pages/CustomerGrowth.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -36,7 +39,7 @@ function playNotificationSound() {
     osc.start();
     osc.stop(ctx.currentTime + 0.18);
   } catch {
-    // بعض المتصفحات تمنع الصوت قبل أول تفاعل من المستخدم — لا مشكلة، الإشعار النصي يبقى يظهر
+    // بعض المتصفحات تمنع الصوت قبل أول تفاعل من المستخدم — لا مشكلة، الإشعار بالصفحة يبقى موجود
   }
 }
 
@@ -49,9 +52,8 @@ export default function App() {
     return raw ? JSON.parse(raw) : null;
   });
 
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const deliveredIdsRef = useRef(new Set());
+  const [unreadCount, setUnreadCount] = useState(0);
+  const seenIdsRef = useRef(new Set());
   const firstLoadRef = useRef(true);
 
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("darkMode") === "true");
@@ -80,36 +82,21 @@ export default function App() {
 
     async function poll() {
       try {
-        const trips = await api.getActiveTripsList();
-        if (!trips || trips.length === 0) return;
-
-        const allDeliveredStops = trips.flatMap((trip) =>
-          trip.stops
-            .filter((s) => s.order_status === "DELIVERED")
-            .map((s) => ({ ...s, tripDriverName: trip.driver_name, tripDeliveredCount: trip.delivered_count, tripTotalCount: trip.total_count }))
-        );
+        const list = await api.getNotifications();
 
         if (firstLoadRef.current) {
-          allDeliveredStops.forEach((s) => deliveredIdsRef.current.add(s.id));
+          list.forEach((n) => seenIdsRef.current.add(n.id));
+          setUnreadCount(list.filter((n) => !n.is_read).length);
           firstLoadRef.current = false;
           return;
         }
 
-        const newlyDelivered = allDeliveredStops.filter((s) => !deliveredIdsRef.current.has(s.id));
-        if (newlyDelivered.length > 0) {
-          const newNotifications = newlyDelivered.map((s) => ({
-            id: s.id,
-            text: `✅ ${s.tripDriverName || "سائق"} سلّم طلب ${s.customer_name} — ${s.tripDeliveredCount}/${s.tripTotalCount}`,
-            time: new Date(),
-            read: false,
-          }));
-          setNotifications((prev) => {
-            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-            return [...newNotifications, ...prev].filter((n) => n.time.getTime() > cutoff).slice(0, 50);
-          });
+        const newOnes = list.filter((n) => !seenIdsRef.current.has(n.id));
+        if (newOnes.length > 0) {
           playNotificationSound();
-          newlyDelivered.forEach((s) => deliveredIdsRef.current.add(s.id));
+          newOnes.forEach((n) => seenIdsRef.current.add(n.id));
         }
+        setUnreadCount(list.filter((n) => !n.is_read).length);
       } catch {
         // تجاهل صامت — لا نريد إزعاج المستخدم بأخطاء خلفية غير حرجة
       }
@@ -120,32 +107,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, [user]);
 
-  useEffect(() => {
-    const cleanup = setInterval(() => {
-      setNotifications((prev) => {
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        return prev.filter((n) => n.time.getTime() > cutoff);
-      });
-    }, 60000);
-    return () => clearInterval(cleanup);
-  }, []);
-
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
-  }
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  function toggleNotifications() {
-    setShowNotifications((prev) => {
-      const next = !prev;
-      if (next) {
-        setNotifications((list) => list.map((n) => ({ ...n, read: true })));
-      }
-      return next;
-    });
   }
 
   if (loadingSetup) {
@@ -182,57 +147,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="top-bar">
-        <strong>جوهرة الرابية</strong>
-        <div className="icon-row">
-          <button className="icon-btn" onClick={() => setDarkMode(!darkMode)} title="الوضع الليلي">
-            {darkMode ? <FiSun size={16} /> : <FiMoon size={16} />}
-          </button>
-          {isPrivileged && (
-            <div style={{ position: "relative" }}>
-              <button
-                className="icon-btn"
-                onClick={toggleNotifications}
-                style={{ position: "relative" }}
-                title="الإشعارات"
-              >
-                <FiBell size={16} />
-                {unreadCount > 0 && (
-                  <span style={{
-                    position: "absolute", top: -4, left: -4, background: "var(--urgent)", color: "#fff",
-                    borderRadius: "50%", width: 16, height: 16, fontSize: "0.65rem",
-                    display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
-                  }}>
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <div style={{
-                  position: "absolute", top: 44, left: 0, width: 280, maxHeight: 320, overflowY: "auto",
-                  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10,
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.15)", zIndex: 50, padding: 8,
-                }}>
-                  {notifications.length === 0 ? (
-                    <p className="text-secondary" style={{ padding: 10, margin: 0, fontSize: "0.85rem" }}>لا يوجد إشعارات بعد.</p>
-                  ) : (
-                    notifications.map((n) => (
-                      <div key={n.id} style={{ padding: "8px 6px", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
-                        <div>{n.text}</div>
-                        <div className="text-secondary tabular-num" style={{ fontSize: "0.7rem" }}>
-                          {n.time.toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "2-digit", minute: "2-digit" })}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          <button className="btn-danger-text" onClick={handleLogout}>خروج</button>
-        </div>
-      </div>
+      <TopBar user={user} isPrivileged={isPrivileged} unreadCount={unreadCount} darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />
 
       <Routes>
         <Route path="/" element={isDriver ? <Navigate to="/customers" replace /> : <Dashboard user={user} />} />
@@ -247,6 +162,9 @@ export default function App() {
         {isPrivileged && <Route path="/overdue-customers" element={<OverdueCustomers />} />}
         {isPrivileged && <Route path="/driver-performance" element={<DriverPerformance />} />}
         {isPrivileged && <Route path="/customers-map" element={<CustomersMap />} />}
+        {isPrivileged && <Route path="/notifications" element={<Notifications />} />}
+        {isPrivileged && <Route path="/trip-archive" element={<TripArchive />} />}
+        {isPrivileged && <Route path="/customer-growth" element={<CustomerGrowth />} />}
         {isSuperAdmin && <Route path="/activity-log" element={<ActivityLog />} />}
         {isSuperAdmin && <Route path="/backup" element={<Backup />} />}
         {isDriver && <Route path="/my-balance" element={<MyBalance user={user} />} />}
@@ -255,6 +173,36 @@ export default function App() {
       </Routes>
 
       <BottomNav role={user.role} />
+    </div>
+  );
+}
+
+function TopBar({ isPrivileged, unreadCount, darkMode, setDarkMode, onLogout }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="top-bar">
+      <strong>جوهرة الرابية</strong>
+      <div className="icon-row">
+        <button className="icon-btn" onClick={() => setDarkMode(!darkMode)} title="الوضع الليلي">
+          {darkMode ? <FiSun size={16} /> : <FiMoon size={16} />}
+        </button>
+        {isPrivileged && (
+          <button className="icon-btn" style={{ position: "relative" }} onClick={() => navigate("/notifications")} title="الإشعارات">
+            <FiBell size={16} />
+            {unreadCount > 0 && (
+              <span style={{
+                position: "absolute", top: -4, left: -4, background: "var(--urgent)", color: "#fff",
+                borderRadius: "50%", width: 16, height: 16, fontSize: "0.65rem",
+                display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
+              }}>
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        )}
+        <button className="btn-danger-text" onClick={onLogout}>خروج</button>
+      </div>
     </div>
   );
 }
