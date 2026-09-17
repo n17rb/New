@@ -151,4 +151,11 @@ export const api = {
   getCustomerReminder: (customerId) => request(`/reminders/${customerId}`),
   setCustomerReminder: (customerId, body) => request(`/reminders/${customerId}`, { method: "POST", body }),
   deleteCustomerReminder: (customerId) => request(`/reminders/${customerId}`, { method: "DELETE" }),
+
+  getCustomerCount: () => request("/customers/count"),
+  renumberCustomers: () => request("/customers/renumber", { method: "POST" }),
+
+  getMyNotes: () => request("/notes"),
+  addMyNote: (content) => request("/notes", { method: "POST", body: { content } }),
+  deleteMyNote: (id) => request(`/notes/${id}`, { method: "DELETE" }),
 };
