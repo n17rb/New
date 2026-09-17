@@ -137,4 +137,5 @@ export const api = {
   saveCashEntry: (body) => request("/cash/entries", { method: "POST", body }),
   resetCashPeriod: () => request("/cash/reset", { method: "POST" }),
   getCashHistory: () => request("/cash/history"),
+  getCashTrend: (groupBy) => request(`/cash/trend?groupBy=${groupBy}`),
 };
