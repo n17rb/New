@@ -359,7 +359,9 @@ function LocationSection({ customer, canManage, onChanged }) {
     }
   }
 
-  const mapLink = customer.maps_url || (latitude && longitude ? `https://www.google.com/maps?q=${latitude},${longitude}` : null);
+  const mapLink = (latitude && longitude)
+    ? `https://www.google.com/maps?q=${latitude},${longitude}`
+    : customer.maps_url || null;
 
   if (!editingLocation) {
     return (
