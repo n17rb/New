@@ -76,6 +76,24 @@ router.get("/", async (req, res) => {
   res.json(result.rows);
 });
 
+router.get("/count", async (req, res) => {
+  const result = await query("SELECT COUNT(*)::int AS count FROM customers WHERE status = 'active'");
+  res.json({ count: result.rows[0].count });
+});
+
+router.post("/renumber", async (req, res) => {
+  if (req.user.role !== "super_admin") return res.status(403).json({ error: "للمدير فقط." });
+
+  const result = await query("SELECT id FROM customers WHERE status = 'active' ORDER BY created_at ASC");
+  let i = 1;
+  for (const row of result.rows) {
+    await query("UPDATE customers SET sequential_number = $1 WHERE id = $2", [String(i).padStart(6, "0"), row.id]);
+    i++;
+  }
+
+  res.json({ message: `تمت إعادة ترقيم ${result.rows.length} عميل من ٠٠٠٠٠١ إلى ${String(result.rows.length).padStart(6, "0")}.` });
+});
+
 router.get("/all-locations", async (req, res) => {
   const result = await query(
     `SELECT c.id, c.name, l.latitude, l.longitude, r.name AS region_name
