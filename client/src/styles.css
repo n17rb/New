@@ -12,6 +12,20 @@
   --whatsapp: #25D366;
 }
 
+[data-theme="dark"] {
+  --bg: #0F1720;
+  --surface: #1A2530;
+  --border: #2B3948;
+  --primary: #3AA9FF;
+  --primary-dark: #0094FF;
+  --text: #E6EDF3;
+  --text-secondary: #93A3B0;
+  --urgent: #E15D53;
+  --success: #4CAF7D;
+  --warning: #D9A94E;
+  --whatsapp: #2EE873;
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root {
