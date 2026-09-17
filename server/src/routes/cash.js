@@ -35,9 +35,15 @@ router.get("/current", async (req, res) => {
   });
 });
 
+function getJordanToday() {
+  const now = new Date();
+  const jordanNow = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+  return jordanNow.toISOString().slice(0, 10);
+}
+
 router.post("/entries", async (req, res) => {
   const { entry_date, sales_amount, expense_amount, notes } = req.body;
-  const date = entry_date || new Date().toISOString().slice(0, 10);
+  const date = entry_date || getJordanToday();
 
   if (sales_amount == null && expense_amount == null) {
     return res.status(400).json({ error: "أدخل قيمة مبيعات أو صرفيات على الأقل." });
@@ -115,6 +121,38 @@ router.get("/history", async (req, res) => {
     "SELECT * FROM cash_periods WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 24"
   );
   res.json(result.rows);
+});
+
+router.get("/trend", async (req, res) => {
+  const groupBy = ["day", "week", "month", "year"].includes(req.query.groupBy) ? req.query.groupBy : "day";
+
+  const result = await query(
+    `SELECT date_trunc($1, entry_date::timestamp) AS bucket,
+            SUM(sales_amount)::float AS total_sales,
+            SUM(expense_amount)::float AS total_expenses
+     FROM cash_entries
+     GROUP BY bucket
+     ORDER BY bucket ASC`,
+    [groupBy]
+  );
+
+  const rows = result.rows.map((r) => ({
+    bucket: r.bucket,
+    total_sales: r.total_sales,
+    total_expenses: r.total_expenses,
+    net: r.total_sales - r.total_expenses,
+  }));
+
+  let trend = "flat";
+  if (rows.length >= 2) {
+    const mid = Math.ceil(rows.length / 2);
+    const firstHalfAvg = rows.slice(0, mid).reduce((s, r) => s + r.net, 0) / mid;
+    const secondHalfAvg = rows.slice(mid).reduce((s, r) => s + r.net, 0) / Math.max(1, rows.length - mid);
+    if (secondHalfAvg > firstHalfAvg * 1.03) trend = "up";
+    else if (secondHalfAvg < firstHalfAvg * 0.97) trend = "down";
+  }
+
+  res.json({ group_by: groupBy, rows, trend });
 });
 
 export default router;
