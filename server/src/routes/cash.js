@@ -125,15 +125,31 @@ router.get("/history", async (req, res) => {
 
 router.get("/trend", async (req, res) => {
   const groupBy = ["day", "week", "month", "year"].includes(req.query.groupBy) ? req.query.groupBy : "day";
+  const { from, to } = req.query;
+
+  const conditions = [];
+  const params = [groupBy];
+
+  if (from) {
+    params.push(from);
+    conditions.push(`entry_date >= $${params.length}`);
+  }
+  if (to) {
+    params.push(to);
+    conditions.push(`entry_date <= $${params.length}`);
+  }
+
+  const whereClause = conditions.length ? "AND " + conditions.join(" AND ") : "";
 
   const result = await query(
     `SELECT date_trunc($1, entry_date::timestamp) AS bucket,
             SUM(sales_amount)::float AS total_sales,
             SUM(expense_amount)::float AS total_expenses
      FROM cash_entries
+     WHERE true ${whereClause}
      GROUP BY bucket
      ORDER BY bucket ASC`,
-    [groupBy]
+    params
   );
 
   const rows = result.rows.map((r) => ({
