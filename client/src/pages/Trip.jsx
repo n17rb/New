@@ -346,9 +346,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   const totalCount = trip.stops.length;
   const remainingCount = totalCount - deliveredCount - trip.stops.filter((s) => s.order_status === "FAILED").length;
 
-  const remainingKm = trip.total_distance_km && totalCount > 0
-    ? (Number(trip.total_distance_km) * (remainingCount / totalCount)).toFixed(1)
-    : null;
+  const remainingKm = trip.total_remaining_distance_km != null ? trip.total_remaining_distance_km.toFixed(1) : null;
 
   let estimatedFinishLabel = null;
   if (trip.status === "STARTED" && trip.estimated_minutes_remaining != null) {
@@ -452,6 +450,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
               {s.estimated_eta_minutes != null && (
                 <div className="text-secondary tabular-num" style={{ fontSize: "0.7rem", marginTop: 2 }}>
                   متوقع: {formatClockTime(s.estimated_eta_minutes)}
+                  {s.remaining_distance_km != null && ` · ${s.remaining_distance_km} كم`}
                 </div>
               )}
             </div>
