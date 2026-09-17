@@ -13,7 +13,8 @@ export default function CustomerDetail({ user }) {
   const [loading, setLoading] = useState(true);
   const [showOrderForm, setShowOrderForm] = useState(false);
 
-  const canManage = ["super_admin", "admin", "data_entry"].includes(user.role);
+  const canManage = ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
+  const canDelete = user.role === "super_admin" || user.role === "admin" || user.can_delete_customer;
   const canOrder = user.role !== "data_entry";
 
   async function load() {
@@ -55,7 +56,8 @@ export default function CustomerDetail({ user }) {
 
       {error && <div className="error-box">{error}</div>}
 
-      <CustomerHeader customer={customer} canManage={canManage} onChanged={load} onDeleted={() => navigate("/customers")} />
+      <CustomerHeader customer={customer} canManage={canManage} canDelete={canDelete} onChanged={load} onDeleted={() => navigate("/customers")} />
+      <ReminderNoteSection customer={customer} canManage={canManage} onChanged={load} />
 
       {canOrder && (
         <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => setShowOrderForm(true)}>
@@ -64,12 +66,13 @@ export default function CustomerDetail({ user }) {
       )}
 
       <LocationSection customer={customer} canManage={canManage} onChanged={load} />
+      {canManage && <CustomPricesSection customerId={customer.id} />}
       <OrderHistorySection customerId={customer.id} />
     </div>
   );
 }
 
-function CustomerHeader({ customer, canManage, onChanged, onDeleted }) {
+function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone_display);
@@ -197,7 +200,7 @@ function CustomerHeader({ customer, canManage, onChanged, onDeleted }) {
               <FiEdit2 size={16} />
             </button>
           )}
-          {canManage && (
+          {canDelete && (
             <button className="icon-btn" style={{ color: "var(--urgent)", borderColor: "#f6cfcb" }} onClick={handleDelete} title="حذف">
               <FiTrash2 size={16} />
             </button>
@@ -283,13 +286,11 @@ function LocationSection({ customer, canManage, onChanged }) {
   function tryParseCoordsFromLink(link) {
     if (!link) return null;
 
-    // الصيغة الشائعة فعليًا برابط قوقل ماب النهائي (خصوصًا روابط الأماكن /place/...): !3d<lat>!4d<lng>
     const dPattern = link.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
     if (dPattern) {
       return { lat: parseFloat(dPattern[1]), lng: parseFloat(dPattern[2]) };
     }
 
-    // الصيغة العادية: lat,lng متجاورين (مثال: @31.9,35.9 أو q=31.9,35.9)
     const commaPattern = link.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
     if (commaPattern) {
       return { lat: parseFloat(commaPattern[1]), lng: parseFloat(commaPattern[2]) };
@@ -571,6 +572,149 @@ function OrderHistorySection({ customerId }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function ReminderNoteSection({ customer, canManage, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState(customer.preferred_delivery_note || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      await api.updateCustomer(customer.id, { preferred_delivery_note: note });
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing && !customer.preferred_delivery_note && !canManage) return null;
+
+  return (
+    <div className="card">
+      {error && <div className="error-box">{error}</div>}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 className="title-md" style={{ margin: 0 }}>⏰ تذكير التوصيل المعتاد</h2>
+        {canManage && !editing && (
+          <button className="icon-btn" onClick={() => setEditing(true)} title="تعديل">
+            <FiEdit2 size={16} />
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <p className="text-secondary" style={{ margin: "8px 0 0" }}>
+          {customer.preferred_delivery_note || "لا يوجد ملاحظة — مثال: يحب التوصيل كل أحد وخميس بعد العصر."}
+        </p>
+      ) : (
+        <>
+          <textarea
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="مثال: يحب التوصيل كل أحد وخميس بعد العصر"
+            style={{ marginTop: 8 }}
+          />
+          <button className="btn-primary" style={{ marginTop: 8, marginBottom: 8 }} disabled={saving} onClick={handleSave}>
+            {saving ? "جاري الحفظ..." : "حفظ"}
+          </button>
+          <button className="btn-secondary" onClick={() => { setEditing(false); setNote(customer.preferred_delivery_note || ""); }}>إلغاء</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CustomPricesSection({ customerId }) {
+  const [prices, setPrices] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    try {
+      const [p, allProducts] = await Promise.all([api.getCustomerPrices(customerId), api.getProducts()]);
+      setPrices(p);
+      setProducts(allProducts);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => { load(); }, [customerId]);
+
+  async function handleAdd() {
+    if (!selectedProduct || !customPrice) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.setCustomerPrice(customerId, { product_id: Number(selectedProduct), custom_price: parseFloat(customPrice) });
+      setSelectedProduct("");
+      setCustomPrice("");
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemove(productId) {
+    try {
+      await api.deleteCustomerPrice(customerId, productId);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  if (!prices) return null;
+
+  return (
+    <div className="card">
+      <h2 className="title-md">💰 أسعار خاصة لهذا العميل</h2>
+      <p className="text-secondary" style={{ marginBottom: 10 }}>تُستخدم تلقائيًا بدل السعر العام عند إنشاء طلب جديد له.</p>
+      {error && <div className="error-box">{error}</div>}
+
+      {prices.map((p) => (
+        <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+          <span>{p.product_name}</span>
+          <div className="icon-row">
+            <span className="tabular-num" style={{ fontWeight: 700 }}>{Number(p.custom_price).toFixed(2)} JD</span>
+            <span className="text-secondary tabular-num" style={{ fontSize: "0.75rem" }}>(عام: {Number(p.default_price).toFixed(2)})</span>
+            <button className="btn-danger-text" style={{ width: "auto", padding: "4px 10px" }} onClick={() => handleRemove(p.product_id)}>حذف</button>
+          </div>
+        </div>
+      ))}
+
+      <div className="field-row" style={{ marginTop: 10 }}>
+        <div className="field">
+          <label>المنتج</label>
+          <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)}>
+            <option value="">اختر منتج...</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>السعر الخاص (JD)</label>
+          <input type="number" step="0.01" value={customPrice} onChange={(e) => setCustomPrice(e.target.value)} />
+        </div>
+      </div>
+      <button className="btn-secondary" disabled={saving || !selectedProduct || !customPrice} onClick={handleAdd}>
+        {saving ? "جاري الحفظ..." : "+ إضافة سعر خاص"}
+      </button>
     </div>
   );
 }
