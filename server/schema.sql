@@ -261,3 +261,31 @@ CREATE TABLE IF NOT EXISTS backup_snapshots (
   data JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_backup_snapshots_created ON backup_snapshots(created_at DESC);
+
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS leg_distance_km NUMERIC(10,3);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id SERIAL PRIMARY KEY,
+  type VARCHAR(50) NOT NULL,
+  message TEXT NOT NULL,
+  related_customer_id INTEGER REFERENCES customers(id),
+  related_trip_id INTEGER REFERENCES trips(id),
+  is_read BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS customer_reminders (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  days_of_week INTEGER[] NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_customer_reminders_customer ON customer_reminders(customer_id);
+CREATE TABLE IF NOT EXISTS reminder_fired_log (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  fired_date DATE NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reminder_fired_unique ON reminder_fired_log(customer_id, fired_date);
