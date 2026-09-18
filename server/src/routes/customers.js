@@ -455,6 +455,46 @@ router.post("/:id/photo", requireCanManageCustomers, uploadSingleImage, async (r
   res.json({ photoUrl });
 });
 
+router.get("/:id/coupon-history", async (req, res) => {
+  const result = await query(
+    "SELECT * FROM coupon_ledger WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 100",
+    [req.params.id]
+  );
+  res.json(result.rows);
+});
+
+router.post("/:id/coupons/adjust", async (req, res) => {
+  if (req.user.role !== "super_admin") return res.status(403).json({ error: "للمدير فقط." });
+
+  const { change_amount, reason } = req.body;
+  if (!change_amount || !Number.isInteger(change_amount)) {
+    return res.status(400).json({ error: "قيمة التعديل مطلوبة (عدد صحيح، ممكن سالب)." });
+  }
+
+  const customerResult = await query("SELECT coupon_balance FROM customers WHERE id = $1", [req.params.id]);
+  if (!customerResult.rows[0]) return res.status(404).json({ error: "العميل غير موجود." });
+
+  const newBalance = customerResult.rows[0].coupon_balance + change_amount;
+  if (newBalance < 0) return res.status(400).json({ error: "لا يمكن أن يصير الرصيد سالب." });
+
+  await query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [newBalance, req.params.id]);
+  await query(
+    `INSERT INTO coupon_ledger (customer_id, change_amount, reason, balance_after, created_by)
+     VALUES ($1, $2, 'manual_adjustment', $3, $4)`,
+    [req.params.id, change_amount, newBalance, req.user.id]
+  );
+
+  await logActivity({
+    userId: req.user.id,
+    action: "ADJUST_COUPON_BALANCE",
+    recordType: "customer",
+    recordId: req.params.id,
+    newValue: { change_amount, reason, new_balance: newBalance },
+  });
+
+  res.json({ balance: newBalance });
+});
+
 router.get("/:id/prices", async (req, res) => {
   const result = await query(
     `SELECT cpp.*, p.name AS product_name, p.unit_price AS default_price
