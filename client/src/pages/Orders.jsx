@@ -113,6 +113,7 @@ function OrderDetail({ orderId, user, onBack }) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingItems, setEditingItems] = useState(false);
 
   const isPrivileged = user.role === "super_admin" || user.role === "admin";
   const canDiscount = isPrivileged || user.can_discount;
@@ -142,6 +143,16 @@ function OrderDetail({ orderId, user, onBack }) {
   }
 
   if (!order) return <p className="text-secondary">جاري التحميل...</p>;
+
+  if (editingItems) {
+    return (
+      <EditOrderItemsForm
+        order={order}
+        onCancel={() => setEditingItems(false)}
+        onSaved={() => { setEditingItems(false); load(); }}
+      />
+    );
+  }
 
   const isFinal = ["DELIVERED", "CANCELLED"].includes(order.status);
 
@@ -225,6 +236,15 @@ function OrderDetail({ orderId, user, onBack }) {
 
       {!isFinal && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+          <button className="btn-secondary" disabled={busy} onClick={() => setEditingItems(true)}>
+            ✏️ تعديل محتوى الطلب
+          </button>
+          {order.status === "IN_ROUTE" && (
+            <p className="text-secondary" style={{ margin: "-4px 0 0", fontSize: "0.8rem" }}>
+              هذا الطلب مع سائق برحلة جارية — أي تعديل هون بينعكس عنده تلقائيًا بأقرب تحديث.
+            </p>
+          )}
+
           <button className="btn-secondary" disabled={busy} onClick={toggleUrgent}>
             {order.priority === "urgent" ? "إلغاء المستعجل" : "🚨 تحويل لمستعجل"}
           </button>
@@ -243,6 +263,81 @@ function OrderDetail({ orderId, user, onBack }) {
           إعادة الطلب لقائمة التوزيع
         </button>
       )}
+    </div>
+  );
+}
+
+function EditOrderItemsForm({ order, onCancel, onSaved }) {
+  const [products, setProducts] = useState([]);
+  const [quantities, setQuantities] = useState(() => {
+    const initial = {};
+    order.items.forEach((it) => { initial[it.product_id] = it.quantity; });
+    return initial;
+  });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.getProducts().then(setProducts).catch((err) => setError(err.message));
+  }, []);
+
+  function changeQty(productId, delta) {
+    setQuantities((prev) => {
+      const current = prev[productId] || 0;
+      const next = Math.max(0, current + delta);
+      return { ...prev, [productId]: next };
+    });
+  }
+
+  const total = products.reduce((sum, p) => sum + (quantities[p.id] || 0) * Number(p.unit_price), 0);
+  const hasAnyItem = Object.values(quantities).some((q) => q > 0);
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      const items = Object.entries(quantities)
+        .filter(([, qty]) => qty > 0)
+        .map(([product_id, quantity]) => ({ product_id: Number(product_id), quantity }));
+      await api.updateOrderItems(order.id, items);
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="title-md">تعديل طلب #{order.order_number}</h2>
+      {error && <div className="error-box">{error}</div>}
+
+      <div style={{ marginBottom: 16 }}>
+        {products.map((p) => (
+          <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div style={{ fontWeight: 600 }}>{p.name}</div>
+              <div className="text-secondary tabular-num">{Number(p.unit_price).toFixed(2)} JD</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button type="button" onClick={() => changeQty(p.id, -1)} style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid var(--border)", background: "#fff", fontSize: "1.1rem" }}>−</button>
+              <span className="tabular-num" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>{quantities[p.id] || 0}</span>
+              <button type="button" onClick={() => changeQty(p.id, 1)} style={{ width: 36, height: 36, borderRadius: 8, border: "none", background: "var(--primary)", color: "#fff", fontSize: "1.1rem" }}>+</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ background: "var(--bg)", textAlign: "center", marginBottom: 14 }}>
+        <div className="text-secondary">الإجمالي الجديد (قبل أي خصم سابق)</div>
+        <div className="tabular-num" style={{ fontSize: "1.6rem", fontWeight: 700 }}>{total.toFixed(2)} JD</div>
+      </div>
+
+      <button className="btn-primary" style={{ marginBottom: 10 }} disabled={!hasAnyItem || saving} onClick={handleSave}>
+        {saving ? "جاري الحفظ..." : "حفظ التعديلات"}
+      </button>
+      <button type="button" className="btn-secondary" onClick={onCancel}>إلغاء</button>
     </div>
   );
 }
