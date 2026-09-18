@@ -74,7 +74,16 @@ function UnifiedTripView({ user, isPrivileged }) {
     };
     sendLocation();
     const interval = setInterval(sendLocation, 20000);
-    return () => clearInterval(interval);
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") sendLocation();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [myTrip?.id, myTrip?.status]);
 
   if (selectedOtherId) {
@@ -341,7 +350,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const currentStop = trip.stops.find((s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED");
+  const currentStop = trip.stops.find((s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED" && !s.is_time_locked);
+  const nextLockedStop = [...trip.stops].filter((s) => s.is_time_locked).sort((a, b) => new Date(a.requested_time) - new Date(b.requested_time))[0];
   const deliveredCount = trip.stops.filter((s) => s.order_status === "DELIVERED").length;
   const totalCount = trip.stops.length;
   const remainingCount = totalCount - deliveredCount - trip.stops.filter((s) => s.order_status === "FAILED").length;
@@ -423,6 +433,15 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         </div>
       )}
 
+      {(isSuperAdmin || isManagerViewOnly) && trip.current_latitude && trip.location_updated_at && (
+        <div className="text-secondary" style={{ marginBottom: 12, fontSize: "0.8rem" }}>
+          📍 آخر تحديث موقع: {formatClockTime(trip.location_updated_at)}
+          {(Date.now() - new Date(trip.location_updated_at).getTime()) > 3 * 60 * 1000 && (
+            <span style={{ color: "var(--urgent)" }}> — تحديث قديم، تأكد السائق فاتح التطبيق</span>
+          )}
+        </div>
+      )}
+
       <RoutePreviewMap
         stops={trip.stops}
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
@@ -444,6 +463,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
               </span>
               <span>{s.customer_name}</span>
               {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
+              {s.is_time_locked && <span style={{ color: "var(--warning)", fontSize: "0.75rem" }}> ⏰ لموعد {formatClockTime(s.requested_time)}</span>}
             </div>
             <div style={{ textAlign: "left" }}>
               <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
@@ -462,7 +482,13 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         <StopCard stop={currentStop} busy={busy} withBusy={withBusy} lastDeliveredStopId={trip.last_delivered_stop_id} />
       )}
 
-      {canOperate && trip.status === "STARTED" && !currentStop && (
+      {canOperate && trip.status === "STARTED" && !currentStop && nextLockedStop && (
+        <div className="card" style={{ background: "var(--bg)" }}>
+          ⏰ باقي {trip.stops.filter((s) => s.is_time_locked).length} طلب مؤجل لموعد محدد — أقرب موعد: {formatClockTime(nextLockedStop.requested_time)} (زبون {nextLockedStop.customer_name}). رح يظهر تلقائيًا لما يجي وقته.
+        </div>
+      )}
+
+      {canOperate && trip.status === "STARTED" && !currentStop && !nextLockedStop && (
         <div className="success-box">كل التوقفات انتهت — جاهز لإنهاء الرحلة.</div>
       )}
 
