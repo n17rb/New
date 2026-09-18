@@ -215,7 +215,7 @@ async function insertNotification({ type, message, customerId, tripId }) {
 async function buildTripDetailResponse(trip, requestingUser) {
   const stopsResult = await query(
     `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes, o.requested_time,
-            c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display,
+            c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
             l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url
      FROM trip_stops ts
@@ -231,14 +231,24 @@ async function buildTripDetailResponse(trip, requestingUser) {
   const orderIds = stops.map((s) => s.order_id);
   const itemsResult = orderIds.length
     ? await query(
-        `SELECT order_id, product_name_snapshot, quantity FROM order_items WHERE order_id = ANY($1::int[]) ORDER BY id ASC`,
+        `SELECT oi.order_id, oi.id, oi.product_id, oi.product_name_snapshot, oi.quantity, oi.unit_price_snapshot, oi.coupon_quantity, p.coupon_eligible
+         FROM order_items oi
+         LEFT JOIN products p ON p.id = oi.product_id
+         WHERE oi.order_id = ANY($1::int[]) ORDER BY oi.id ASC`,
         [orderIds]
       )
     : { rows: [] };
   const itemsByOrder = {};
   for (const row of itemsResult.rows) {
     if (!itemsByOrder[row.order_id]) itemsByOrder[row.order_id] = [];
-    itemsByOrder[row.order_id].push({ product_name_snapshot: row.product_name_snapshot, quantity: row.quantity });
+    itemsByOrder[row.order_id].push({
+      id: row.id,
+      product_name_snapshot: row.product_name_snapshot,
+      quantity: row.quantity,
+      unit_price_snapshot: row.unit_price_snapshot,
+      coupon_quantity: row.coupon_quantity,
+      coupon_eligible: row.coupon_eligible,
+    });
   }
 
   let cumulativeKm = 0;
@@ -470,8 +480,11 @@ router.post("/", async (req, res) => {
 });
 
 router.post("/stops/:stopId/deliver", async (req, res) => {
+  const { item_payments } = req.body;
+
   const stopResult = await query(
-    `SELECT ts.*, c.name AS customer_name FROM trip_stops ts
+    `SELECT ts.*, c.name AS customer_name, c.coupon_balance, o.customer_id
+     FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id JOIN customers c ON c.id = o.customer_id
      WHERE ts.id = $1`,
     [req.params.stopId]
@@ -483,7 +496,68 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   const trip = tripResult.rows[0];
   if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
 
-  await query("UPDATE trip_stops SET delivered_at = now() WHERE id = $1", [stop.id]);
+  const itemsResult = await query(
+    `SELECT oi.*, p.coupon_eligible, p.grants_coupons
+     FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+     WHERE oi.order_id = $1`,
+    [stop.order_id]
+  );
+  const items = itemsResult.rows;
+
+  const paymentMap = {};
+  (item_payments || []).forEach((p) => { paymentMap[p.item_id] = Number(p.coupon_qty) || 0; });
+
+  let totalCouponsUsed = 0;
+  let cashCollected = 0;
+  let couponsGranted = 0;
+
+  for (const item of items) {
+    let couponQty = paymentMap[item.id] || 0;
+    if (!item.coupon_eligible) couponQty = 0;
+    couponQty = Math.min(couponQty, item.quantity);
+
+    totalCouponsUsed += couponQty;
+    cashCollected += (item.quantity - couponQty) * Number(item.unit_price_snapshot);
+
+    await query("UPDATE order_items SET coupon_quantity = $1 WHERE id = $2", [couponQty, item.id]);
+
+    if (item.grants_coupons) {
+      couponsGranted += item.grants_coupons * item.quantity;
+    }
+  }
+
+  if (totalCouponsUsed > stop.coupon_balance) {
+    return res.status(400).json({ error: `رصيد الكوبونات غير كافي — المتبقي للعميل فقط ${stop.coupon_balance} كوبون.` });
+  }
+
+  let newBalance = stop.coupon_balance;
+
+  if (totalCouponsUsed > 0) {
+    newBalance -= totalCouponsUsed;
+    await query(
+      `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
+       VALUES ($1, $2, 'order_payment', $3, $4, $5)`,
+      [stop.customer_id, -totalCouponsUsed, stop.order_id, newBalance, req.user.id]
+    );
+  }
+
+  if (couponsGranted > 0) {
+    newBalance += couponsGranted;
+    await query(
+      `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
+       VALUES ($1, $2, 'recharge', $3, $4, $5)`,
+      [stop.customer_id, couponsGranted, stop.order_id, newBalance, req.user.id]
+    );
+  }
+
+  if (totalCouponsUsed > 0 || couponsGranted > 0) {
+    await query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [newBalance, stop.customer_id]);
+  }
+
+  await query(
+    "UPDATE trip_stops SET delivered_at = now(), cash_collected = $1, coupons_collected = $2 WHERE id = $3",
+    [cashCollected, totalCouponsUsed, stop.id]
+  );
   await query("UPDATE orders SET status = 'DELIVERED', updated_at = now() WHERE id = $1", [stop.order_id]);
 
   await logActivity({ userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
@@ -500,11 +574,33 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     tripId: trip.id,
   });
 
-  res.json({ message: "تم تسجيل التسليم." });
+  if (totalCouponsUsed > 0) {
+    await insertNotification({
+      type: "COUPON",
+      message: `🎫 خصم ${totalCouponsUsed} كوبون من ${stop.customer_name} — الرصيد المتبقي: ${newBalance}`,
+      customerId: stop.customer_id,
+      tripId: trip.id,
+    });
+  }
+  if (couponsGranted > 0) {
+    await insertNotification({
+      type: "COUPON",
+      message: `🎫 تعبئة ${couponsGranted} كوبون لـ${stop.customer_name} — الرصيد الجديد: ${newBalance}`,
+      customerId: stop.customer_id,
+      tripId: trip.id,
+    });
+  }
+
+  res.json({ message: "تم تسجيل التسليم.", cash_collected: cashCollected, coupons_used: totalCouponsUsed, coupons_granted: couponsGranted });
 });
 
 router.post("/stops/:stopId/undo-deliver", async (req, res) => {
-  const stopResult = await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId]);
+  const stopResult = await query(
+    `SELECT ts.*, o.customer_id, c.coupon_balance FROM trip_stops ts
+     JOIN orders o ON o.id = ts.order_id JOIN customers c ON c.id = o.customer_id
+     WHERE ts.id = $1`,
+    [req.params.stopId]
+  );
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
   if (!stop.delivered_at) return res.status(400).json({ error: "هذا التوقف لسا ما تسلّم أصلًا." });
@@ -512,7 +608,23 @@ router.post("/stops/:stopId/undo-deliver", async (req, res) => {
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
   if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
 
-  await query("UPDATE trip_stops SET delivered_at = NULL WHERE id = $1", [stop.id]);
+  const ledgerResult = await query(
+    "SELECT COALESCE(SUM(change_amount), 0) AS net FROM coupon_ledger WHERE order_id = $1",
+    [stop.order_id]
+  );
+  const netChange = Number(ledgerResult.rows[0].net);
+  if (netChange !== 0) {
+    const restoredBalance = stop.coupon_balance - netChange;
+    await query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [restoredBalance, stop.customer_id]);
+    await query(
+      `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
+       VALUES ($1, $2, 'manual_adjustment', $3, $4, $5)`,
+      [stop.customer_id, -netChange, stop.order_id, restoredBalance, req.user.id]
+    );
+  }
+
+  await query("UPDATE order_items SET coupon_quantity = 0 WHERE order_id = $1", [stop.order_id]);
+  await query("UPDATE trip_stops SET delivered_at = NULL, cash_collected = NULL, coupons_collected = 0 WHERE id = $1", [stop.id]);
   await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [stop.order_id]);
 
   await logActivity({ userId: req.user.id, action: "UNDO_DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
@@ -791,13 +903,14 @@ router.post("/:id/complete", async (req, res) => {
     [trip.id]
   );
 
-  const totalValue = delivered.reduce((sum, s) => sum + Number(s.final_total), 0);
+  const totalCash = delivered.reduce((sum, s) => sum + Number(s.cash_collected || 0), 0);
+  const totalCoupons = delivered.reduce((sum, s) => sum + Number(s.coupons_collected || 0), 0);
 
   if (trip.driver_id && delivered.length > 0) {
     await query(
-      `INSERT INTO driver_ledger (driver_id, trip_id, entry_type, amount, created_by)
-       VALUES ($1, $2, 'trip_due', $3, $4)`,
-      [trip.driver_id, trip.id, totalValue, req.user.id]
+      `INSERT INTO driver_ledger (driver_id, trip_id, entry_type, amount, coupons_redeemed, created_by)
+       VALUES ($1, $2, 'trip_due', $3, $4, $5)`,
+      [trip.driver_id, trip.id, totalCash, totalCoupons, req.user.id]
     );
   }
 
@@ -809,7 +922,9 @@ router.post("/:id/complete", async (req, res) => {
     delivered: delivered.length,
     failed: failed.length,
     returned_to_queue: remaining.length,
-    total_delivered_value: totalValue,
+    total_delivered_value: totalCash + totalCoupons,
+    total_cash_collected: totalCash,
+    total_coupons_collected: totalCoupons,
     products_summary: itemsSummaryResult.rows,
   });
 });
