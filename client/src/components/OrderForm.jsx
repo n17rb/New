@@ -5,6 +5,7 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [priority, setPriority] = useState("normal");
+  const [requestedTime, setRequestedTime] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(null);
@@ -54,6 +55,7 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
         items,
         priority,
         notes: notes || undefined,
+        requested_time: requestedTime || undefined,
       });
       setSuccess(order);
     } catch (err) {
@@ -153,6 +155,16 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
             🚨 مستعجل
           </button>
         </div>
+      </div>
+
+      <div className="field">
+        <label>موعد تسليم محدد (اختياري — مثلًا الزبون بده الساعة ٢)</label>
+        <input type="datetime-local" value={requestedTime} onChange={(e) => setRequestedTime(e.target.value)} />
+        {requestedTime && (
+          <p className="text-secondary" style={{ marginTop: 4, fontSize: "0.8rem" }}>
+            ⏰ السائق ما رح يقدر يسلّمه قبل هذا الوقت حتى لو كان قريب منه بالمسار.
+          </p>
+        )}
       </div>
 
       <div className="field">
