@@ -44,6 +44,18 @@ export default function Products({ user }) {
     load();
   }
 
+  async function toggleCouponEligible(p) {
+    await api.updateProduct(p.id, { coupon_eligible: !p.coupon_eligible });
+    load();
+  }
+
+  async function setGrantsCoupons(p) {
+    const value = prompt(`كم كوبون يشحن هذا المنتج للعميل عند تسليمه؟ (اتركه فاضي أو 0 لإلغاء الشحن)`, p.grants_coupons || "");
+    if (value === null) return;
+    await api.updateProduct(p.id, { grants_coupons: parseInt(value, 10) || 0 });
+    load();
+  }
+
   return (
     <div className="page">
       <h1 className="title-lg">المنتجات والأسعار</h1>
@@ -65,6 +77,8 @@ export default function Products({ user }) {
               <div>
                 <div style={{ fontWeight: 600 }}>{p.name}</div>
                 <span className="badge">{p.status === "active" ? "فعّال" : p.status === "paused" ? "موقوف" : "مؤرشف"}</span>
+                {p.coupon_eligible && <span className="badge" style={{ marginRight: 4, background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }}>🎫 يقبل كوبون</span>}
+                {p.grants_coupons > 0 && <span className="badge" style={{ marginRight: 4 }}>يشحن {p.grants_coupons} كوبون</span>}
               </div>
 
               {canManage && editingId === p.id ? (
@@ -91,9 +105,15 @@ export default function Products({ user }) {
             </div>
 
             {canManage && p.status !== "archived" && (
-              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
                 <button className="btn-danger-text" onClick={() => toggleStatus(p)}>
                   {p.status === "active" ? "إيقاف" : "تفعيل"}
+                </button>
+                <button className="btn-danger-text" onClick={() => toggleCouponEligible(p)}>
+                  {p.coupon_eligible ? "إلغاء قبول الكوبون" : "🎫 فعّل قبول الكوبون"}
+                </button>
+                <button className="btn-danger-text" onClick={() => setGrantsCoupons(p)}>
+                  ⚙️ شحن الكوبونات
                 </button>
                 <button className="btn-danger-text" onClick={() => archive(p)}>أرشفة</button>
               </div>
