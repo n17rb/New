@@ -66,6 +66,7 @@ export default function CustomerDetail({ user }) {
       )}
 
       <LocationSection customer={customer} canManage={canManage} onChanged={load} />
+      <CouponSection customer={customer} isSuperAdmin={user.role === "super_admin"} onChanged={load} />
       {canManage && <CustomPricesSection customerId={customer.id} />}
       <OrderHistorySection customerId={customer.id} />
     </div>
@@ -771,6 +772,98 @@ function CustomPricesSection({ customerId }) {
       <button className="btn-secondary" disabled={saving || !selectedProduct || !customPrice} onClick={handleAdd}>
         {saving ? "جاري الحفظ..." : "+ إضافة سعر خاص"}
       </button>
+    </div>
+  );
+}
+
+function CouponSection({ customer, isSuperAdmin, onChanged }) {
+  const [history, setHistory] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustValue, setAdjustValue] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function toggleHistory() {
+    if (!showHistory && !history) {
+      try {
+        setHistory(await api.getCouponHistory(customer.id));
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+    }
+    setShowHistory(!showHistory);
+  }
+
+  async function handleAdjust() {
+    const val = parseInt(adjustValue, 10);
+    if (!val) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.adjustCouponBalance(customer.id, { change_amount: val });
+      setAdjustValue("");
+      setAdjusting(false);
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="title-md">🎫 رصيد الكوبونات</h2>
+      {error && <div className="error-box">{error}</div>}
+      <div className="tabular-num" style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--primary)" }}>
+        {customer.coupon_balance || 0} كوبون
+      </div>
+      <p className="text-secondary" style={{ marginTop: 4 }}>يُستخدم فقط لدفع قوارير التعبئة، ويُشحن تلقائيًا عند تسليم منتج "كوبون".</p>
+
+      <button className="btn-secondary" style={{ marginTop: 8 }} onClick={toggleHistory}>
+        {showHistory ? "إخفاء السجل" : "عرض سجل الحركات"}
+      </button>
+
+      {showHistory && history && (
+        <div style={{ marginTop: 10 }}>
+          {history.length === 0 && <p className="text-secondary">لا يوجد حركات بعد.</p>}
+          {history.map((h) => (
+            <div key={h.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
+              <span className="text-secondary">
+                {new Date(h.created_at).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman" })}
+                {" · "}
+                {h.reason === "recharge" ? "تعبئة" : h.reason === "order_payment" ? "دفع طلب" : "تعديل يدوي"}
+              </span>
+              <span className="tabular-num" style={{ fontWeight: 700, color: h.change_amount >= 0 ? "var(--success)" : "var(--urgent)" }}>
+                {h.change_amount >= 0 ? "+" : ""}{h.change_amount} (صار {h.balance_after})
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isSuperAdmin && (
+        <>
+          {!adjusting ? (
+            <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setAdjusting(true)}>
+              ⚙️ تعديل يدوي للرصيد
+            </button>
+          ) : (
+            <div style={{ marginTop: 10 }}>
+              <div className="field">
+                <label>القيمة (سالب للخصم، مثال: -5 أو 5)</label>
+                <input type="number" value={adjustValue} onChange={(e) => setAdjustValue(e.target.value)} />
+              </div>
+              <button className="btn-primary" style={{ marginBottom: 8 }} disabled={saving || !adjustValue} onClick={handleAdjust}>
+                {saving ? "جاري الحفظ..." : "حفظ التعديل"}
+              </button>
+              <button className="btn-secondary" onClick={() => { setAdjusting(false); setAdjustValue(""); }}>إلغاء</button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
