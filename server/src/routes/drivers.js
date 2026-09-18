@@ -11,11 +11,12 @@ function isPrivileged(user) {
 
 async function computeBalance(driverId) {
   const result = await query(
-    `SELECT COALESCE(SUM(CASE WHEN entry_type = 'trip_due' THEN amount ELSE -amount END), 0) AS balance
+    `SELECT COALESCE(SUM(CASE WHEN entry_type = 'trip_due' THEN amount ELSE -amount END), 0) AS balance,
+            COALESCE(SUM(CASE WHEN entry_type = 'trip_due' THEN coupons_redeemed ELSE -coupons_redeemed END), 0) AS coupon_balance
      FROM driver_ledger WHERE driver_id = $1`,
     [driverId]
   );
-  return Number(result.rows[0].balance);
+  return { balance: Number(result.rows[0].balance), coupon_balance: Number(result.rows[0].coupon_balance) };
 }
 
 router.get("/performance", requireRole("super_admin", "admin"), async (req, res) => {
@@ -51,8 +52,8 @@ router.get("/balances", requireRole("super_admin", "admin"), async (req, res) =>
 
   const rows = [];
   for (const driver of driversResult.rows) {
-    const balance = await computeBalance(driver.id);
-    rows.push({ ...driver, balance });
+    const { balance, coupon_balance } = await computeBalance(driver.id);
+    rows.push({ ...driver, balance, coupon_balance });
   }
   res.json(rows);
 });
@@ -63,26 +64,26 @@ router.get("/:id/balance", async (req, res) => {
     return res.status(403).json({ error: "غير مصرح لك بمشاهدة هذا الحساب." });
   }
 
-  const balance = await computeBalance(driverId);
+  const { balance, coupon_balance } = await computeBalance(driverId);
   const historyResult = await query(
     `SELECT * FROM driver_ledger WHERE driver_id = $1 ORDER BY created_at DESC LIMIT 50`,
     [driverId]
   );
 
-  res.json({ driver_id: driverId, balance, history: historyResult.rows });
+  res.json({ driver_id: driverId, balance, coupon_balance, history: historyResult.rows });
 });
 
 router.post("/:id/settle", requireRole("super_admin", "admin"), async (req, res) => {
-  const { amount, notes } = req.body;
-  if (!amount || Number(amount) <= 0) {
-    return res.status(400).json({ error: "قيمة التسوية يجب أن تكون أكبر من صفر." });
+  const { amount, coupons, notes } = req.body;
+  if ((!amount || Number(amount) <= 0) && (!coupons || Number(coupons) <= 0)) {
+    return res.status(400).json({ error: "أدخل قيمة كاش أو عدد كوبونات أكبر من صفر على الأقل." });
   }
 
   const driverId = Number(req.params.id);
   await query(
-    `INSERT INTO driver_ledger (driver_id, entry_type, amount, notes, created_by)
-     VALUES ($1, 'settlement', $2, $3, $4)`,
-    [driverId, amount, notes || null, req.user.id]
+    `INSERT INTO driver_ledger (driver_id, entry_type, amount, coupons_redeemed, notes, created_by)
+     VALUES ($1, 'settlement', $2, $3, $4, $5)`,
+    [driverId, amount || 0, coupons || 0, notes || null, req.user.id]
   );
 
   await logActivity({
@@ -90,11 +91,11 @@ router.post("/:id/settle", requireRole("super_admin", "admin"), async (req, res)
     action: "SETTLE_DRIVER",
     recordType: "driver",
     recordId: driverId,
-    newValue: { amount, notes },
+    newValue: { amount, coupons, notes },
   });
 
-  const balance = await computeBalance(driverId);
-  res.json({ driver_id: driverId, balance });
+  const { balance, coupon_balance } = await computeBalance(driverId);
+  res.json({ driver_id: driverId, balance, coupon_balance });
 });
 
 export default router;
