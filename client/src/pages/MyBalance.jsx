@@ -28,6 +28,10 @@ export default function MyBalance({ user }) {
         <div className="tabular-num" style={{ fontSize: "1.8rem", fontWeight: 700, color: data.balance > 0 ? "var(--urgent)" : "var(--success)" }}>
           {data.balance.toFixed(2)} JD
         </div>
+        <div className="text-secondary" style={{ marginTop: 10 }}>الكوبونات المستحق تسليمها</div>
+        <div className="tabular-num" style={{ fontSize: "1.4rem", fontWeight: 700 }}>
+          🎫 {data.coupon_balance}
+        </div>
       </div>
 
       <div className="card">
