@@ -8,15 +8,32 @@ export default function Customers({ user }) {
   const [regionId, setRegionId] = useState("");
   const [regions, setRegions] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [totalCount, setTotalCount] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [showImportForm, setShowImportForm] = useState(false);
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState("");
+  const [renumbering, setRenumbering] = useState(false);
   const navigate = useNavigate();
 
   const canAdd = ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
+
+  async function handleRenumber() {
+    if (!confirm("هذا الإجراء يعيد ترقيم كل العملاء من ٠٠٠٠٠١ بالتتابع حسب تاريخ الإضافة. متأكد؟")) return;
+    setRenumbering(true);
+    setError("");
+    try {
+      const result = await api.renumberCustomers();
+      alert(result.message);
+      search(query, regionId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRenumbering(false);
+    }
+  }
 
   async function search(q, region) {
     setLoading(true);
@@ -37,6 +54,7 @@ export default function Customers({ user }) {
   useEffect(() => {
     search("", "");
     api.getRegions().then(setRegions).catch(() => {});
+    api.getCustomerCount().then((r) => setTotalCount(r.count)).catch(() => {});
   }, []);
 
   function handleSearchChange(e) {
@@ -67,6 +85,11 @@ export default function Customers({ user }) {
   return (
     <div className="page">
       <h1 className="title-lg">العملاء</h1>
+      {totalCount !== null && (
+        <p className="text-secondary" style={{ marginTop: -8, marginBottom: 12 }}>
+          إجمالي العملاء: <strong className="tabular-num">{totalCount}</strong>
+        </p>
+      )}
 
       {!showAddForm && !showImportForm && (
         <>
@@ -110,6 +133,12 @@ export default function Customers({ user }) {
           )}
           {fixResult && <div className="success-box">{fixResult}</div>}
 
+          {user.role === "super_admin" && (
+            <button className="btn-secondary" style={{ marginBottom: 16, fontSize: "0.85rem" }} disabled={renumbering} onClick={handleRenumber}>
+              {renumbering ? "جاري إعادة الترقيم..." : "🔢 إعادة ترقيم كل العملاء بالتتابع"}
+            </button>
+          )}
+
           {error && <div className="error-box">{error}</div>}
           {loading && <p className="text-secondary">جاري البحث...</p>}
 
@@ -117,20 +146,27 @@ export default function Customers({ user }) {
             {customers.length === 0 && !loading && (
               <p className="text-secondary" style={{ padding: 14 }}>لا يوجد عملاء مطابقون.</p>
             )}
-            {customers.map((c) => (
-              <div key={c.id} className="customer-row" onClick={() => navigate(`/customers/${c.id}`)} style={{ cursor: "pointer", padding: "10px 14px" }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>
-                    {c.name}
-                    {!c.latitude && (
-                      <span style={{ color: "var(--urgent)", fontSize: "0.75rem", marginRight: 6 }}> ⚠️ الموقع غير محفوظ</span>
-                    )}
+            {customers.map((c) => {
+              const hasNoLink = !c.maps_url;
+              const hasBrokenLink = c.maps_url && !c.latitude;
+              return (
+                <div key={c.id} className="customer-row" onClick={() => navigate(`/customers/${c.id}`)} style={{ cursor: "pointer", padding: "10px 14px" }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      {c.name}
+                      {hasNoLink && (
+                        <span style={{ color: "var(--warning)", fontSize: "0.75rem", marginRight: 6 }}> ⚠️ بدون موقع أصلًا</span>
+                      )}
+                      {hasBrokenLink && (
+                        <span style={{ color: "var(--urgent)", fontSize: "0.75rem", marginRight: 6 }}> ❌ رابط محفوظ بس مكسور</span>
+                      )}
+                    </div>
+                    <div className="text-secondary tabular-num">{c.phone_display} · #{c.sequential_number}</div>
                   </div>
-                  <div className="text-secondary tabular-num">{c.phone_display} · #{c.sequential_number}</div>
+                  {c.region_name && <span className="badge">{c.region_name}</span>}
                 </div>
-                {c.region_name && <span className="badge">{c.region_name}</span>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
