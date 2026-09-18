@@ -3,7 +3,6 @@
 -- Phase 1: Foundation (Users, Customers, Products, Regions, Log)
 -- ============================================================
 
--- ---------- المستخدمون ----------
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(100) UNIQUE NOT NULL,
@@ -18,17 +17,13 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ترقية آمنة لقاعدة بيانات موجودة مسبقًا: نضيف الدور الجديد 'data_entry'
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin', 'admin', 'driver', 'data_entry'));
 
--- ترقية أول حساب تم إنشاؤه إلى "مدير" (super_admin) تلقائيًا إذا لا يوجد أي مدير بالنظام بعد.
--- آمن للتكرار: بعد أول مرة يصبح هناك مدير، هذا السطر لا يفعل شيئًا بعدها.
 UPDATE users SET role = 'super_admin'
 WHERE id = (SELECT MIN(id) FROM users)
   AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'super_admin');
 
--- ---------- المناطق (قابلة للإضافة من الإدارة) ----------
 CREATE TABLE IF NOT EXISTS regions (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) UNIQUE NOT NULL,
@@ -36,7 +31,6 @@ CREATE TABLE IF NOT EXISTS regions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------- العملاء ----------
 CREATE TABLE IF NOT EXISTS customers (
   id SERIAL PRIMARY KEY,
   sequential_number VARCHAR(20) UNIQUE NOT NULL,
@@ -51,12 +45,10 @@ CREATE TABLE IF NOT EXISTS customers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ترقية آمنة: توسيع طول الرقم التسلسلي لجدول موجود مسبقًا (كان محدود بـ10 خانات)
 ALTER TABLE customers ALTER COLUMN sequential_number TYPE VARCHAR(20);
 
 CREATE SEQUENCE IF NOT EXISTS customer_seq START 1;
 
--- ---------- موقع العميل ----------
 CREATE TABLE IF NOT EXISTS customer_locations (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -75,7 +67,6 @@ CREATE TABLE IF NOT EXISTS customer_locations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------- المنتجات ----------
 CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
@@ -88,7 +79,6 @@ CREATE TABLE IF NOT EXISTS products (
   updated_by INTEGER REFERENCES users(id)
 );
 
--- ---------- سجل النشاطات ----------
 CREATE TABLE IF NOT EXISTS activity_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id),
@@ -100,7 +90,6 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------- فهارس للأداء ----------
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_normalized);
 CREATE INDEX IF NOT EXISTS idx_customers_phone_display_pattern ON customers(phone_display text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
@@ -108,17 +97,11 @@ CREATE INDEX IF NOT EXISTS idx_customers_seq ON customers(sequential_number);
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
 CREATE INDEX IF NOT EXISTS idx_activity_log_record ON activity_log(record_type, record_id);
 
--- ============================================================
--- تنظيف أي تكرار سابق قبل إضافة القيد الفريد (آمن، لا يمس منتج داخل طلب)
--- ============================================================
 DELETE FROM products a USING products b
 WHERE a.id > b.id AND a.name = b.name;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_unique ON products(name);
 
--- ============================================================
--- Seed Data: المنتجات الابتدائية (قابلة للتعديل لاحقًا من لوحة الإدارة)
--- ============================================================
 INSERT INTO products (name, type, unit_price, sort_order) VALUES
   ('قارورة 19 لتر (تعبئة)', 'standard', 1.00, 1),
   ('قارورة 10 لتر (تعبئة)', 'standard', 0.75, 2),
@@ -134,9 +117,6 @@ INSERT INTO products (name, type, unit_price, sort_order) VALUES
   ('كوبون 55', 'coupon', 50.00, 12)
 ON CONFLICT (name) DO NOTHING;
 
--- ============================================================
--- Phase 2: الطلبات
--- ============================================================
 CREATE SEQUENCE IF NOT EXISTS order_seq START 1;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -186,9 +166,6 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
--- ============================================================
--- Phase 3: الرحلات
--- ============================================================
 CREATE TABLE IF NOT EXISTS trips (
   id SERIAL PRIMARY KEY,
   status VARCHAR(20) NOT NULL DEFAULT 'PLANNED' CHECK (status IN ('PLANNED','STARTED','COMPLETED')),
@@ -220,9 +197,6 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS route_geometry JSONB;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS distance_before_km NUMERIC(10,2);
 
--- ============================================================
--- Phase 4: كشف حساب السائق
--- ============================================================
 CREATE TABLE IF NOT EXISTS driver_ledger (
   id SERIAL PRIMARY KEY,
   driver_id INTEGER NOT NULL REFERENCES users(id),
@@ -236,9 +210,6 @@ CREATE TABLE IF NOT EXISTS driver_ledger (
 
 CREATE INDEX IF NOT EXISTS idx_driver_ledger_driver ON driver_ledger(driver_id, created_at DESC);
 
--- ============================================================
--- Phase 5: جرد القوارير على السيارة
--- ============================================================
 CREATE TABLE IF NOT EXISTS trip_inventory (
   id SERIAL PRIMARY KEY,
   trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -249,9 +220,6 @@ CREATE TABLE IF NOT EXISTS trip_inventory (
 
 CREATE INDEX IF NOT EXISTS idx_trip_inventory_trip ON trip_inventory(trip_id);
 
--- ============================================================
--- Phase 6: الحساب اليومي (مبيعات/صرفيات/كاش)
--- ============================================================
 CREATE TABLE IF NOT EXISTS cash_periods (
   id SERIAL PRIMARY KEY,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -277,9 +245,6 @@ CREATE TABLE IF NOT EXISTS cash_entries (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_entries_period_date ON cash_entries(period_id, entry_date);
 CREATE INDEX IF NOT EXISTS idx_cash_periods_open ON cash_periods(ended_at);
 
--- ============================================================
--- Phase 7: ملاحظة تذكير التوصيل، أسعار خاصة، نسخ احتياطية
--- ============================================================
 ALTER TABLE customer_locations ADD COLUMN IF NOT EXISTS preferred_delivery_note TEXT;
 
 CREATE TABLE IF NOT EXISTS customer_product_prices (
@@ -298,9 +263,6 @@ CREATE TABLE IF NOT EXISTS backup_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_backup_snapshots_created ON backup_snapshots(created_at DESC);
 
--- ============================================================
--- Phase 8: إشعارات محفوظة + تذكيرات توصيل مجدولة + مسافة كل توقف
--- ============================================================
 ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS leg_distance_km NUMERIC(10,3);
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -329,9 +291,6 @@ CREATE TABLE IF NOT EXISTS reminder_fired_log (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reminder_fired_unique ON reminder_fired_log(customer_id, fired_date);
 
--- ============================================================
--- Phase 9: موعد تسليم محدد للطلب + ملاحظات شخصية للجميع
--- ============================================================
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS requested_time TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS personal_notes (
@@ -341,3 +300,33 @@ CREATE TABLE IF NOT EXISTS personal_notes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_personal_notes_user ON personal_notes(user_id, created_at DESC);
+
+-- ============================================================
+-- Phase 10: نظام الكوبونات الكامل
+-- ============================================================
+ALTER TABLE products ADD COLUMN IF NOT EXISTS coupon_eligible BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS grants_coupons INTEGER;
+
+UPDATE products SET coupon_eligible = true WHERE name IN ('قارورة 19 لتر (تعبئة)', 'قارورة 10 لتر (تعبئة)');
+UPDATE products SET grants_coupons = 10 WHERE name = 'كوبون 10';
+UPDATE products SET grants_coupons = 27 WHERE name = 'كوبون 27';
+UPDATE products SET grants_coupons = 55 WHERE name = 'كوبون 55';
+
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS coupon_balance INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS coupon_ledger (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  change_amount INTEGER NOT NULL,
+  reason VARCHAR(30) NOT NULL CHECK (reason IN ('recharge','order_payment','manual_adjustment')),
+  order_id INTEGER REFERENCES orders(id),
+  balance_after INTEGER NOT NULL,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_coupon_ledger_customer ON coupon_ledger(customer_id, created_at DESC);
+
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_quantity INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS cash_collected NUMERIC(10,2);
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS coupons_collected INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE driver_ledger ADD COLUMN IF NOT EXISTS coupons_redeemed INTEGER NOT NULL DEFAULT 0;
