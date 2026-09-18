@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
-import { FiBell, FiMoon, FiSun } from "react-icons/fi";
+import { FiBell, FiMoon, FiSun, FiEdit3 } from "react-icons/fi";
 
 import Setup from "./pages/Setup.jsx";
 import Login from "./pages/Login.jsx";
@@ -23,6 +23,7 @@ import Backup from "./pages/Backup.jsx";
 import Notifications from "./pages/Notifications.jsx";
 import TripArchive from "./pages/TripArchive.jsx";
 import CustomerGrowth from "./pages/CustomerGrowth.jsx";
+import Notes from "./pages/Notes.jsx";
 import Users from "./pages/Users.jsx";
 import BottomNav from "./components/BottomNav.jsx";
 
@@ -155,6 +156,7 @@ export default function App() {
         <Route path="/customers/:id" element={<CustomerDetail user={user} />} />
         <Route path="/orders" element={<Orders user={user} />} />
         <Route path="/trip" element={<Trip user={user} />} />
+        <Route path="/notes" element={<Notes />} />
         {canSeeProducts && <Route path="/products" element={<Products user={user} />} />}
         {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
         {isPrivileged && <Route path="/reports" element={<Reports />} />}
@@ -184,6 +186,9 @@ function TopBar({ isPrivileged, unreadCount, darkMode, setDarkMode, onLogout }) 
     <div className="top-bar">
       <strong>جوهرة الرابية</strong>
       <div className="icon-row">
+        <button className="icon-btn" onClick={() => navigate("/notes")} title="ملاحظاتي">
+          <FiEdit3 size={16} />
+        </button>
         <button className="icon-btn" onClick={() => setDarkMode(!darkMode)} title="الوضع الليلي">
           {darkMode ? <FiSun size={16} /> : <FiMoon size={16} />}
         </button>
