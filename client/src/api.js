@@ -106,7 +106,7 @@ export const api = {
   getTripArchive: () => request("/trips/archive"),
   getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
-  deliverStop: (stopId) => request(`/trips/stops/${stopId}/deliver`, { method: "POST" }),
+  deliverStop: (stopId, itemPayments) => request(`/trips/stops/${stopId}/deliver`, { method: "POST", body: { item_payments: itemPayments } }),
   undoDeliver: (stopId) => request(`/trips/stops/${stopId}/undo-deliver`, { method: "POST" }),
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
   completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
@@ -154,6 +154,8 @@ export const api = {
 
   getCustomerCount: () => request("/customers/count"),
   renumberCustomers: () => request("/customers/renumber", { method: "POST" }),
+  getCouponHistory: (customerId) => request(`/customers/${customerId}/coupon-history`),
+  adjustCouponBalance: (customerId, body) => request(`/customers/${customerId}/coupons/adjust`, { method: "POST", body }),
 
   getMyNotes: () => request("/notes"),
   addMyNote: (content) => request("/notes", { method: "POST", body: { content } }),
