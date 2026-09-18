@@ -512,9 +512,94 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   );
 }
 
+function DeliveryPaymentForm({ stop, busy, withBusy, onCancel }) {
+  const eligibleItems = stop.items.filter((it) => it.coupon_eligible);
+  const [couponQty, setCouponQty] = useState(() => {
+    const initial = {};
+    eligibleItems.forEach((it) => { initial[it.id] = it.coupon_quantity || 0; });
+    return initial;
+  });
+
+  const totalCouponsSelected = Object.values(couponQty).reduce((sum, v) => sum + v, 0);
+  const exceedsBalance = totalCouponsSelected > stop.coupon_balance;
+
+  const cashTotal = stop.items.reduce((sum, it) => {
+    const used = couponQty[it.id] || 0;
+    return sum + (it.quantity - used) * Number(it.unit_price_snapshot);
+  }, 0);
+
+  function setQty(itemId, value, max) {
+    const v = Math.max(0, Math.min(max, value));
+    setCouponQty((prev) => ({ ...prev, [itemId]: v }));
+  }
+
+  function handleConfirm() {
+    const item_payments = eligibleItems.map((it) => ({ item_id: it.id, coupon_qty: couponQty[it.id] || 0 }));
+    withBusy(() => api.deliverStop(stop.id, item_payments)).then(onCancel);
+  }
+
+  return (
+    <div className="card">
+      <h2 className="title-md">طريقة الدفع — {stop.customer_name}</h2>
+      <p className="text-secondary" style={{ marginBottom: 12 }}>
+        رصيد كوبونات العميل الحالي: <strong className="tabular-num">{stop.coupon_balance}</strong>
+      </p>
+
+      {stop.items.map((it) => {
+        if (!it.coupon_eligible) {
+          return (
+            <div key={it.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+              <span>{it.product_name_snapshot} × {it.quantity}</span>
+              <span className="text-secondary">كاش دايمًا (غير مؤهل لكوبون)</span>
+            </div>
+          );
+        }
+        return (
+          <div key={it.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontWeight: 600 }}>{it.product_name_snapshot} (الكمية: {it.quantity})</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="text-secondary" style={{ fontSize: "0.85rem" }}>كوبون:</span>
+              <button type="button" onClick={() => setQty(it.id, (couponQty[it.id] || 0) - 1, it.quantity)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "#fff" }}>−</button>
+              <span className="tabular-num" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>{couponQty[it.id] || 0}</span>
+              <button type="button" onClick={() => setQty(it.id, (couponQty[it.id] || 0) + 1, it.quantity)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "var(--primary)", color: "#fff" }}>+</button>
+              <span className="text-secondary" style={{ fontSize: "0.85rem" }}>
+                · كاش: {it.quantity - (couponQty[it.id] || 0)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="card" style={{ background: "var(--bg)", marginTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>إجمالي الكاش المطلوب</span>
+          <span className="tabular-num" style={{ fontWeight: 700 }}>{cashTotal.toFixed(2)} JD</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>كوبونات مستخدمة</span>
+          <span className="tabular-num" style={{ fontWeight: 700, color: exceedsBalance ? "var(--urgent)" : "inherit" }}>{totalCouponsSelected}</span>
+        </div>
+        {exceedsBalance && (
+          <p className="text-secondary" style={{ color: "var(--urgent)", marginTop: 6, marginBottom: 0 }}>
+            ⚠️ هذا أكتر من رصيد العميل ({stop.coupon_balance} فقط) — خفّض العدد.
+          </p>
+        )}
+      </div>
+
+      <button className="btn-primary icon-row" style={{ justifyContent: "center", marginTop: 14, marginBottom: 10, background: "var(--success)" }} disabled={busy || exceedsBalance} onClick={handleConfirm}>
+        <FiCheckCircle /> تأكيد التسليم
+      </button>
+      <button className="btn-secondary" onClick={onCancel}>إلغاء</button>
+    </div>
+  );
+}
+
 function StopCard({ stop, busy, withBusy }) {
   const [showFailMenu, setShowFailMenu] = useState(false);
   const [showPostponeForm, setShowPostponeForm] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [postponeTime, setPostponeTime] = useState("");
   const [postponeNote, setPostponeNote] = useState("");
 
@@ -530,6 +615,10 @@ function StopCard({ stop, busy, withBusy }) {
       setPostponeTime("");
       setPostponeNote("");
     });
+  }
+
+  if (showPaymentForm) {
+    return <DeliveryPaymentForm stop={stop} busy={busy} withBusy={withBusy} onCancel={() => setShowPaymentForm(false)} />;
   }
 
   return (
@@ -584,7 +673,7 @@ function StopCard({ stop, busy, withBusy }) {
         className="btn-primary icon-row"
         style={{ justifyContent: "center", marginBottom: 10, background: "var(--success)" }}
         disabled={busy}
-        onClick={() => withBusy(() => api.deliverStop(stop.id))}
+        onClick={() => setShowPaymentForm(true)}
       >
         <FiCheckCircle /> تم التسليم
       </button>
@@ -657,9 +746,13 @@ function TripSummary({ summary, onDone }) {
         <span>رجعت لقائمة الطلبات</span>
         <span className="tabular-num" style={{ fontWeight: 700 }}>{summary.returned_to_queue}</span>
       </div>
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+        <span style={{ fontWeight: 700 }}>الكاش المُحصَّل</span>
+        <span className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem", color: "var(--success)" }}>{summary.total_cash_collected.toFixed(2)} JD</span>
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", marginBottom: 14 }}>
-        <span style={{ fontWeight: 700 }}>إجمالي قيمة التسليم</span>
-        <span className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>{summary.total_delivered_value.toFixed(2)} JD</span>
+        <span style={{ fontWeight: 700 }}>كوبونات مُحصَّلة</span>
+        <span className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>🎫 {summary.total_coupons_collected}</span>
       </div>
 
       {summary.products_summary.length > 0 && (
