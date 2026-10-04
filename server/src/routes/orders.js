@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { tryAutoAddToActiveTrip } from "./trips.js";
+import { notifyNewOrder } from "../utils/notify.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -142,7 +143,14 @@ router.post("/", async (req, res) => {
 
     res.status(201).json({ ...order, items: preparedItems });
 
-    tryAutoAddToActiveTrip(order.id, req.user.id).catch(() => {});
+    // لو انضاف تلقائيًا لرحلة شغّالة، إشعار الرحلة بيوصل لسائقها.
+    // غير هيك، بيوصل إشعار «طلب جديد» لكل الكباتن والإدارة.
+    tryAutoAddToActiveTrip(order.id, req.user.id)
+      .catch(() => false)
+      .then((addedToTrip) => {
+        if (!addedToTrip) return notifyNewOrder({ orderId: order.id, actorId: req.user.id });
+      })
+      .catch((e) => console.error("notify error:", e.message));
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(400).json({ error: err.message || "تعذّر إنشاء الطلب." });

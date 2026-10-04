@@ -67,3 +67,50 @@ export async function notifyOrdersAddedToTrip({ tripId, orderIds, actorId = null
       .catch((e) => console.error("push error:", e.message));
   }
 }
+
+// طلب جديد مش على رحلة: بيوصل إشعار لكل الكباتن (السائقين) والإدارة عشان حدا يروح يوصّله.
+// actorId = اللي سجّل الطلب، ما بيوصله إشعار.
+export async function notifyNewOrder({ orderId, actorId = null }) {
+  if (!orderId) return;
+
+  const orderResult = await query(
+    `SELECT o.id, o.priority, o.notes, c.id AS customer_id, c.name AS customer_name, r.name AS region_name
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (
+       SELECT region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
+     ) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE o.id = $1`,
+    [orderId]
+  );
+  const order = orderResult.rows[0];
+  if (!order) return;
+
+  const itemsResult = await query(
+    "SELECT product_name_snapshot, quantity FROM order_items WHERE order_id = $1 ORDER BY id ASC",
+    [orderId]
+  );
+  const itemsText = itemsResult.rows
+    .map((i) => `${Number(i.quantity)} × ${i.product_name_snapshot}`)
+    .join("، ");
+
+  const urgent = order.priority === "urgent" ? "⚡ مستعجل — " : "";
+  const region = order.region_name ? ` (${order.region_name})` : "";
+  const message = `🆕 ${urgent}طلب جديد: ${order.customer_name || "بدون اسم"}${region}${itemsText ? ` — ${itemsText}` : ""}`;
+
+  const recipientsResult = await query(
+    `SELECT id FROM users WHERE status = 'active' AND role IN ('driver','super_admin','admin')`
+  );
+
+  for (const u of recipientsResult.rows) {
+    if (u.id === actorId) continue;
+    await query(
+      `INSERT INTO notifications (type, message, related_customer_id, target_user_id)
+       VALUES ('NEW_ORDER', $1, $2, $3)`,
+      [message, order.customer_id, u.id]
+    );
+    sendPushToUser(u.id, { title: "طلب جديد 🚚", body: message, url: "/orders" })
+      .catch((e) => console.error("push error:", e.message));
+  }
+}
