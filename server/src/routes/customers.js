@@ -34,22 +34,23 @@ async function nextAutoSequentialNumber() {
   return String(result.rows[0].n).padStart(6, "0");
 }
 
+// قائمة العملاء — بترجع كل العملاء النشطين بدون حد أقصى،
+// وكل عميل مرة وحدة بس (حتى لو إله أكثر من موقع محفوظ)
+const CUSTOMER_LIST_SELECT = `
+  SELECT c.*, l.region_id, l.maps_url, l.latitude, l.longitude, r.name AS region_name
+  FROM customers c
+  LEFT JOIN LATERAL (
+    SELECT region_id, maps_url, latitude, longitude
+    FROM customer_locations
+    WHERE customer_id = c.id
+    ORDER BY id ASC
+    LIMIT 1
+  ) l ON true
+  LEFT JOIN regions r ON r.id = l.region_id`;
+
 router.get("/", async (req, res) => {
   const q = (req.query.q || "").trim();
   const regionId = req.query.region_id;
-
-  if (!q && !regionId) {
-    const result = await query(
-      `SELECT c.*, l.region_id, l.maps_url, l.latitude, l.longitude, r.name AS region_name
-       FROM customers c
-       LEFT JOIN customer_locations l ON l.customer_id = c.id
-       LEFT JOIN regions r ON r.id = l.region_id
-       WHERE c.status = 'active'
-       ORDER BY c.created_at DESC
-       LIMIT 50`
-    );
-    return res.json(result.rows);
-  }
 
   const conditions = ["c.status = 'active'"];
   const params = [];
@@ -64,13 +65,9 @@ router.get("/", async (req, res) => {
   }
 
   const result = await query(
-    `SELECT c.*, l.region_id, l.maps_url, l.latitude, l.longitude, r.name AS region_name
-     FROM customers c
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
-     LEFT JOIN regions r ON r.id = l.region_id
+    `${CUSTOMER_LIST_SELECT}
      WHERE ${conditions.join(" AND ")}
-     ORDER BY c.created_at DESC
-     LIMIT 50`,
+     ORDER BY c.created_at DESC`,
     params
   );
   res.json(result.rows);
