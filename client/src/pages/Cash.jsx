@@ -24,8 +24,8 @@ function formatDayLabel(dateStr) {
 
 const GROUP_LABELS = { day: "يومي", week: "أسبوعي", month: "شهري", year: "سنوي" };
 const TREND_LABELS = {
-  up: { text: "📈 تصاعدي — الشغل بيزيد", color: "var(--success)" },
-  down: { text: "📉 تنازلي — الشغل بينقص", color: "var(--urgent)" },
+  up: { text: "📈 تصاعدي — المبيعات بتزيد", color: "var(--success)" },
+  down: { text: "📉 تنازلي — المبيعات بتنقص", color: "var(--urgent)" },
   flat: { text: "➖ مستقر — بدون تغيّر واضح", color: "var(--text-secondary)" },
 };
 
@@ -57,21 +57,22 @@ function TrendSection() {
   let pathD = "";
   let points = [];
   if (data && data.rows.length > 0) {
-    const values = data.rows.map((r) => r.net);
+    const values = data.rows.map((r) => r.total_sales);
     const min = Math.min(...values, 0);
     const max = Math.max(...values, 0);
     const range = max - min || 1;
     points = data.rows.map((r, i) => {
       const x = data.rows.length === 1 ? width / 2 : padding + (i / (data.rows.length - 1)) * (width - padding * 2);
-      const y = height - padding - ((r.net - min) / range) * (height - padding * 2);
-      return { x, y, net: r.net, bucket: r.bucket };
+      const y = height - padding - ((r.total_sales - min) / range) * (height - padding * 2);
+      return { x, y, sales: r.total_sales, bucket: r.bucket };
     });
     pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
   }
 
   return (
     <div className="card">
-      <h2 className="title-md">اتجاه الشغل عبر الوقت</h2>
+      <h2 className="title-md">اتجاه المبيعات عبر الوقت</h2>
+      <p className="text-secondary" style={{ fontSize: "0.8rem", marginTop: 0 }}>محسوب على المبيعات فقط بدون خصم الصرفيات.</p>
       {error && <div className="error-box">{error}</div>}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -122,8 +123,8 @@ function TrendSection() {
             {[...data.rows].reverse().map((r, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
                 <span className="text-secondary">{formatBucketLabel(r.bucket, groupBy)}</span>
-                <span className="tabular-num" style={{ fontWeight: 700, color: r.net >= 0 ? "var(--success)" : "var(--urgent)" }}>
-                  {r.net >= 0 ? "+" : ""}{r.net.toFixed(2)} JD
+                <span className="tabular-num" style={{ fontWeight: 700, color: "var(--success)" }}>
+                  {Number(r.total_sales).toFixed(2)} JD
                 </span>
               </div>
             ))}

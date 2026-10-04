@@ -246,8 +246,9 @@ router.get("/trend", async (req, res) => {
   let trend = "flat";
   if (rows.length >= 2) {
     const mid = Math.ceil(rows.length / 2);
-    const firstHalfAvg = rows.slice(0, mid).reduce((s, r) => s + r.net, 0) / mid;
-    const secondHalfAvg = rows.slice(mid).reduce((s, r) => s + r.net, 0) / Math.max(1, rows.length - mid);
+    // الاتجاه محسوب على المبيعات فقط (بدون خصم الصرفيات)
+    const firstHalfAvg = rows.slice(0, mid).reduce((s, r) => s + r.total_sales, 0) / mid;
+    const secondHalfAvg = rows.slice(mid).reduce((s, r) => s + r.total_sales, 0) / Math.max(1, rows.length - mid);
     if (secondHalfAvg > firstHalfAvg * 1.03) trend = "up";
     else if (secondHalfAvg < firstHalfAvg * 0.97) trend = "down";
   }
