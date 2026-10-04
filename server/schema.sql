@@ -330,3 +330,7 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_quantity INTEGER NOT NUL
 ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS cash_collected NUMERIC(10,2);
 ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS coupons_collected INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE driver_ledger ADD COLUMN IF NOT EXISTS coupons_redeemed INTEGER NOT NULL DEFAULT 0;
+
+-- إشعارات موجّهة لمستخدم معيّن (مثلاً سائق الرحلة). NULL = إشعار عام للإدارة
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS target_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_notifications_target ON notifications(target_user_id, created_at DESC);

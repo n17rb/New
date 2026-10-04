@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
+import { notifyOrdersAddedToTrip } from "../utils/notify.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -470,6 +471,13 @@ router.post("/", async (req, res) => {
       newValue: { stops: ordered.length, total_distance_km: totalDistance, distance_before_km: distanceBefore, driver_id: finalDriverId },
     });
 
+    notifyOrdersAddedToTrip({
+      tripId: trip.id,
+      orderIds: ordered.map((o) => o.id),
+      actorId: req.user.id,
+      isNewTrip: true,
+    }).catch((e) => console.error("notify error:", e.message));
+
     res.status(201).json({ ...trip, stopsCount: ordered.length });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -841,10 +849,13 @@ router.post("/:id/add-order", async (req, res) => {
     newValue: { order_id: newOrder.id },
   });
 
+  notifyOrdersAddedToTrip({ tripId: trip.id, orderIds: [newOrder.id], actorId: req.user.id })
+    .catch((e) => console.error("notify error:", e.message));
+
   res.json({ message: "تمت إضافة الطلب للرحلة بأفضل موضع ممكن." });
 });
 
-export async function tryAutoAddToActiveTrip(orderId) {
+export async function tryAutoAddToActiveTrip(orderId, actorId = null) {
   const activeResult = await query(`SELECT * FROM trips WHERE status = 'STARTED'`);
   if (activeResult.rows.length !== 1) return false;
   const trip = activeResult.rows[0];
@@ -862,6 +873,8 @@ export async function tryAutoAddToActiveTrip(orderId) {
 
   await cheapestInsert(trip, order);
   await logActivity({ userId: null, action: "AUTO_ADD_ORDER_TO_TRIP", recordType: "trip", recordId: trip.id, newValue: { order_id: orderId } });
+  notifyOrdersAddedToTrip({ tripId: trip.id, orderIds: [orderId], actorId })
+    .catch((e) => console.error("notify error:", e.message));
   return true;
 }
 

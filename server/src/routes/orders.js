@@ -142,7 +142,7 @@ router.post("/", async (req, res) => {
 
     res.status(201).json({ ...order, items: preparedItems });
 
-    tryAutoAddToActiveTrip(order.id).catch(() => {});
+    tryAutoAddToActiveTrip(order.id, req.user.id).catch(() => {});
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(400).json({ error: err.message || "تعذّر إنشاء الطلب." });

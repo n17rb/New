@@ -44,6 +44,22 @@ function playNotificationSound() {
   }
 }
 
+function showDeviceNotification(message) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const options = { body: message, icon: "/icon.svg", badge: "/icon.svg", tag: `n-${Date.now()}`, dir: "rtl", lang: "ar" };
+    if (navigator.serviceWorker?.ready) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.showNotification("جوهرة الرابية", options))
+        .catch(() => new Notification("جوهرة الرابية", options));
+    } else {
+      new Notification("جوهرة الرابية", options);
+    }
+  } catch {
+    // بعض الأجهزة ما بتدعم إشعارات الجهاز — الإشعار بالتطبيق بيضل موجود
+  }
+}
+
 export default function App() {
   const [loadingSetup, setLoadingSetup] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -78,8 +94,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const isPrivileged = user && (user.role === "super_admin" || user.role === "admin");
-    if (!isPrivileged) return;
+    if (!user) return;
+    firstLoadRef.current = true;
+    seenIdsRef.current = new Set();
 
     async function poll() {
       try {
@@ -95,7 +112,10 @@ export default function App() {
         const newOnes = list.filter((n) => !seenIdsRef.current.has(n.id));
         if (newOnes.length > 0) {
           playNotificationSound();
-          newOnes.forEach((n) => seenIdsRef.current.add(n.id));
+          newOnes.forEach((n) => {
+            seenIdsRef.current.add(n.id);
+            showDeviceNotification(n.message);
+          });
         }
         setUnreadCount(list.filter((n) => !n.is_read).length);
       } catch {
@@ -164,7 +184,7 @@ export default function App() {
         {isPrivileged && <Route path="/overdue-customers" element={<OverdueCustomers />} />}
         {isPrivileged && <Route path="/driver-performance" element={<DriverPerformance />} />}
         {isPrivileged && <Route path="/customers-map" element={<CustomersMap />} />}
-        {isPrivileged && <Route path="/notifications" element={<Notifications />} />}
+        <Route path="/notifications" element={<Notifications />} />
         {isPrivileged && <Route path="/trip-archive" element={<TripArchive />} />}
         {isPrivileged && <Route path="/customer-growth" element={<CustomerGrowth />} />}
         {isSuperAdmin && <Route path="/activity-log" element={<ActivityLog />} />}
@@ -192,7 +212,7 @@ function TopBar({ isPrivileged, unreadCount, darkMode, setDarkMode, onLogout }) 
         <button className="icon-btn" onClick={() => setDarkMode(!darkMode)} title="الوضع الليلي">
           {darkMode ? <FiSun size={16} /> : <FiMoon size={16} />}
         </button>
-        {isPrivileged && (
+        {(
           <button className="icon-btn" style={{ position: "relative" }} onClick={() => navigate("/notifications")} title="الإشعارات">
             <FiBell size={16} />
             {unreadCount > 0 && (
