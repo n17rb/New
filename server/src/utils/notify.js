@@ -1,4 +1,5 @@
 import { query } from "../db.js";
+import { sendPushToUser } from "./push.js";
 
 function listNames(names) {
   if (names.length <= 3) return names.join("، ");
@@ -62,5 +63,7 @@ export async function notifyOrdersAddedToTrip({ tripId, orderIds, actorId = null
        VALUES ('TRIP_ORDER_ADDED', $1, $2, $3, $4)`,
       [message, singleCustomerId, tripId, userId]
     );
+    sendPushToUser(userId, { body: message, url: "/notifications" })
+      .catch((e) => console.error("push error:", e.message));
   }
 }

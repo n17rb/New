@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
+import { isPushSupported, refreshPushIfGranted, disablePushForLogout } from "./push.js";
 import { FiBell, FiMoon, FiSun, FiEdit3 } from "react-icons/fi";
 
 import Setup from "./pages/Setup.jsx";
@@ -46,6 +47,8 @@ function playNotificationSound() {
 
 function showDeviceNotification(message) {
   try {
+    // لو الجهاز بيدعم إشعارات السيرفر، هي اللي بتطلع التنبيه (حتى والتطبيق مسكّر) — ما نكرره
+    if (isPushSupported()) return;
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     const options = { body: message, icon: "/icon.svg", badge: "/icon.svg", tag: `n-${Date.now()}`, dir: "rtl", lang: "ar" };
     if (navigator.serviceWorker?.ready) {
@@ -95,6 +98,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    refreshPushIfGranted();
     firstLoadRef.current = true;
     seenIdsRef.current = new Set();
 
@@ -128,7 +132,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, [user]);
 
-  function handleLogout() {
+  async function handleLogout() {
+    await disablePushForLogout();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);

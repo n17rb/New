@@ -334,3 +334,23 @@ ALTER TABLE driver_ledger ADD COLUMN IF NOT EXISTS coupons_redeemed INTEGER NOT 
 -- إشعارات موجّهة لمستخدم معيّن (مثلاً سائق الرحلة). NULL = إشعار عام للإدارة
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS target_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS idx_notifications_target ON notifications(target_user_id, created_at DESC);
+
+-- اشتراكات إشعارات الجهاز (Web Push) — كل جهاز/متصفح إله اشتراك
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+-- إعدادات عامة للتطبيق (مثل مفاتيح الإشعارات)
+CREATE TABLE IF NOT EXISTS app_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
