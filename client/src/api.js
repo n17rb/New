@@ -135,6 +135,7 @@ export const api = {
   getReportsSummary: (period) => request(`/reports/summary?period=${period}`),
 
   getCashCurrent: () => request("/cash/current"),
+  getCashEntry: (date) => request(`/cash/entries/${encodeURIComponent(date)}`),
   saveCashEntry: (body) => request("/cash/entries", { method: "POST", body }),
   resetCashPeriod: () => request("/cash/reset", { method: "POST" }),
   getCashHistory: () => request("/cash/history"),

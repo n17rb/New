@@ -5,6 +5,10 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 const router = Router();
 router.use(requireAuth, requireRole("super_admin", "admin"));
 
+// نرجّع التاريخ كنص YYYY-MM-DD عشان ما يتزحلق يوم بسبب فرق التوقيت
+const ENTRY_COLUMNS = `id, period_id, to_char(entry_date, 'YYYY-MM-DD') AS entry_date,
+  sales_amount, expense_amount, notes, created_by, created_at, updated_at`;
+
 async function getOrCreateOpenPeriod() {
   const openResult = await query("SELECT * FROM cash_periods WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1");
   if (openResult.rows[0]) return openResult.rows[0];
@@ -13,11 +17,58 @@ async function getOrCreateOpenPeriod() {
   return created.rows[0];
 }
 
+function getJordanToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Amman",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function isValidDateString(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+// يرجّع { value } أو { error }
+function parseAmount(raw, label) {
+  if (raw === undefined || raw === null || raw === "") return { value: 0 };
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return { error: `قيمة ${label} غير صحيحة.` };
+  if (num < 0) return { error: `${label} ما بتكون بالسالب.` };
+  if (num > 99999999) return { error: `قيمة ${label} كبيرة كثير.` };
+  return { value: Math.round(num * 100) / 100 };
+}
+
+function validateDate(date) {
+  if (!isValidDateString(date)) return "التاريخ غير صحيح.";
+  if (date > getJordanToday()) return "ما بتقدر تسجّل يوم بالمستقبل.";
+  return null;
+}
+
+// إذا انعدّل يوم تابع لفترة مُصفَّرة، نحدّث أرقامها النهائية بالأرشيف
+async function refreshClosedPeriodTotals(periodId) {
+  await query(
+    `UPDATE cash_periods p SET
+       final_sales = t.s,
+       final_expenses = t.e,
+       final_cash = t.s - t.e
+     FROM (
+       SELECT COALESCE(SUM(sales_amount), 0) AS s, COALESCE(SUM(expense_amount), 0) AS e
+       FROM cash_entries WHERE period_id = $1
+     ) t
+     WHERE p.id = $1 AND p.ended_at IS NOT NULL`,
+    [periodId]
+  );
+}
+
 router.get("/current", async (req, res) => {
   const period = await getOrCreateOpenPeriod();
 
   const entriesResult = await query(
-    "SELECT * FROM cash_entries WHERE period_id = $1 ORDER BY entry_date ASC",
+    `SELECT ${ENTRY_COLUMNS} FROM cash_entries WHERE period_id = $1 ORDER BY entry_date ASC`,
     [period.id]
   );
   const entries = entriesResult.rows;
@@ -28,6 +79,7 @@ router.get("/current", async (req, res) => {
   res.json({
     period_id: period.id,
     started_at: period.started_at,
+    today: getJordanToday(),
     entries,
     total_sales: totalSales,
     total_expenses: totalExpenses,
@@ -35,55 +87,87 @@ router.get("/current", async (req, res) => {
   });
 });
 
-function getJordanToday() {
-  const now = new Date();
-  const jordanNow = new Date(now.getTime() + 3 * 60 * 60 * 1000);
-  return jordanNow.toISOString().slice(0, 10);
-}
+// جلب إدخال يوم معيّن (لو موجود) — بيدوّر بكل الفترات
+router.get("/entries/:date", async (req, res) => {
+  const { date } = req.params;
+  const dateError = validateDate(date);
+  if (dateError) return res.status(400).json({ error: dateError });
+
+  const result = await query(
+    `SELECT ${ENTRY_COLUMNS},
+            (SELECT ended_at IS NOT NULL FROM cash_periods WHERE id = cash_entries.period_id) AS in_closed_period
+     FROM cash_entries WHERE entry_date = $1
+     ORDER BY period_id DESC LIMIT 1`,
+    [date]
+  );
+
+  res.json({ date, entry: result.rows[0] || null });
+});
 
 router.post("/entries", async (req, res) => {
-  const { entry_date, sales_amount, expense_amount, notes } = req.body;
+  const { entry_date, sales_amount, expense_amount, notes } = req.body || {};
   const date = entry_date || getJordanToday();
 
-  if (sales_amount == null && expense_amount == null) {
+  const dateError = validateDate(date);
+  if (dateError) return res.status(400).json({ error: dateError });
+
+  if ((sales_amount == null || sales_amount === "") && (expense_amount == null || expense_amount === "")) {
     return res.status(400).json({ error: "أدخل قيمة مبيعات أو صرفيات على الأقل." });
   }
 
-  const period = await getOrCreateOpenPeriod();
+  const sales = parseAmount(sales_amount, "المبيعات");
+  if (sales.error) return res.status(400).json({ error: sales.error });
+  const expenses = parseAmount(expense_amount, "الصرفيات");
+  if (expenses.error) return res.status(400).json({ error: expenses.error });
 
+  let cleanNotes = null;
+  if (notes != null) {
+    if (typeof notes !== "string") return res.status(400).json({ error: "الملاحظة لازم تكون نص." });
+    cleanNotes = notes.trim().slice(0, 500) || null;
+  }
+
+  // لو اليوم مسجّل من قبل (حتى لو بفترة مُصفَّرة) نعدّله هو بدل ما نعمل نسخة ثانية
   const existing = await query(
-    "SELECT id FROM cash_entries WHERE period_id = $1 AND entry_date = $2",
-    [period.id, date]
+    `SELECT ${ENTRY_COLUMNS} FROM cash_entries WHERE entry_date = $1 ORDER BY period_id DESC LIMIT 1`,
+    [date]
   );
+  const oldEntry = existing.rows[0] || null;
 
-  let result;
-  if (existing.rows[0]) {
-    result = await query(
+  let saved;
+  if (oldEntry) {
+    const result = await query(
       `UPDATE cash_entries SET
-         sales_amount = COALESCE($1, sales_amount),
-         expense_amount = COALESCE($2, expense_amount),
-         notes = COALESCE($3, notes),
+         sales_amount = $1,
+         expense_amount = $2,
+         notes = $3,
          updated_at = now()
-       WHERE id = $4 RETURNING *`,
-      [sales_amount, expense_amount, notes, existing.rows[0].id]
+       WHERE id = $4
+       RETURNING ${ENTRY_COLUMNS}`,
+      [sales.value, expenses.value, cleanNotes, oldEntry.id]
     );
+    saved = result.rows[0];
+    await refreshClosedPeriodTotals(saved.period_id);
   } else {
-    result = await query(
+    const period = await getOrCreateOpenPeriod();
+    const result = await query(
       `INSERT INTO cash_entries (period_id, entry_date, sales_amount, expense_amount, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [period.id, date, sales_amount || 0, expense_amount || 0, notes || null, req.user.id]
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING ${ENTRY_COLUMNS}`,
+      [period.id, date, sales.value, expenses.value, cleanNotes, req.user.id]
     );
+    saved = result.rows[0];
   }
 
   await logActivity({
     userId: req.user.id,
-    action: "UPSERT_CASH_ENTRY",
+    action: oldEntry ? "UPDATE_CASH_ENTRY" : "CREATE_CASH_ENTRY",
     recordType: "cash_entry",
-    recordId: result.rows[0].id,
-    newValue: result.rows[0],
+    recordId: saved.id,
+    oldValue: oldEntry,
+    newValue: saved,
   });
 
-  res.json(result.rows[0]);
+  res.json(saved);
 });
 
 router.post("/reset", async (req, res) => {
@@ -130,11 +214,11 @@ router.get("/trend", async (req, res) => {
   const conditions = [];
   const params = [groupBy];
 
-  if (from) {
+  if (from && isValidDateString(from)) {
     params.push(from);
     conditions.push(`entry_date >= $${params.length}`);
   }
-  if (to) {
+  if (to && isValidDateString(to)) {
     params.push(to);
     conditions.push(`entry_date <= $${params.length}`);
   }
