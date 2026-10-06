@@ -67,11 +67,30 @@ function parseNumberToken(token) {
   return null;
 }
 
+// رقم عمارة/شقة مع حرف: «9ج»، «ج9»، «9 ج»، «9-ج»
+const LETTER = "[a-zء-ي]";
+function readCode(tokens, idx) {
+  const tok = tokens[idx];
+  if (tok == null) return null;
+  let m = tok.match(new RegExp(`^(\\d+)(${LETTER})$`)) || null;
+  if (m) return { num: Number(m[1]), letter: m[2], used: 1 };
+  m = tok.match(new RegExp(`^(${LETTER})(\\d+)$`));
+  if (m && !KEY_LOOKUP[m[1]]) return { num: Number(m[2]), letter: m[1], used: 1 };
+  if (/^\d+$/.test(tok)) {
+    const next = tokens[idx + 1];
+    // «9 ج» — حرف لحاله بعد الرقم (مش كلمة مفتاحية مثل ط أو ش)
+    if (next && new RegExp(`^${LETTER}$`).test(next) && !KEY_LOOKUP[next]) {
+      return { num: Number(tok), letter: next, used: 2 };
+    }
+  }
+  return null;
+}
+
 // يفصل «ع5» و«ط2» و«عماره5» لكلمة + رقم
 function splitGlued(tokens) {
   const out = [];
   for (const tok of tokens) {
-    const m = tok.match(/^([^\d]+?)(\d+)$/);
+    const m = tok.match(/^([^\d]+?)(\d+[a-zء-ي]?)$/);
     if (m && KEY_LOOKUP[m[1]]) {
       out.push(m[1], m[2]);
     } else {
@@ -95,6 +114,9 @@ export function parseSearch(raw, regionNames = []) {
     phoneDigits: null,
     regions: [],
     terms: [],
+    codes: [],
+    buildingLetter: null,
+    apartmentLetter: null,
     understood: [],
   };
   if (!text) return result;
@@ -151,6 +173,16 @@ export function parseSearch(raw, regionNames = []) {
     if (field === "building" || field === "floor" || field === "apartment") {
       // «عمارة رقم 5» / «طابق نمرة 2» — نتخطى الكلمة اللي بالنص
       while (i + 1 < tokens.length && FILLERS.has(tokens[i + 1])) i++;
+      if (field === "building" || field === "apartment") {
+        const code = readCode(tokens, i + 1);
+        if (code) {
+          i += code.used;
+          result[field] = code.num;
+          result[`${field}Letter`] = code.letter;
+          result.understood.push({ label: field === "building" ? "عمارة" : "شقة", value: `${code.num}${code.letter}` });
+          continue;
+        }
+      }
       const next = tokens[i + 1];
       const num = next != null ? parseNumberToken(next) : null;
       // «ش» لحالها ممكن تكون شارع أو شقة: إذا بعدها رقم = شقة، إذا بعدها كلمة = شارع
@@ -177,6 +209,15 @@ export function parseSearch(raw, regionNames = []) {
 
     // «طابق ثاني» مكتوبة كـ «الثاني» لحالها بعد رقم عمارة؟ ما بنخمّن — بتصير كلمة بحث عادية
     if (STOP_WORDS.has(tok)) continue;
+
+    // «9ج» لحالها بدون كلمة قبلها = عمارة أو شقة
+    const freeCode = readCode(tokens, i);
+    if (freeCode) {
+      i += freeCode.used - 1;
+      result.codes.push(`${freeCode.num}${freeCode.letter}`);
+      result.understood.push({ label: "عمارة أو شقة", value: `${freeCode.num}${freeCode.letter}` });
+      continue;
+    }
 
     // رقم لحاله بدون كلمة قبله
     if (/^\d+$/.test(tok)) {
@@ -220,9 +261,23 @@ export function buildSearchSql(parsed, startIndex = 1) {
   };
   const digitsOf = (col) => `regexp_replace(${sqlNormalize(col)}, '[^0-9]', '', 'g')`;
 
+  // الرقم مع الحرف بشكل مضغوط: «عمارة 9 - ج» ← «9ج»
+  const compactOf = (col) =>
+    `regexp_replace(regexp_replace(${sqlNormalize(col)}, '(عماره|بنايه|مبني|شقه|رقم)', '', 'g'), '[^0-9a-zء-ي]', '', 'g')`;
+  const codeMatch = (col, num, letter) => {
+    const a = p(`${num}${letter}`);
+    const b = p(`${letter}${num}`);
+    return `(${compactOf(col)} = ${a} OR ${compactOf(col)} = ${b})`;
+  };
+
   if (parsed.building != null) {
-    const ph = p(String(parsed.building));
-    conds.push(`(${digitsOf("l.building_number")} = ${ph} OR ${sqlNormalize("l.building_name")} ~ ('(^|[^0-9])' || ${ph} || '([^0-9]|$)'))`);
+    if (parsed.buildingLetter) {
+      conds.push(`(${codeMatch("l.building_number", parsed.building, parsed.buildingLetter)} OR ${codeMatch("l.building_name", parsed.building, parsed.buildingLetter)})`);
+    } else {
+      // «عمارة 9» بتجيب 9 و 9أ و 9ج كمان
+      const ph = p(String(parsed.building));
+      conds.push(`(${digitsOf("l.building_number")} = ${ph} OR ${sqlNormalize("l.building_name")} ~ ('(^|[^0-9])' || ${ph} || '([^0-9]|$)'))`);
+    }
   }
 
   if (parsed.floor != null) {
@@ -237,8 +292,18 @@ export function buildSearchSql(parsed, startIndex = 1) {
   }
 
   if (parsed.apartment != null) {
-    const ph = p(String(parsed.apartment));
-    conds.push(`${digitsOf("l.apartment")} = ${ph}`);
+    if (parsed.apartmentLetter) {
+      conds.push(codeMatch("l.apartment", parsed.apartment, parsed.apartmentLetter));
+    } else {
+      const ph = p(String(parsed.apartment));
+      conds.push(`${digitsOf("l.apartment")} = ${ph}`);
+    }
+  }
+
+  for (const code of parsed.codes) {
+    const num = code.match(/\d+/)[0];
+    const letter = code.replace(/\d+/, "");
+    conds.push(`(${codeMatch("l.building_number", num, letter)} OR ${codeMatch("l.building_name", num, letter)} OR ${codeMatch("l.apartment", num, letter)})`);
   }
 
   for (const s of parsed.street) {
