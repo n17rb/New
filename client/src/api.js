@@ -114,6 +114,7 @@ export const api = {
   postponeStop: (stopId, body) => request(`/trips/stops/${stopId}/postpone`, { method: "POST", body }),
   cancelStop: (stopId, reason) => request(`/trips/stops/${stopId}/cancel`, { method: "POST", body: { reason } }),
   addOrderToTrip: (tripId, orderId) => request(`/trips/${tripId}/add-order`, { method: "POST", body: { order_id: orderId } }),
+  reoptimizeTrip: (tripId) => request(`/trips/${tripId}/reoptimize`, { method: "POST" }),
 
   getDriverBalances: () => request("/drivers/balances"),
   getDriverPerformance: () => request("/drivers/performance"),
@@ -153,6 +154,9 @@ export const api = {
   unsubscribePush: (endpoint) => request("/push/unsubscribe", { method: "POST", body: { endpoint } }),
   testPush: () => request("/push/test", { method: "POST" }),
 
+  getReminderSchedule: () => request("/reminders/schedule"),
+  getShopLocation: () => request("/settings/shop-location"),
+  setShopLocation: (body) => request("/settings/shop-location", { method: "PUT", body }),
   getCustomerReminder: (customerId) => request(`/reminders/${customerId}`),
   setCustomerReminder: (customerId, body) => request(`/reminders/${customerId}`, { method: "POST", body }),
   deleteCustomerReminder: (customerId) => request(`/reminders/${customerId}`, { method: "DELETE" }),

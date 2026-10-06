@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { FiUserPlus, FiSearch, FiUpload } from "react-icons/fi";
+import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
 
 export default function Customers({ user }) {
   const [query, setQuery] = useState("");
@@ -161,7 +162,10 @@ export default function Customers({ user }) {
                         <span style={{ color: "var(--urgent)", fontSize: "0.75rem", marginRight: 6 }}> ❌ رابط محفوظ بس مكسور</span>
                       )}
                     </div>
-                    <div className="text-secondary tabular-num">{c.phone_display} · #{c.sequential_number}</div>
+                    <div className="text-secondary tabular-num" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span>{c.phone_display} · #{c.sequential_number}</span>
+                      <BottleTypeBadge type={c.bottle_type} />
+                    </div>
                   </div>
                   {c.region_name && <span className="badge">{c.region_name}</span>}
                 </div>
@@ -192,6 +196,7 @@ function AddCustomerForm({ onCancel, onSaved }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [sequentialNumber, setSequentialNumber] = useState("");
+  const [bottleType, setBottleType] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
@@ -200,12 +205,17 @@ function AddCustomerForm({ onCancel, onSaved }) {
     e.preventDefault();
     setError("");
     setInfo("");
+    if (!bottleType) {
+      setError("اختار نوع القوارير للزبون: جديدة أو مستعملة.");
+      return;
+    }
     setLoading(true);
     try {
       const result = await api.createCustomer({
         name,
         phone,
         sequential_number: sequentialNumber || undefined,
+        bottle_type: bottleType,
       });
       if (result.alreadyExists) {
         setInfo(result.message);
@@ -236,6 +246,7 @@ function AddCustomerForm({ onCancel, onSaved }) {
           <label>الرقم التسلسلي (اختياري — اتركه فارغ ليُولَّد تلقائيًا)</label>
           <input value={sequentialNumber} onChange={(e) => setSequentialNumber(e.target.value)} placeholder="مثال: 5 أو 000005" />
         </div>
+        <BottleTypePicker value={bottleType} onChange={setBottleType} required />
         <button className="btn-primary" disabled={loading} style={{ marginBottom: 10 }}>
           {loading ? "جاري الحفظ..." : "حفظ العميل"}
         </button>

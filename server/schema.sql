@@ -354,3 +354,16 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- نوع القوارير اللي بتنزل للزبون: new = قوارير جديدة، used = قوارير مستعملة
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS bottle_type VARCHAR(10);
+ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_bottle_type_check;
+ALTER TABLE customers ADD CONSTRAINT customers_bottle_type_check CHECK (bottle_type IS NULL OR bottle_type IN ('new','used'));
+
+-- المسار بيخلص بالرجوع للمحل: مسافة آخر طلب ← المحل
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS return_leg_km NUMERIC(10,3);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS end_latitude DOUBLE PRECISION;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS end_longitude DOUBLE PRECISION;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS route_mode VARCHAR(20);
+-- التوقف اللي أجّله السائق بيضل بآخر الرحلة حتى لو انعاد ترتيب المسار
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS postponed_at TIMESTAMPTZ;

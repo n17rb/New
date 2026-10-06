@@ -284,10 +284,13 @@ router.post("/fix-locations", requireCanManageCustomers, async (req, res) => {
 });
 
 router.post("/", requireCanManageCustomers, async (req, res) => {
-  const { name, phone, phone_alt, notes, sequential_number } = req.body;
+  const { name, phone, phone_alt, notes, sequential_number, bottle_type } = req.body;
 
   if (!name || !phone) {
     return res.status(400).json({ error: "الاسم ورقم الهاتف مطلوبان." });
+  }
+  if (!["new", "used"].includes(bottle_type)) {
+    return res.status(400).json({ error: "اختار نوع القوارير للزبون: جديدة أو مستعملة." });
   }
 
   const normalized = normalizePhone(phone);
@@ -311,10 +314,10 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
   }
 
   const inserted = await query(
-    `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, phone_alt, notes, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, phone_alt, notes, bottle_type, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [seqNumber, name.trim(), normalized, formatPhoneForDisplay(normalized), phone_alt || null, notes || null, req.user.id]
+    [seqNumber, name.trim(), normalized, formatPhoneForDisplay(normalized), phone_alt || null, notes || null, bottle_type, req.user.id]
   );
   const customer = inserted.rows[0];
 
@@ -325,7 +328,7 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
     action: "CREATE_CUSTOMER",
     recordType: "customer",
     recordId: customer.id,
-    newValue: { name: customer.name, phone: customer.phone_display, sequential_number: seqNumber },
+    newValue: { name: customer.name, phone: customer.phone_display, sequential_number: seqNumber, bottle_type },
   });
 
   res.status(201).json({ alreadyExists: false, customer });
@@ -340,8 +343,12 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
     name, phone, sequential_number, notes,
     region_id, street, building_number, building_name,
     floor, apartment, side, access_notes,
-    latitude, longitude, maps_url, preferred_delivery_note,
+    latitude, longitude, maps_url, preferred_delivery_note, bottle_type,
   } = req.body;
+
+  if (bottle_type !== undefined && bottle_type !== null && !["new", "used"].includes(bottle_type)) {
+    return res.status(400).json({ error: "نوع القوارير غير صحيح." });
+  }
 
   let phoneNormalized = before.rows[0].phone_normalized;
   let phoneDisplay = before.rows[0].phone_display;
@@ -378,9 +385,10 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
        phone_display = $3,
        sequential_number = COALESCE(NULLIF($4, ''), sequential_number),
        notes = COALESCE($5, notes),
+       bottle_type = COALESCE($7, bottle_type),
        updated_at = now()
      WHERE id = $6 RETURNING *`,
-    [name, phoneNormalized, phoneDisplay, sequential_number, notes, id]
+    [name, phoneNormalized, phoneDisplay, sequential_number, notes, id, bottle_type || null]
   );
 
   await query(

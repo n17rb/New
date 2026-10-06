@@ -74,7 +74,7 @@ export async function notifyNewOrder({ orderId, actorId = null }) {
   if (!orderId) return;
 
   const orderResult = await query(
-    `SELECT o.id, o.priority, o.notes, c.id AS customer_id, c.name AS customer_name, r.name AS region_name
+    `SELECT o.id, o.priority, o.notes, c.id AS customer_id, c.name AS customer_name, c.bottle_type, r.name AS region_name
      FROM orders o
      JOIN customers c ON c.id = o.customer_id
      LEFT JOIN LATERAL (
@@ -97,7 +97,8 @@ export async function notifyNewOrder({ orderId, actorId = null }) {
 
   const urgent = order.priority === "urgent" ? "⚡ مستعجل — " : "";
   const region = order.region_name ? ` (${order.region_name})` : "";
-  const message = `🆕 ${urgent}طلب جديد: ${order.customer_name || "بدون اسم"}${region}${itemsText ? ` — ${itemsText}` : ""}`;
+  const bottle = order.bottle_type === "new" ? " · قوارير جديدة 🆕" : order.bottle_type === "used" ? " · قوارير مستعملة ♻️" : "";
+  const message = `🆕 ${urgent}طلب جديد: ${order.customer_name || "بدون اسم"}${region}${itemsText ? ` — ${itemsText}` : ""}${bottle}`;
 
   const recipientsResult = await query(
     `SELECT id FROM users WHERE status = 'active' AND role IN ('driver','super_admin','admin')`

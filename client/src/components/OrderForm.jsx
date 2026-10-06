@@ -214,7 +214,7 @@ function AddToActiveTripButton({ orderId, onDone }) {
   if (!trip || trip.status !== "STARTED" || !trip.can_operate) return null;
 
   if (added) {
-    return <div className="success-box">تمت إضافة الطلب لرحلتك الجارية بأفضل موضع ممكن.</div>;
+    return <div className="success-box">تمت إضافة الطلب لرحلتك وانرتّب المسار كامل من جديد بأحسن طريق ✓</div>;
   }
 
   return (

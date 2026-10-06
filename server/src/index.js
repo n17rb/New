@@ -25,6 +25,7 @@ import notificationRoutes from "./routes/notifications.js";
 import reminderRoutes, { checkAndFireReminders } from "./routes/reminders.js";
 import notesRoutes from "./routes/notes.js";
 import pushRoutes from "./routes/push.js";
+import settingsRoutes from "./routes/settings.js";
 
 dotenv.config();
 
@@ -54,6 +55,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/notes", notesRoutes);
 app.use("/api/push", pushRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

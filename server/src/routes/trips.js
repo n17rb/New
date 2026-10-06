@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { notifyOrdersAddedToTrip } from "../utils/notify.js";
+import { optimizeRoute, getShopLocation } from "../utils/routing.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -18,192 +19,98 @@ function canOperateTrip(user, trip) {
   return trip.driver_id === user.id;
 }
 
-function distanceKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+// إعادة ترتيب كامل الطلبات الباقية بالرحلة (بعد إضافة طلب جديد مثلًا).
+// - الطلبات المسلّمة/المتعذرة/الملغية بتضل بمكانها بأول القائمة
+// - الباقي بيترتب بأحسن طريق من مكان السائق الحالي ← ... ← المحل
+// - الطلبات المؤجلة لموعد لاحق بتنزل لآخر الرحلة
+export async function reoptimizeTrip(tripId, { withGeometry = true } = {}) {
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [tripId]);
+  const trip = tripResult.rows[0];
+  if (!trip || trip.status === "COMPLETED") return null;
 
-async function getRoadDistanceMatrix(points) {
-  if (points.length > 60) return null;
-  try {
-    const coords = points.map((p) => `${p.lon},${p.lat}`).join(";");
-    const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.code !== "Ok" || !data.distances) return null;
-    return data.distances;
-  } catch {
-    return null;
-  }
-}
+  const stopsResult = await query(
+    `SELECT ts.id, ts.sequence_number, ts.delivered_at, ts.leg_distance_km, ts.postponed_at,
+            o.status AS order_status, o.priority, o.requested_time,
+            l.latitude, l.longitude
+     FROM trip_stops ts
+     JOIN orders o ON o.id = ts.order_id
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (
+       SELECT latitude, longitude FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
+     ) l ON true
+     WHERE ts.trip_id = $1
+     ORDER BY ts.sequence_number ASC`,
+    [tripId]
+  );
+  const all = stopsResult.rows;
+  const now = new Date();
+  const isDone = (s) => s.delivered_at || ["DELIVERED", "FAILED", "CANCELLED"].includes(s.order_status);
 
-async function getRouteGeometry(orderedPoints) {
-  if (orderedPoints.length < 2 || orderedPoints.length > 60) return null;
-  try {
-    const coords = orderedPoints.map((p) => `${p.lon},${p.lat}`).join(";");
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.code !== "Ok" || !data.routes?.[0]?.geometry) return null;
-    return data.routes[0].geometry.coordinates;
-  } catch {
-    return null;
-  }
-}
+  const done = all.filter(isDone);
+  const pending = all.filter((s) => !isDone(s));
+  const timeLocked = pending
+    .filter((s) => s.requested_time && new Date(s.requested_time) > now)
+    .sort((x, y) => new Date(x.requested_time) - new Date(y.requested_time));
+  // اللي أجّلهم السائق بيضلوا بالآخر بنفس ترتيب التأجيل
+  const postponed = pending
+    .filter((s) => s.postponed_at && !timeLocked.includes(s))
+    .sort((x, y) => new Date(x.postponed_at) - new Date(y.postponed_at));
+  const locked = [...timeLocked, ...postponed];
+  const free = pending.filter((s) => !locked.includes(s));
 
-function twoOpt(routeIn, distFn, maxIterations = 40) {
-  let best = [...routeIn];
-  let improved = true;
-  let iterations = 0;
-  while (improved && iterations < maxIterations) {
-    improved = false;
-    iterations++;
-    for (let i = 1; i < best.length - 2; i++) {
-      for (let j = i + 1; j < best.length - 1; j++) {
-        const a = best[i - 1], b = best[i], c = best[j], d = best[j + 1];
-        const delta = (distFn(a, c) + distFn(b, d)) - (distFn(a, b) + distFn(c, d));
-        if (delta < -1e-6) {
-          const segment = best.slice(i, j + 1).reverse();
-          best = [...best.slice(0, i), ...segment, ...best.slice(j + 1)];
-          improved = true;
-        }
-      }
-    }
-  }
-  return best;
-}
-
-function orOpt(routeIn, distFn, maxIterations = 20) {
-  let best = [...routeIn];
-  let improved = true;
-  let iterations = 0;
-  while (improved && iterations < maxIterations) {
-    improved = false;
-    iterations++;
-    for (let i = 1; i < best.length - 1; i++) {
-      const node = best[i], prev = best[i - 1], next = best[i + 1];
-      const removalGain = distFn(prev, node) + distFn(node, next) - distFn(prev, next);
-      let bestJ = null, bestCost = Infinity;
-      for (let j = 0; j < best.length - 1; j++) {
-        if (j === i - 1 || j === i) continue;
-        const p = best[j], q = best[j + 1];
-        const cost = distFn(p, node) + distFn(node, q) - distFn(p, q);
-        if (cost < bestCost) { bestCost = cost; bestJ = j; }
-      }
-      if (bestJ !== null && bestCost < removalGain - 1e-6) {
-        const without = [...best.slice(0, i), ...best.slice(i + 1)];
-        const insertAt = bestJ < i ? bestJ + 1 : bestJ;
-        without.splice(insertAt, 0, node);
-        best = without;
-        improved = true;
-      }
-    }
-  }
-  return best;
-}
-
-async function buildRoute(startLat, startLon, stops, routeMode) {
-  const withLocation = stops.filter((s) => s.latitude != null && s.longitude != null);
-  const withoutLocation = stops.filter((s) => s.latitude == null || s.longitude == null);
-
-  if (withLocation.length === 0) {
-    return { ordered: [...stops], legDistancesKm: stops.map(() => null), totalDistance: 0, distanceBefore: 0, geometry: null };
+  // نقطة البداية: موقع السائق لو حديث، وإلا آخر زبون تسلّم، وإلا بداية الرحلة، وإلا المحل
+  const shop = await getShopLocation();
+  let start = null;
+  const locationFresh = trip.location_updated_at && now - new Date(trip.location_updated_at) < 30 * 60 * 1000;
+  if (trip.current_latitude != null && locationFresh) {
+    start = { lat: trip.current_latitude, lon: trip.current_longitude };
+  } else {
+    const lastDelivered = done
+      .filter((s) => s.delivered_at && s.latitude != null)
+      .sort((x, y) => new Date(y.delivered_at) - new Date(x.delivered_at))[0];
+    if (lastDelivered) start = { lat: lastDelivered.latitude, lon: lastDelivered.longitude };
+    else if (trip.start_latitude != null) start = { lat: trip.start_latitude, lon: trip.start_longitude };
   }
 
-  let anchorLat = startLat;
-  let anchorLon = startLon;
-  let remainingPoints = withLocation;
-  let firstStopIsAnchor = null;
+  const route = await optimizeRoute({
+    start,
+    end: shop,
+    stops: free,
+    mode: trip.route_mode === "urgent_smart" ? "urgent_smart" : "nearest",
+    withGeometry,
+  });
 
-  if (anchorLat == null || anchorLon == null) {
-    firstStopIsAnchor = withLocation[0];
-    anchorLat = firstStopIsAnchor.latitude;
-    anchorLon = firstStopIsAnchor.longitude;
-    remainingPoints = withLocation.slice(1);
-  }
+  const newOrder = [...done, ...route.ordered, ...locked];
+  const legById = new Map();
+  route.ordered.forEach((s, i) => legById.set(s.id, route.legDistancesKm[i]));
 
-  if (remainingPoints.length === 0) {
-    return {
-      ordered: [firstStopIsAnchor, ...withoutLocation],
-      legDistancesKm: [0, ...withoutLocation.map(() => null)],
-      totalDistance: 0,
-      distanceBefore: 0,
-      geometry: null,
-    };
-  }
+  const ids = newOrder.map((s) => s.id);
+  const seqs = newOrder.map((_, i) => i + 1);
+  const legs = newOrder.map((s) => (legById.has(s.id) ? legById.get(s.id) : locked.includes(s) ? null : s.leg_distance_km));
 
-  const allPoints = [{ lat: anchorLat, lon: anchorLon }, ...remainingPoints.map((s) => ({ lat: s.latitude, lon: s.longitude }))];
-  const roadMatrix = await getRoadDistanceMatrix(allPoints);
+  await query(
+    `UPDATE trip_stops ts SET sequence_number = u.seq, leg_distance_km = u.leg
+     FROM unnest($1::int[], $2::int[], $3::numeric[]) AS u(id, seq, leg)
+     WHERE ts.id = u.id`,
+    [ids, seqs, legs]
+  );
 
-  function realDist(i, j) {
-    if (roadMatrix) return roadMatrix[i][j];
-    return distanceKm(allPoints[i].lat, allPoints[i].lon, allPoints[j].lat, allPoints[j].lon) * 1000;
-  }
+  const doneKm = done.reduce((sum, s) => sum + Number(s.leg_distance_km || 0), 0);
+  await query(
+    `UPDATE trips SET total_distance_km = $1, return_leg_km = $2, end_latitude = $3, end_longitude = $4,
+       route_geometry = COALESCE($5, route_geometry)
+     WHERE id = $6`,
+    [
+      doneKm + route.totalDistanceKm,
+      route.returnLegKm,
+      shop ? shop.lat : null,
+      shop ? shop.lon : null,
+      route.geometry ? JSON.stringify(route.geometry) : null,
+      tripId,
+    ]
+  );
 
-  function effectiveDist(i, j) {
-    if (routeMode === "urgent_smart" && j > 0 && remainingPoints[j - 1].priority === "urgent") {
-      return realDist(i, j) * 0.7;
-    }
-    return realDist(i, j);
-  }
-
-  function routeRealDistance(r) {
-    let total = 0;
-    for (let i = 0; i < r.length - 1; i++) total += realDist(r[i], r[i + 1]);
-    return total;
-  }
-
-  const remainingIdx = remainingPoints.map((_, i) => i + 1);
-  let route = [0];
-  let current = 0;
-  while (remainingIdx.length) {
-    let bestPos = 0, bestScore = Infinity;
-    remainingIdx.forEach((idx, pos) => {
-      const score = effectiveDist(current, idx);
-      if (score < bestScore) { bestScore = score; bestPos = pos; }
-    });
-    const chosen = remainingIdx.splice(bestPos, 1)[0];
-    route.push(chosen);
-    current = chosen;
-  }
-  const distanceBefore = routeRealDistance(route);
-
-  let improvedRoute = twoOpt(route, effectiveDist);
-  improvedRoute = orOpt(improvedRoute, effectiveDist);
-  improvedRoute = twoOpt(improvedRoute, effectiveDist);
-
-  const totalDistance = routeRealDistance(improvedRoute);
-  const orderedStops = improvedRoute.slice(1).map((idx) => remainingPoints[idx - 1]);
-  const legDistancesForOrdered = [];
-  for (let i = 1; i < improvedRoute.length; i++) {
-    legDistancesForOrdered.push(realDist(improvedRoute[i - 1], improvedRoute[i]) / 1000);
-  }
-  const orderedAllPoints = improvedRoute.map((idx) => allPoints[idx]);
-  const geometry = await getRouteGeometry(orderedAllPoints);
-
-  const finalOrdered = firstStopIsAnchor ? [firstStopIsAnchor, ...orderedStops] : orderedStops;
-  const finalLegDistances = firstStopIsAnchor ? [0, ...legDistancesForOrdered] : legDistancesForOrdered;
-
-  return {
-    ordered: [...finalOrdered, ...withoutLocation],
-    legDistancesKm: [...finalLegDistances, ...withoutLocation.map(() => null)],
-    totalDistance: totalDistance / 1000,
-    distanceBefore: distanceBefore / 1000,
-    geometry,
-  };
+  return { stops: newOrder.length, total_distance_km: doneKm + route.totalDistanceKm };
 }
 
 async function insertNotification({ type, message, customerId, tripId }) {
@@ -216,13 +123,15 @@ async function insertNotification({ type, message, customerId, tripId }) {
 async function buildTripDetailResponse(trip, requestingUser) {
   const stopsResult = await query(
     `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes, o.requested_time,
-            c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance,
+            c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance, c.bottle_type,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
             l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
      JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT * FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
+     ) l ON true
      WHERE ts.trip_id = $1
      ORDER BY ts.sequence_number ASC`,
     [trip.id]
@@ -275,9 +184,21 @@ async function buildTripDetailResponse(trip, requestingUser) {
 
   const lastDelivered = [...stops].filter((s) => s.delivered_at).sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at))[0];
 
+  // الرجوع للمحل بعد آخر طلب
+  const shop = trip.end_latitude != null
+    ? { lat: trip.end_latitude, lon: trip.end_longitude }
+    : await getShopLocation();
+  const returnLegKm = trip.return_leg_km != null ? Number(trip.return_leg_km) : null;
+  if (shop && returnLegKm != null && trip.status !== "COMPLETED") {
+    cumulativeKm += returnLegKm;
+    cumulativeMinutes += (returnLegKm / AVERAGE_SPEED_KMH) * 60;
+  }
+
   return {
     ...trip,
     stops: stopsWithEta,
+    shop_location: shop,
+    return_leg_km: returnLegKm,
     estimated_minutes_remaining: Math.round(cumulativeMinutes),
     total_remaining_distance_km: Number(cumulativeKm.toFixed(1)),
     can_operate: canOperateTrip(requestingUser, trip),
@@ -423,43 +344,61 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "يوجد رحلة نشطة بالفعل لهذا السائق. أنهِها أولًا قبل ما تبدأ رحلة جديدة." });
   }
 
+  // نحسب المسار قبل ما نفتح العملية بقاعدة البيانات (حساب الطرق ممكن ياخذ كم ثانية)
+  const ordersResult = await query(
+    `SELECT o.id, o.priority, l.latitude, l.longitude
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (
+       SELECT latitude, longitude FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
+     ) l ON true
+     WHERE o.id = ANY($1::int[]) AND o.status IN ('NEW','READY','POSTPONED','FAILED')`,
+    [order_ids]
+  );
+  if (ordersResult.rows.length === 0) {
+    return res.status(400).json({ error: "لا يوجد طلبات صالحة للإضافة للرحلة." });
+  }
+
+  const mode = route_mode === "urgent_smart" ? "urgent_smart" : "nearest";
+  const startLat = start_latitude ?? null;
+  const startLon = start_longitude ?? null;
+  const shop = await getShopLocation();
+
+  const route = await optimizeRoute({
+    start: startLat != null && startLon != null ? { lat: startLat, lon: startLon } : null,
+    end: shop,
+    stops: ordersResult.rows,
+    mode,
+  });
+  const { ordered, legDistancesKm } = route;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const ordersResult = await client.query(
-      `SELECT o.id, o.priority, l.latitude, l.longitude
-       FROM orders o
-       JOIN customers c ON c.id = o.customer_id
-       LEFT JOIN customer_locations l ON l.customer_id = c.id
-       WHERE o.id = ANY($1::int[]) AND o.status IN ('NEW','READY','POSTPONED','FAILED')`,
-      [order_ids]
-    );
-
-    if (ordersResult.rows.length === 0) {
-      throw new Error("لا يوجد طلبات صالحة للإضافة للرحلة.");
-    }
-
-    const mode = route_mode === "nearest" ? "nearest" : "urgent_smart";
-    const startLat = start_latitude ?? null;
-    const startLon = start_longitude ?? null;
-
-    const { ordered, legDistancesKm, totalDistance, distanceBefore, geometry } = await buildRoute(startLat, startLon, ordersResult.rows, mode);
-
     const tripResult = await client.query(
-      `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, distance_before_km, route_geometry, created_by, started_at)
-       VALUES ('STARTED', $1, $2, $3, $4, $5, $6, $7, now()) RETURNING *`,
-      [finalDriverId, startLat, startLon, totalDistance, distanceBefore, geometry ? JSON.stringify(geometry) : null, req.user.id]
+      `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, distance_before_km,
+                          route_geometry, created_by, started_at, return_leg_km, end_latitude, end_longitude, route_mode)
+       VALUES ('STARTED', $1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10, $11) RETURNING *`,
+      [
+        finalDriverId, startLat, startLon, route.totalDistanceKm, route.distanceBeforeKm,
+        route.geometry ? JSON.stringify(route.geometry) : null, req.user.id,
+        route.returnLegKm, shop ? shop.lat : null, shop ? shop.lon : null, mode,
+      ]
     );
     const trip = tripResult.rows[0];
 
-    for (let i = 0; i < ordered.length; i++) {
-      await client.query(
-        `INSERT INTO trip_stops (trip_id, order_id, sequence_number, leg_distance_km) VALUES ($1, $2, $3, $4)`,
-        [trip.id, ordered[i].id, i + 1, legDistancesKm[i]]
-      );
-      await client.query(`UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1`, [ordered[i].id]);
-    }
+    // سطر واحد لكل الطلبات بدل سطر لكل طلب — أسرع بكثير
+    await client.query(
+      `INSERT INTO trip_stops (trip_id, order_id, sequence_number, leg_distance_km)
+       SELECT $1, u.order_id, u.seq, u.leg
+       FROM unnest($2::int[], $3::int[], $4::numeric[]) AS u(order_id, seq, leg)`,
+      [trip.id, ordered.map((o) => o.id), ordered.map((_, i) => i + 1), legDistancesKm]
+    );
+    await client.query(
+      `UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = ANY($1::int[])`,
+      [ordered.map((o) => o.id)]
+    );
 
     await client.query("COMMIT");
 
@@ -468,7 +407,13 @@ router.post("/", async (req, res) => {
       action: "CREATE_TRIP",
       recordType: "trip",
       recordId: trip.id,
-      newValue: { stops: ordered.length, total_distance_km: totalDistance, distance_before_km: distanceBefore, driver_id: finalDriverId },
+      newValue: {
+        stops: ordered.length,
+        total_distance_km: route.totalDistanceKm,
+        distance_before_km: route.distanceBeforeKm,
+        driver_id: finalDriverId,
+        ends_at_shop: !!shop,
+      },
     });
 
     notifyOrdersAddedToTrip({
@@ -478,7 +423,7 @@ router.post("/", async (req, res) => {
       isNewTrip: true,
     }).catch((e) => console.error("notify error:", e.message));
 
-    res.status(201).json({ ...trip, stopsCount: ordered.length });
+    res.status(201).json({ ...trip, stopsCount: ordered.length, ends_at_shop: !!shop });
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(400).json({ error: err.message || "تعذّر إنشاء الرحلة." });
@@ -488,21 +433,28 @@ router.post("/", async (req, res) => {
 });
 
 router.post("/stops/:stopId/deliver", async (req, res) => {
-  const { item_payments } = req.body;
+  const { item_payments } = req.body || {};
 
+  // استعلام واحد بيجيب التوقف + الرحلة + السائق + العميل
   const stopResult = await query(
-    `SELECT ts.*, c.name AS customer_name, c.coupon_balance, o.customer_id
+    `SELECT ts.*, c.name AS customer_name, c.coupon_balance, o.customer_id, o.status AS order_status,
+            t.driver_id, t.status AS trip_status, u.full_name AS driver_name
      FROM trip_stops ts
-     JOIN orders o ON o.id = ts.order_id JOIN customers c ON c.id = o.customer_id
+     JOIN orders o ON o.id = ts.order_id
+     JOIN customers c ON c.id = o.customer_id
+     JOIN trips t ON t.id = ts.trip_id
+     LEFT JOIN users u ON u.id = t.driver_id
      WHERE ts.id = $1`,
     [req.params.stopId]
   );
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+  if (!canOperateTrip(req.user, { driver_id: stop.driver_id })) return res.status(403).json({ error: "غير مصرح." });
 
-  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
-  const trip = tripResult.rows[0];
-  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
+  // لو انضغط الزر مرتين — ما نسجّل التسليم مرتين
+  if (stop.delivered_at || stop.order_status === "DELIVERED") {
+    return res.json({ message: "هذا الطلب متسلّم من قبل.", already_delivered: true });
+  }
 
   const itemsResult = await query(
     `SELECT oi.*, p.coupon_eligible, p.grants_coupons
@@ -518,20 +470,17 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   let totalCouponsUsed = 0;
   let cashCollected = 0;
   let couponsGranted = 0;
+  const couponUpdates = [];
 
   for (const item of items) {
     let couponQty = paymentMap[item.id] || 0;
     if (!item.coupon_eligible) couponQty = 0;
-    couponQty = Math.min(couponQty, item.quantity);
+    couponQty = Math.max(0, Math.min(couponQty, item.quantity));
 
     totalCouponsUsed += couponQty;
     cashCollected += (item.quantity - couponQty) * Number(item.unit_price_snapshot);
-
-    await query("UPDATE order_items SET coupon_quantity = $1 WHERE id = $2", [couponQty, item.id]);
-
-    if (item.grants_coupons) {
-      couponsGranted += item.grants_coupons * item.quantity;
-    }
+    if (couponQty !== (item.coupon_quantity || 0)) couponUpdates.push({ id: item.id, qty: couponQty });
+    if (item.grants_coupons) couponsGranted += item.grants_coupons * item.quantity;
   }
 
   if (totalCouponsUsed > stop.coupon_balance) {
@@ -539,67 +488,92 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   }
 
   let newBalance = stop.coupon_balance;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (totalCouponsUsed > 0) {
-    newBalance -= totalCouponsUsed;
-    await query(
-      `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
-       VALUES ($1, $2, 'order_payment', $3, $4, $5)`,
-      [stop.customer_id, -totalCouponsUsed, stop.order_id, newBalance, req.user.id]
+    // نقفل التوقف عشان لو وصل طلبين بنفس اللحظة ما يتسجّل التسليم مرتين
+    const lock = await client.query(
+      "UPDATE trip_stops SET delivered_at = now(), cash_collected = $1, coupons_collected = $2 WHERE id = $3 AND delivered_at IS NULL RETURNING id",
+      [cashCollected, totalCouponsUsed, stop.id]
     );
+    if (!lock.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.json({ message: "هذا الطلب متسلّم من قبل.", already_delivered: true });
+    }
+
+    await client.query("UPDATE orders SET status = 'DELIVERED', updated_at = now() WHERE id = $1", [stop.order_id]);
+
+    if (couponUpdates.length) {
+      await client.query(
+        `UPDATE order_items oi SET coupon_quantity = u.qty
+         FROM unnest($1::int[], $2::int[]) AS u(id, qty) WHERE oi.id = u.id`,
+        [couponUpdates.map((c) => c.id), couponUpdates.map((c) => c.qty)]
+      );
+    }
+
+    if (totalCouponsUsed > 0) {
+      newBalance -= totalCouponsUsed;
+      await client.query(
+        `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
+         VALUES ($1, $2, 'order_payment', $3, $4, $5)`,
+        [stop.customer_id, -totalCouponsUsed, stop.order_id, newBalance, req.user.id]
+      );
+    }
+    if (couponsGranted > 0) {
+      newBalance += couponsGranted;
+      await client.query(
+        `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
+         VALUES ($1, $2, 'recharge', $3, $4, $5)`,
+        [stop.customer_id, couponsGranted, stop.order_id, newBalance, req.user.id]
+      );
+    }
+    if (totalCouponsUsed > 0 || couponsGranted > 0) {
+      await client.query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [newBalance, stop.customer_id]);
+    }
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 
-  if (couponsGranted > 0) {
-    newBalance += couponsGranted;
-    await query(
-      `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
-       VALUES ($1, $2, 'recharge', $3, $4, $5)`,
-      [stop.customer_id, couponsGranted, stop.order_id, newBalance, req.user.id]
-    );
-  }
-
-  if (totalCouponsUsed > 0 || couponsGranted > 0) {
-    await query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [newBalance, stop.customer_id]);
-  }
-
-  await query(
-    "UPDATE trip_stops SET delivered_at = now(), cash_collected = $1, coupons_collected = $2 WHERE id = $3",
-    [cashCollected, totalCouponsUsed, stop.id]
-  );
-  await query("UPDATE orders SET status = 'DELIVERED', updated_at = now() WHERE id = $1", [stop.order_id]);
-
-  await logActivity({ userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
-
-  const countResult = await query(
-    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE delivered_at IS NOT NULL)::int AS delivered
-     FROM trip_stops WHERE trip_id = $1`,
-    [trip.id]
-  );
-  await insertNotification({
-    type: "DELIVERY",
-    message: `✅ ${trip.driver_name || "السائق"} سلّم طلب ${stop.customer_name} — ${countResult.rows[0].delivered}/${countResult.rows[0].total}`,
-    customerId: null,
-    tripId: trip.id,
-  });
-
-  if (totalCouponsUsed > 0) {
-    await insertNotification({
-      type: "COUPON",
-      message: `🎫 خصم ${totalCouponsUsed} كوبون من ${stop.customer_name} — الرصيد المتبقي: ${newBalance}`,
-      customerId: stop.customer_id,
-      tripId: trip.id,
-    });
-  }
-  if (couponsGranted > 0) {
-    await insertNotification({
-      type: "COUPON",
-      message: `🎫 تعبئة ${couponsGranted} كوبون لـ${stop.customer_name} — الرصيد الجديد: ${newBalance}`,
-      customerId: stop.customer_id,
-      tripId: trip.id,
-    });
-  }
-
+  // نرد على السائق فورًا — السجل والإشعارات بتكمل بالخلفية
   res.json({ message: "تم تسجيل التسليم.", cash_collected: cashCollected, coupons_used: totalCouponsUsed, coupons_granted: couponsGranted });
+
+  (async () => {
+    await logActivity({ userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
+
+    const countResult = await query(
+      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE delivered_at IS NOT NULL)::int AS delivered
+       FROM trip_stops WHERE trip_id = $1`,
+      [stop.trip_id]
+    );
+    await insertNotification({
+      type: "DELIVERY",
+      message: `✅ ${stop.driver_name || "السائق"} سلّم طلب ${stop.customer_name} — ${countResult.rows[0].delivered}/${countResult.rows[0].total}`,
+      customerId: null,
+      tripId: stop.trip_id,
+    });
+    if (totalCouponsUsed > 0) {
+      await insertNotification({
+        type: "COUPON",
+        message: `🎫 خصم ${totalCouponsUsed} كوبون من ${stop.customer_name} — الرصيد المتبقي: ${newBalance}`,
+        customerId: stop.customer_id,
+        tripId: stop.trip_id,
+      });
+    }
+    if (couponsGranted > 0) {
+      await insertNotification({
+        type: "COUPON",
+        message: `🎫 تعبئة ${couponsGranted} كوبون لـ${stop.customer_name} — الرصيد الجديد: ${newBalance}`,
+        customerId: stop.customer_id,
+        tripId: stop.trip_id,
+      });
+    }
+  })().catch((e) => console.error("after-deliver error:", e.message));
 });
 
 router.post("/stops/:stopId/undo-deliver", async (req, res) => {
@@ -677,7 +651,7 @@ router.post("/stops/:stopId/postpone", async (req, res) => {
   const maxSeqResult = await query("SELECT COALESCE(MAX(sequence_number), 0) AS max_seq FROM trip_stops WHERE trip_id = $1", [stop.trip_id]);
   const newSeq = maxSeqResult.rows[0].max_seq + 1;
 
-  await query("UPDATE trip_stops SET sequence_number = $1 WHERE id = $2", [newSeq, stop.id]);
+  await query("UPDATE trip_stops SET sequence_number = $1, postponed_at = now() WHERE id = $2", [newSeq, stop.id]);
 
   const noteAppend = [new_time ? `الموعد المطلوب: ${new_time}` : null, note || null].filter(Boolean).join(" — ");
   await query(
@@ -726,95 +700,27 @@ router.post("/stops/:stopId/cancel", async (req, res) => {
   res.json({ message: "تم إلغاء الطلب." });
 });
 
-async function cheapestInsert(trip, newOrder) {
-  const remainingResult = await query(
-    `SELECT ts.id, ts.sequence_number, l.latitude, l.longitude
-     FROM trip_stops ts
-     JOIN orders o ON o.id = ts.order_id
-     JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
-     WHERE ts.trip_id = $1 AND ts.delivered_at IS NULL AND o.status NOT IN ('FAILED','CANCELLED')
-     ORDER BY ts.sequence_number ASC`,
-    [trip.id]
-  );
-  const remaining = remainingResult.rows;
-
-  let insertAfterSeq;
-  let newLegDistance = null;
-  let nextStopIdToUpdate = null;
-  let extraDistance = 0;
-
-  if (remaining.length === 0 || newOrder.latitude == null || newOrder.longitude == null) {
-    const maxSeqResult = await query("SELECT COALESCE(MAX(sequence_number), 0) AS max_seq FROM trip_stops WHERE trip_id = $1", [trip.id]);
-    insertAfterSeq = maxSeqResult.rows[0].max_seq;
-    const last = remaining[remaining.length - 1];
-    if (last && last.latitude != null && newOrder.latitude != null) {
-      newLegDistance = distanceKm(last.latitude, last.longitude, newOrder.latitude, newOrder.longitude);
-      extraDistance = newLegDistance;
-    }
-  } else {
-    let bestCost = Infinity;
-    insertAfterSeq = remaining[remaining.length - 1].sequence_number;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const prev = i === 0
-        ? { latitude: trip.current_latitude ?? remaining[0].latitude, longitude: trip.current_longitude ?? remaining[0].longitude }
-        : remaining[i - 1];
-      const curr = remaining[i];
-      if (prev.latitude == null || curr.latitude == null) continue;
-
-      const cost =
-        distanceKm(prev.latitude, prev.longitude, newOrder.latitude, newOrder.longitude) +
-        distanceKm(newOrder.latitude, newOrder.longitude, curr.latitude, curr.longitude) -
-        distanceKm(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
-
-      if (cost < bestCost) {
-        bestCost = cost;
-        insertAfterSeq = i === 0 ? curr.sequence_number - 1 : remaining[i - 1].sequence_number;
-        newLegDistance = distanceKm(prev.latitude, prev.longitude, newOrder.latitude, newOrder.longitude);
-        nextStopIdToUpdate = curr.id;
-        extraDistance = cost;
-      }
-    }
-
-    const last = remaining[remaining.length - 1];
-    if (last.latitude != null) {
-      const costAtEnd = distanceKm(last.latitude, last.longitude, newOrder.latitude, newOrder.longitude);
-      if (costAtEnd < bestCost) {
-        bestCost = costAtEnd;
-        insertAfterSeq = last.sequence_number;
-        newLegDistance = costAtEnd;
-        nextStopIdToUpdate = null;
-        extraDistance = costAtEnd;
-      }
-    }
-  }
-
-  await query("UPDATE trip_stops SET sequence_number = sequence_number + 1 WHERE trip_id = $1 AND sequence_number > $2", [trip.id, insertAfterSeq]);
+// يضيف طلب لآخر الرحلة، وبعدين بيعيد ترتيب كل الباقي بأحسن طريق
+async function appendOrderAndReoptimize(trip, orderId) {
   await query(
-    "INSERT INTO trip_stops (trip_id, order_id, sequence_number, leg_distance_km) VALUES ($1, $2, $3, $4)",
-    [trip.id, newOrder.id, insertAfterSeq + 1, newLegDistance]
+    `INSERT INTO trip_stops (trip_id, order_id, sequence_number)
+     SELECT $1, $2, COALESCE(MAX(sequence_number), 0) + 1 FROM trip_stops WHERE trip_id = $1`,
+    [trip.id, orderId]
   );
-  await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [newOrder.id]);
-
-  if (nextStopIdToUpdate && newOrder.latitude != null) {
-    const nextStopLoc = await query(
-      `SELECT l.latitude, l.longitude FROM trip_stops ts
-       JOIN orders o ON o.id = ts.order_id JOIN customers c ON c.id = o.customer_id
-       LEFT JOIN customer_locations l ON l.customer_id = c.id WHERE ts.id = $1`,
-      [nextStopIdToUpdate]
-    );
-    const nextLoc = nextStopLoc.rows[0];
-    if (nextLoc && nextLoc.latitude != null) {
-      const updatedLeg = distanceKm(newOrder.latitude, newOrder.longitude, nextLoc.latitude, nextLoc.longitude);
-      await query("UPDATE trip_stops SET leg_distance_km = $1 WHERE id = $2", [updatedLeg, nextStopIdToUpdate]);
-    }
-  }
-
-  if (extraDistance > 0) {
-    await query("UPDATE trips SET total_distance_km = COALESCE(total_distance_km, 0) + $1 WHERE id = $2", [extraDistance, trip.id]);
-  }
+  await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [orderId]);
+  await reoptimizeTrip(trip.id);
 }
+
+router.post("/:id/reoptimize", async (req, res) => {
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
+  const trip = tripResult.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!canOperateTrip(req.user, trip) && !isPrivileged(req.user)) return res.status(403).json({ error: "غير مصرح." });
+  if (trip.status === "COMPLETED") return res.status(400).json({ error: "الرحلة منتهية." });
+
+  const result = await reoptimizeTrip(trip.id);
+  res.json({ message: "تم ترتيب الرحلة من جديد بأحسن طريق.", ...result });
+});
 
 router.post("/:id/add-order", async (req, res) => {
   const { order_id } = req.body;
@@ -827,11 +733,7 @@ router.post("/:id/add-order", async (req, res) => {
   if (trip.status !== "STARTED") return res.status(400).json({ error: "الرحلة ليست جارية حاليًا." });
 
   const orderResult = await query(
-    `SELECT o.id, o.status, l.latitude, l.longitude
-     FROM orders o
-     JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
-     WHERE o.id = $1`,
+    "SELECT o.id, o.status FROM orders o WHERE o.id = $1",
     [order_id]
   );
   const newOrder = orderResult.rows[0];
@@ -839,7 +741,7 @@ router.post("/:id/add-order", async (req, res) => {
     return res.status(400).json({ error: "هذا الطلب غير صالح للإضافة لرحلة جارية." });
   }
 
-  await cheapestInsert(trip, newOrder);
+  await appendOrderAndReoptimize(trip, newOrder.id);
 
   await logActivity({
     userId: req.user.id,
@@ -852,7 +754,7 @@ router.post("/:id/add-order", async (req, res) => {
   notifyOrdersAddedToTrip({ tripId: trip.id, orderIds: [newOrder.id], actorId: req.user.id })
     .catch((e) => console.error("notify error:", e.message));
 
-  res.json({ message: "تمت إضافة الطلب للرحلة بأفضل موضع ممكن." });
+  res.json({ message: "تمت إضافة الطلب وإعادة ترتيب الرحلة بأحسن طريق." });
 });
 
 export async function tryAutoAddToActiveTrip(orderId, actorId = null) {
@@ -861,17 +763,13 @@ export async function tryAutoAddToActiveTrip(orderId, actorId = null) {
   const trip = activeResult.rows[0];
 
   const orderResult = await query(
-    `SELECT o.id, o.status, l.latitude, l.longitude
-     FROM orders o
-     JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
-     WHERE o.id = $1`,
+    "SELECT o.id, o.status FROM orders o WHERE o.id = $1",
     [orderId]
   );
   const order = orderResult.rows[0];
   if (!order || order.status !== "NEW") return false;
 
-  await cheapestInsert(trip, order);
+  await appendOrderAndReoptimize(trip, order.id);
   await logActivity({ userId: null, action: "AUTO_ADD_ORDER_TO_TRIP", recordType: "trip", recordId: trip.id, newValue: { order_id: orderId } });
   notifyOrdersAddedToTrip({ tripId: trip.id, orderIds: [orderId], actorId })
     .catch((e) => console.error("notify error:", e.message));

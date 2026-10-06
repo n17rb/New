@@ -11,16 +11,20 @@ function numberIcon(label, color) {
   });
 }
 
-export default function RoutePreviewMap({ stops, driverLocation, showDriverMarker, routeGeometry }) {
+export default function RoutePreviewMap({ stops, driverLocation, showDriverMarker, routeGeometry, shopLocation }) {
   const visibleStops = stops
     .map((s, i) => ({ ...s, originalIndex: i + 1 }))
     .filter((s) => !s.delivered_at && s.latitude != null && s.longitude != null);
 
-  if (visibleStops.length === 0 && !driverLocation) return null;
+  const shop = shopLocation && shopLocation.lat != null ? [shopLocation.lat, shopLocation.lon] : null;
+
+  if (visibleStops.length === 0 && !driverLocation && !shop) return null;
 
   const center = visibleStops[0]
     ? [visibleStops[0].latitude, visibleStops[0].longitude]
-    : [driverLocation.lat, driverLocation.lng];
+    : driverLocation
+      ? [driverLocation.lat, driverLocation.lng]
+      : shop;
 
   const polylinePoints = Array.isArray(routeGeometry)
     ? routeGeometry.map(([lon, lat]) => [lat, lon])
@@ -49,6 +53,11 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
             </Marker>
           );
         })}
+        {shop && (
+          <Marker position={shop} icon={numberIcon("🏪", "#B8862E")}>
+            <Popup>المحل — نهاية الرحلة</Popup>
+          </Marker>
+        )}
         {showDriverMarker && driverLocation && (
           <Marker position={[driverLocation.lat, driverLocation.lng]} icon={numberIcon("🚚", "#B8862E")}>
             <Popup>موقع السائق الحالي</Popup>

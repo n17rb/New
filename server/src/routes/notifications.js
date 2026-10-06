@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { checkRemindersThrottled } from "./reminders.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -18,6 +19,9 @@ function visibilityCondition(user) {
 }
 
 router.get("/", async (req, res) => {
+  // التطبيق بيسأل عن الإشعارات كل ١٥ ثانية — فرصة نتأكد إن مواعيد اليوم انبعتت
+  checkRemindersThrottled();
+
   const result = await query(
     `SELECT * FROM notifications
      WHERE created_at > now() - interval '48 hours' AND ${visibilityCondition(req.user)}

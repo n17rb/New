@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { BottleTypeBadge } from "../components/BottleType.jsx";
 
 const STATUS_LABELS = {
   NEW: "جديد",
@@ -95,6 +96,7 @@ export default function Orders({ user }) {
               <div style={{ fontWeight: 600 }}>
                 #{o.order_number} · {o.customer_name}
                 {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
+                {" "}<BottleTypeBadge type={o.bottle_type} />
               </div>
               <div className="text-secondary tabular-num">{o.customer_phone} · {formatOrderTime(o.created_at)}</div>
             </div>
@@ -201,6 +203,7 @@ function OrderDetail({ orderId, user, onBack }) {
         {order.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
       </h2>
       <p className="text-secondary tabular-num">{order.customer_name} · {order.customer_phone}</p>
+      <BottleTypeBadge type={order.bottle_type} large />
       <p className="text-secondary tabular-num" style={{ marginTop: -6 }}>🕐 {formatOrderTime(order.created_at)}</p>
       <span className="badge" style={{ marginBottom: 12, display: "inline-block", ...statusBadgeStyle(order.status) }}>{STATUS_LABELS[order.status] || order.status}</span>
 

@@ -4,6 +4,7 @@ import { api, API_ORIGIN } from "../api.js";
 import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import OrderForm from "../components/OrderForm.jsx";
+import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
 
 export default function CustomerDetail({ user }) {
   const { id } = useParams();
@@ -78,6 +79,7 @@ function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone_display);
   const [seq, setSeq] = useState(customer.sequential_number);
+  const [bottleType, setBottleType] = useState(customer.bottle_type || "");
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [error, setError] = useState("");
@@ -100,7 +102,7 @@ function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }
     setSaving(true);
     setError("");
     try {
-      await api.updateCustomer(customer.id, { name, phone, sequential_number: seq });
+      await api.updateCustomer(customer.id, { name, phone, sequential_number: seq, bottle_type: bottleType || undefined });
       if (photoFile) {
         await api.uploadCustomerPhoto(customer.id, photoFile);
       }
@@ -158,6 +160,7 @@ function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }
           <label>الرقم التسلسلي</label>
           <input value={seq} onChange={(e) => setSeq(e.target.value)} />
         </div>
+        <BottleTypePicker value={bottleType} onChange={setBottleType} />
         <button className="btn-primary" style={{ marginBottom: 10 }} disabled={saving} onClick={handleSave}>
           {saving ? "جاري الحفظ..." : "حفظ التعديلات"}
         </button>
@@ -188,6 +191,13 @@ function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }
           <p className="tabular-num text-secondary" style={{ margin: 0 }}>
             {customer.phone_display} · #{customer.sequential_number}
           </p>
+          <div style={{ marginTop: 6 }}>
+            {customer.bottle_type ? (
+              <BottleTypeBadge type={customer.bottle_type} />
+            ) : (
+              <span className="text-secondary" style={{ fontSize: "0.8rem" }}>نوع القوارير مش محدد — اضغط تعديل لتحديده</span>
+            )}
+          </div>
         </div>
         <div className="icon-row">
           <a className="icon-btn whatsapp" href={whatsappLink} target="_blank" rel="noreferrer" title="فتح واتساب">

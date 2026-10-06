@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
 import { isPushSupported, refreshPushIfGranted, disablePushForLogout } from "./push.js";
@@ -6,27 +6,44 @@ import { FiBell, FiMoon, FiSun, FiEdit3 } from "react-icons/fi";
 
 import Setup from "./pages/Setup.jsx";
 import Login from "./pages/Login.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import Customers from "./pages/Customers.jsx";
-import CustomerDetail from "./pages/CustomerDetail.jsx";
-import Orders from "./pages/Orders.jsx";
-import Trip from "./pages/Trip.jsx";
-import Products from "./pages/Products.jsx";
-import DriverBalances from "./pages/DriverBalances.jsx";
-import MyBalance from "./pages/MyBalance.jsx";
-import Reports from "./pages/Reports.jsx";
-import Cash from "./pages/Cash.jsx";
-import OverdueCustomers from "./pages/OverdueCustomers.jsx";
-import DriverPerformance from "./pages/DriverPerformance.jsx";
-import CustomersMap from "./pages/CustomersMap.jsx";
-import ActivityLog from "./pages/ActivityLog.jsx";
-import Backup from "./pages/Backup.jsx";
-import Notifications from "./pages/Notifications.jsx";
-import TripArchive from "./pages/TripArchive.jsx";
-import CustomerGrowth from "./pages/CustomerGrowth.jsx";
-import Notes from "./pages/Notes.jsx";
-import Users from "./pages/Users.jsx";
+const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
+const Customers = lazy(() => import("./pages/Customers.jsx"));
+const CustomerDetail = lazy(() => import("./pages/CustomerDetail.jsx"));
+const Orders = lazy(() => import("./pages/Orders.jsx"));
+const Trip = lazy(() => import("./pages/Trip.jsx"));
+const Products = lazy(() => import("./pages/Products.jsx"));
+const DriverBalances = lazy(() => import("./pages/DriverBalances.jsx"));
+const MyBalance = lazy(() => import("./pages/MyBalance.jsx"));
+const Reports = lazy(() => import("./pages/Reports.jsx"));
+const Cash = lazy(() => import("./pages/Cash.jsx"));
+const OverdueCustomers = lazy(() => import("./pages/OverdueCustomers.jsx"));
+const DriverPerformance = lazy(() => import("./pages/DriverPerformance.jsx"));
+const CustomersMap = lazy(() => import("./pages/CustomersMap.jsx"));
+const ActivityLog = lazy(() => import("./pages/ActivityLog.jsx"));
+const Backup = lazy(() => import("./pages/Backup.jsx"));
+const Notifications = lazy(() => import("./pages/Notifications.jsx"));
+const TripArchive = lazy(() => import("./pages/TripArchive.jsx"));
+const CustomerGrowth = lazy(() => import("./pages/CustomerGrowth.jsx"));
+const Notes = lazy(() => import("./pages/Notes.jsx"));
+const Users = lazy(() => import("./pages/Users.jsx"));
 import BottomNav from "./components/BottomNav.jsx";
+
+// الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
+function prefetchCommonPages() {
+  const run = () => {
+    import("./pages/Customers.jsx");
+    import("./pages/Trip.jsx");
+    import("./pages/Orders.jsx");
+    import("./pages/CustomerDetail.jsx");
+    import("./pages/Notifications.jsx");
+  };
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
+  else setTimeout(run, 1500);
+}
+
+function PageLoading() {
+  return <div className="page"><p className="text-secondary">جاري التحميل...</p></div>;
+}
 
 function playNotificationSound() {
   try {
@@ -63,14 +80,21 @@ function showDeviceNotification(message) {
   }
 }
 
+function readStoredUser() {
+  try {
+    const raw = localStorage.getItem("user");
+    return raw && localStorage.getItem("token") ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
-  const [loadingSetup, setLoadingSetup] = useState(true);
+  const [user, setUser] = useState(readStoredUser);
+  // المستخدم المسجّل دخوله من قبل بيفوت مباشرة بدون ما يستنى فحص السيرفر
+  const [loadingSetup, setLoadingSetup] = useState(() => !readStoredUser());
   const [needsSetup, setNeedsSetup] = useState(false);
   const [connectionError, setConnectionError] = useState("");
-  const [user, setUser] = useState(() => {
-    const raw = localStorage.getItem("user");
-    return raw ? JSON.parse(raw) : null;
-  });
 
   const [unreadCount, setUnreadCount] = useState(0);
   const seenIdsRef = useRef(new Set());
@@ -93,7 +117,13 @@ export default function App() {
   }
 
   useEffect(() => {
-    checkSetup();
+    if (user) {
+      // نصحّي السيرفر بالخلفية بدون ما نوقف الشاشة
+      api.setupStatus().catch(() => {});
+      prefetchCommonPages();
+    } else {
+      checkSetup();
+    }
   }, []);
 
   useEffect(() => {
@@ -175,6 +205,7 @@ export default function App() {
     <div className="app-shell">
       <TopBar user={user} isPrivileged={isPrivileged} unreadCount={unreadCount} darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />
 
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         <Route path="/" element={isDriver ? <Navigate to="/customers" replace /> : <Dashboard user={user} />} />
         <Route path="/customers" element={<Customers user={user} />} />
@@ -198,6 +229,7 @@ export default function App() {
         {isSuperAdmin && <Route path="/users" element={<Users />} />}
         <Route path="*" element={<Navigate to={isDriver ? "/customers" : "/"} replace />} />
       </Routes>
+      </Suspense>
 
       <BottomNav role={user.role} />
     </div>

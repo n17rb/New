@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
+import { BottleTypeBadge } from "../components/BottleType.jsx";
 
 function formatMinutes(mins) {
   if (mins <= 0) return "أقل من دقيقة";
@@ -180,10 +181,94 @@ function OtherTripDetail({ tripId, isSuperAdmin, onBack }) {
   );
 }
 
+function ShopLocationCard({ compact = false }) {
+  const [shop, setShop] = useState(undefined);
+  const [editing, setEditing] = useState(false);
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    api.getShopLocation().then((r) => setShop(r)).catch(() => setShop(null));
+  }, []);
+
+  async function save(body) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const r = await api.setShopLocation(body);
+      setShop({ latitude: r.latitude, longitude: r.longitude });
+      setMessage(r.message);
+      setEditing(false);
+      setLink("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setError("الجهاز ما بيدعم تحديد الموقع.");
+      return;
+    }
+    if (!confirm("متأكد إنك موجود هلّق بالمحل؟ رح ينحفظ موقعك الحالي كموقع المحل.")) return;
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => save({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => { setBusy(false); setError("ما قدرت آخذ موقعك — اسمح للتطبيق بالوصول للموقع."); },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  if (shop === undefined) return null;
+
+  if (shop && !editing) {
+    return (
+      <div className="text-secondary" style={{ fontSize: "0.85rem", marginBottom: compact ? 0 : 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        🏪 كل رحلة بتخلص بالرجوع للمحل
+        <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noreferrer">(شوف الموقع)</a>
+        <button type="button" onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--primary, #0094FF)", cursor: "pointer", padding: 0, fontSize: "0.85rem" }}>
+          تغيير
+        </button>
+        {message && <span style={{ color: "var(--success)" }}>{message}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ border: shop ? undefined : "2px solid var(--warning)" }}>
+      <h2 className="title-md" style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 6 }}>
+        <FiMapPin /> موقع المحل
+      </h2>
+      {!shop && (
+        <p style={{ marginTop: 0, fontSize: "0.9rem" }}>
+          حدد موقع المحل مرة وحدة، وبعدها كل رحلة بتترتب من الأقرب للأبعد وبتخلص بالرجوع للمحل تلقائيًا.
+        </p>
+      )}
+      {error && <div className="error-box">{error}</div>}
+      <button className="btn-primary" disabled={busy} onClick={useMyLocation} style={{ marginBottom: 10 }}>
+        📍 أنا بالمحل هلّق — استخدم موقعي
+      </button>
+      <div className="field" style={{ marginBottom: 8 }}>
+        <label>أو الصق رابط موقع المحل من خرائط جوجل</label>
+        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." dir="ltr" />
+      </div>
+      <button className="btn-secondary" disabled={busy || !link.trim()} onClick={() => save({ maps_url: link.trim() })} style={{ marginBottom: shop ? 8 : 0 }}>
+        {busy ? "جاري الحفظ..." : "حفظ الرابط"}
+      </button>
+      {shop && <button className="btn-secondary" onClick={() => { setEditing(false); setError(""); }}>إلغاء</button>}
+    </div>
+  );
+}
+
 function CreateTripForm({ isPrivileged, onCreated }) {
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState({});
-  const [routeMode, setRouteMode] = useState("urgent_smart");
+  const [routeMode, setRouteMode] = useState("nearest");
   const [useLocation, setUseLocation] = useState(true);
   const [drivers, setDrivers] = useState([]);
   const [assignTo, setAssignTo] = useState("self");
@@ -265,6 +350,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   if (orders.length === 0) {
     return (
       <div>
+        {isPrivileged ? <ShopLocationCard /> : null}
         <p className="text-secondary" style={{ marginBottom: 10 }}>لا يوجد طلبات جديدة جاهزة للتوزيع حاليًا.</p>
         <button className="btn-secondary" onClick={loadOrders}>🔄 تحديث</button>
       </div>
@@ -278,6 +364,8 @@ function CreateTripForm({ isPrivileged, onCreated }) {
         <h2 className="title-md" style={{ margin: 0 }}>إنشاء رحلة جديدة</h2>
         <button className="btn-secondary" style={{ width: "auto", padding: "8px 12px" }} onClick={loadOrders}>🔄 تحديث</button>
       </div>
+
+      {isPrivileged ? <ShopLocationCard /> : null}
 
       {isPrivileged && (
         <div className="field">
@@ -300,7 +388,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
             style={{ flex: 1 }}
             onClick={() => setRouteMode("nearest")}
           >
-            الأقرب فالأبعد
+            الأقرب فالأبعد (أقصر طريق)
           </button>
           <button
             type="button"
@@ -308,7 +396,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
             style={{ flex: 1 }}
             onClick={() => setRouteMode("urgent_smart")}
           >
-            🚨 ذكي (يرجّح المستعجل)
+            🚨 المستعجل أولًا
           </button>
         </div>
       </div>
@@ -326,6 +414,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
                 <div style={{ fontWeight: 600 }}>
                   #{o.order_number} · {o.customer_name}
                   {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
+                  {" "}<BottleTypeBadge type={o.bottle_type} />
                 </div>
                 <div className="text-secondary tabular-num">{Number(o.final_total).toFixed(2)} JD</div>
               </div>
@@ -336,7 +425,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
 
       <label className="icon-row" style={{ marginBottom: 16, fontWeight: 600 }}>
         <input type="checkbox" checked={useLocation} onChange={(e) => setUseLocation(e.target.checked)} />
-        ابدأ الترتيب من موقعي الحالي (يحسّن أول نقطة، مو ضروري)
+        ابدأ الترتيب من موقعي الحالي (لو مطفي بيبدأ من المحل)
       </label>
 
       <button className="btn-primary" disabled={loading} onClick={handleCreate}>
@@ -349,12 +438,65 @@ function CreateTripForm({ isPrivileged, onCreated }) {
 function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onChanged, onCompleted }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [reordering, setReordering] = useState(false);
+  const [reorderMessage, setReorderMessage] = useState("");
+  // التوقفات اللي انضغط عليها «تم التسليم» وبنستنى رد السيرفر — بتظهر متسلّمة فورًا
+  const [optimistic, setOptimistic] = useState({});
 
-  const currentStop = trip.stops.find((s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED" && !s.is_time_locked);
-  const nextLockedStop = [...trip.stops].filter((s) => s.is_time_locked).sort((a, b) => new Date(a.requested_time) - new Date(b.requested_time))[0];
-  const deliveredCount = trip.stops.filter((s) => s.order_status === "DELIVERED").length;
-  const totalCount = trip.stops.length;
-  const remainingCount = totalCount - deliveredCount - trip.stops.filter((s) => s.order_status === "FAILED").length;
+  useEffect(() => {
+    // لما توصل البيانات الحقيقية من السيرفر، ما عاد في داعي للحالة المؤقتة
+    setOptimistic((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const s of trip.stops) {
+        if (next[s.id] && s.delivered_at) { delete next[s.id]; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [trip]);
+
+  const stops = trip.stops.map((s) =>
+    optimistic[s.id] && !s.delivered_at
+      ? { ...s, delivered_at: new Date().toISOString(), order_status: "DELIVERED", estimated_eta_minutes: null }
+      : s
+  );
+
+  function deliverFast(stop, itemPayments) {
+    setError("");
+    setOptimistic((prev) => ({ ...prev, [stop.id]: true }));
+    api.deliverStop(stop.id, itemPayments)
+      .then(() => onChanged())
+      .catch((err) => {
+        setOptimistic((prev) => {
+          const next = { ...prev };
+          delete next[stop.id];
+          return next;
+        });
+        setError(`ما تسجّل تسليم ${stop.customer_name}: ${err.message}`);
+      });
+  }
+
+  async function handleReorder() {
+    setReordering(true);
+    setReorderMessage("");
+    setError("");
+    try {
+      const r = await api.reoptimizeTrip(trip.id);
+      setReorderMessage(r.message);
+      setTimeout(() => setReorderMessage(""), 5000);
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  const currentStop = stops.find((s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED" && !s.is_time_locked);
+  const nextLockedStop = [...stops].filter((s) => s.is_time_locked).sort((a, b) => new Date(a.requested_time) - new Date(b.requested_time))[0];
+  const deliveredCount = stops.filter((s) => s.order_status === "DELIVERED").length;
+  const totalCount = stops.length;
+  const remainingCount = totalCount - deliveredCount - stops.filter((s) => s.order_status === "FAILED").length;
 
   const remainingKm = trip.total_remaining_distance_km != null ? trip.total_remaining_distance_km.toFixed(1) : null;
 
@@ -443,15 +585,29 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
       )}
 
       <RoutePreviewMap
-        stops={trip.stops}
+        shopLocation={trip.shop_location}
+        stops={stops}
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
         showDriverMarker={isSuperAdmin || isManagerViewOnly}
         routeGeometry={trip.route_geometry}
       />
 
       <div className="card">
-        <h2 className="title-md">كل توقفات الرحلة بالترتيب</h2>
-        {trip.stops.map((s, i) => (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <h2 className="title-md" style={{ margin: 0 }}>كل توقفات الرحلة بالترتيب</h2>
+          {trip.status === "STARTED" && (canOperate || isSuperAdmin || isManagerViewOnly) && (
+            <button
+              className="btn-secondary"
+              style={{ width: "auto", padding: "6px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
+              disabled={reordering}
+              onClick={handleReorder}
+            >
+              <FiRefreshCw /> {reordering ? "جاري الترتيب..." : "رتّب من جديد"}
+            </button>
+          )}
+        </div>
+        {reorderMessage && <div className="success-box" style={{ marginBottom: 8 }}>{reorderMessage}</div>}
+        {stops.map((s, i) => (
           <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
             <div className="icon-row">
               <span style={{
@@ -462,6 +618,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
                 {i + 1}
               </span>
               <span>{s.customer_name}</span>
+              <BottleTypeBadge type={s.bottle_type} />
               {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
               {s.is_time_locked && <span style={{ color: "var(--warning)", fontSize: "0.75rem" }}> ⏰ لموعد {formatClockTime(s.requested_time)}</span>}
             </div>
@@ -476,20 +633,36 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
             </div>
           </div>
         ))}
+        {trip.shop_location && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0 2px" }}>
+            <div className="icon-row">
+              <span style={{
+                width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "0.8rem", background: "#B8862E", color: "#fff",
+              }}>🏪</span>
+              <span style={{ fontWeight: 600 }}>الرجوع للمحل</span>
+            </div>
+            {trip.return_leg_km != null && (
+              <span className="text-secondary tabular-num" style={{ fontSize: "0.75rem" }}>{Number(trip.return_leg_km).toFixed(1)} كم من آخر زبون</span>
+            )}
+          </div>
+        )}
       </div>
 
       {canOperate && trip.status === "STARTED" && currentStop && (
-        <StopCard stop={currentStop} busy={busy} withBusy={withBusy} lastDeliveredStopId={trip.last_delivered_stop_id} />
+        <StopCard key={currentStop.id} stop={currentStop} busy={busy} withBusy={withBusy} deliverFast={deliverFast} />
       )}
 
       {canOperate && trip.status === "STARTED" && !currentStop && nextLockedStop && (
         <div className="card" style={{ background: "var(--bg)" }}>
-          ⏰ باقي {trip.stops.filter((s) => s.is_time_locked).length} طلب مؤجل لموعد محدد — أقرب موعد: {formatClockTime(nextLockedStop.requested_time)} (زبون {nextLockedStop.customer_name}). رح يظهر تلقائيًا لما يجي وقته.
+          ⏰ باقي {stops.filter((s) => s.is_time_locked).length} طلب مؤجل لموعد محدد — أقرب موعد: {formatClockTime(nextLockedStop.requested_time)} (زبون {nextLockedStop.customer_name}). رح يظهر تلقائيًا لما يجي وقته.
         </div>
       )}
 
       {canOperate && trip.status === "STARTED" && !currentStop && !nextLockedStop && (
-        <div className="success-box">كل التوقفات انتهت — جاهز لإنهاء الرحلة.</div>
+        <div className="success-box">
+          كل التوقفات انتهت{trip.shop_location ? " — ارجع للمحل وأنهِ الرحلة 🏪" : " — جاهز لإنهاء الرحلة."}
+        </div>
       )}
 
       {canOperate && trip.last_delivered_stop_id && (
@@ -512,7 +685,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   );
 }
 
-function DeliveryPaymentForm({ stop, busy, withBusy, onCancel }) {
+function DeliveryPaymentForm({ stop, busy, deliverFast, onCancel }) {
   const eligibleItems = stop.items.filter((it) => it.coupon_eligible);
   const [couponQty, setCouponQty] = useState(() => {
     const initial = {};
@@ -535,7 +708,8 @@ function DeliveryPaymentForm({ stop, busy, withBusy, onCancel }) {
 
   function handleConfirm() {
     const item_payments = eligibleItems.map((it) => ({ item_id: it.id, coupon_qty: couponQty[it.id] || 0 }));
-    withBusy(() => api.deliverStop(stop.id, item_payments)).then(onCancel);
+    deliverFast(stop, item_payments);
+    onCancel();
   }
 
   return (
@@ -596,7 +770,7 @@ function DeliveryPaymentForm({ stop, busy, withBusy, onCancel }) {
   );
 }
 
-function StopCard({ stop, busy, withBusy }) {
+function StopCard({ stop, busy, withBusy, deliverFast }) {
   const [showFailMenu, setShowFailMenu] = useState(false);
   const [showPostponeForm, setShowPostponeForm] = useState(false);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -608,6 +782,15 @@ function StopCard({ stop, busy, withBusy }) {
     : stop.maps_url || null;
   const whatsappLink = `https://wa.me/${stop.phone_normalized}`;
 
+  // لو الزبون ما عنده كوبونات يستخدمها: تسليم بضغطة وحدة.
+  // غير هيك بتفتح شاشة الدفع (كاش/كوبون).
+  const needsPaymentChoice = stop.coupon_balance > 0 && (stop.items || []).some((it) => it.coupon_eligible);
+
+  function handleDeliverClick() {
+    if (needsPaymentChoice) setShowPaymentForm(true);
+    else deliverFast(stop, []);
+  }
+
   function handlePostponeSubmit() {
     withBusy(() => api.postponeStop(stop.id, { note: postponeNote, new_time: postponeTime })).then(() => {
       setShowPostponeForm(false);
@@ -618,7 +801,7 @@ function StopCard({ stop, busy, withBusy }) {
   }
 
   if (showPaymentForm) {
-    return <DeliveryPaymentForm stop={stop} busy={busy} withBusy={withBusy} onCancel={() => setShowPaymentForm(false)} />;
+    return <DeliveryPaymentForm stop={stop} busy={busy} deliverFast={deliverFast} onCancel={() => setShowPaymentForm(false)} />;
   }
 
   return (
@@ -632,6 +815,8 @@ function StopCard({ stop, busy, withBusy }) {
         {stop.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
       </h2>
       <p className="tabular-num text-secondary">#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
+
+      <BottleTypeBadge type={stop.bottle_type} large />
 
       {stop.items && stop.items.length > 0 && (
         <div className="card" style={{ background: "var(--bg)" }}>
@@ -673,7 +858,7 @@ function StopCard({ stop, busy, withBusy }) {
         className="btn-primary icon-row"
         style={{ justifyContent: "center", marginBottom: 10, background: "var(--success)" }}
         disabled={busy}
-        onClick={() => setShowPaymentForm(true)}
+        onClick={handleDeliverClick}
       >
         <FiCheckCircle /> تم التسليم
       </button>

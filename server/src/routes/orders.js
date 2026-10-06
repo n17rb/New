@@ -46,7 +46,7 @@ router.get("/", async (req, res) => {
   params.push(Number(limit) || 100);
 
   const result = await query(
-    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone
+    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.bottle_type
      FROM orders o
      JOIN customers c ON c.id = o.customer_id
      ${whereClause}
@@ -59,7 +59,7 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   const orderResult = await query(
-    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone
+    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.bottle_type
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.id = $1`,
     [req.params.id]
