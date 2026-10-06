@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin', 'admin', 'driver', 'data_entry'));
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('super_admin', 'admin', 'driver', 'data_entry', 'viewer', 'staff'));
 
 UPDATE users SET role = 'super_admin'
 WHERE id = (SELECT MIN(id) FROM users)
@@ -371,3 +371,7 @@ ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS postponed_at TIMESTAMPTZ;
 -- طلبات بتنضاف لحالها لزباين المواعيد الثابتة — الكمية بيحددها المحل بعدين
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS auto_from_reminder BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS needs_quantity BOOLEAN NOT NULL DEFAULT false;
+
+-- صلاحيات مفصّلة لكل مستخدم: {"sections": {"orders": "edit", ...}, "actions": {"discount": true, ...}}
+-- NULL = الحساب قديم، صلاحياته منطلعها من الدور
+ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;

@@ -1,18 +1,26 @@
 import { Router } from "express";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { can, canAction, canAny } from "../permissions.js";
 import { normalizePhone, formatPhoneForDisplay } from "../utils/phone.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use((req, res, next) => (req.method === "GET" ? requireCanViewCustomers(req, res, next) : next()));
 
 function canManageCustomers(user) {
-  return ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
+  return can(user, "customers", "edit");
 }
 
 function canDeleteCustomer(user) {
-  return user.role === "super_admin" || user.role === "admin" || user.can_delete_customer;
+  return canAction(user, "delete_customer");
+}
+
+// قراءة العملاء: لقسم العملاء، أو للي بيسجّل طلبات أو بيوصّل (بيحتاج يدوّر على الزبون)
+function requireCanViewCustomers(req, res, next) {
+  if (canAny(req.user, [["customers", "view"], ["orders", "view"], ["delivery", "edit"]])) return next();
+  return res.status(403).json({ error: "ما عندك صلاحية لقسم العملاء." });
 }
 
 function requireCanManageCustomers(req, res, next) {
@@ -79,7 +87,7 @@ router.get("/count", async (req, res) => {
 });
 
 router.post("/renumber", async (req, res) => {
-  if (req.user.role !== "super_admin") return res.status(403).json({ error: "للمدير فقط." });
+  if (req.user.role !== "super_admin") return res.status(403).json({ error: "للمدير العام فقط." });
 
   const result = await query("SELECT id FROM customers WHERE status = 'active' ORDER BY created_at ASC");
   let i = 1;
@@ -469,7 +477,7 @@ router.get("/:id/coupon-history", async (req, res) => {
 });
 
 router.post("/:id/coupons/adjust", async (req, res) => {
-  if (req.user.role !== "super_admin") return res.status(403).json({ error: "للمدير فقط." });
+  if (!canAction(req.user, "adjust_coupons")) return res.status(403).json({ error: "ما عندك صلاحية تعديل رصيد الكوبونات." });
 
   const { change_amount, reason } = req.body;
   if (!change_amount || !Number.isInteger(change_amount)) {

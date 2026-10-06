@@ -3,6 +3,7 @@ import { pool, query, logActivity } from "../db.js";
 import { notifyOrdersAddedToTrip } from "../utils/notify.js";
 import { optimizeRoute, getShopLocation } from "../utils/routing.js";
 import { requireAuth } from "../middleware/auth.js";
+import { can, canAction } from "../permissions.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -10,13 +11,15 @@ router.use(requireAuth);
 const AVERAGE_SPEED_KMH = 25;
 const SERVICE_MINUTES_PER_STOP = 4;
 
+// متابعة كل الرحلات
 function isPrivileged(user) {
-  return user.role === "super_admin" || user.role === "admin";
+  return can(user, "trips", "view");
 }
 
+// تشغيل رحلة (تسليم، تأجيل، إنهاء...): صاحب الرحلة الكابتن، أو اللي عنده «تعديل» على كل الرحلات
 function canOperateTrip(user, trip) {
-  if (user.role === "super_admin") return true;
-  return trip.driver_id === user.id;
+  if (can(user, "trips", "edit")) return true;
+  return trip.driver_id === user.id && can(user, "delivery", "edit");
 }
 
 // إعادة ترتيب كامل الطلبات الباقية بالرحلة (بعد إضافة طلب جديد مثلًا).
@@ -257,9 +260,12 @@ router.get("/active-list", async (req, res) => {
 });
 
 router.get("/available-drivers", async (req, res) => {
-  if (!isPrivileged(req.user)) return res.status(403).json({ error: "غير مصرح." });
-  const result = await query(`SELECT id, full_name FROM users WHERE role = 'driver' AND status = 'active' ORDER BY full_name ASC`);
-  res.json(result.rows);
+  if (!can(req.user, "trips", "edit")) return res.status(403).json({ error: "غير مصرح." });
+  const result = await query(
+    `SELECT id, full_name, role, permissions, can_discount, can_delete_customer, can_edit_product_price, can_cancel_order
+     FROM users WHERE status = 'active' ORDER BY full_name ASC`
+  );
+  res.json(result.rows.filter((u) => can(u, "delivery", "edit")).map((u) => ({ id: u.id, full_name: u.full_name })));
 });
 
 router.get("/archive", async (req, res) => {
@@ -291,11 +297,8 @@ router.get("/:id", async (req, res) => {
   const trip = tripResult.rows[0];
   if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
 
-  if (req.user.role === "data_entry") {
-    return res.status(403).json({ error: "ليست لديك صلاحية الوصول لهذا القسم." });
-  }
-  if (req.user.role === "driver" && trip.driver_id !== req.user.id) {
-    return res.status(403).json({ error: "هذه رحلة سائق آخر." });
+  if (!isPrivileged(req.user) && trip.driver_id !== req.user.id) {
+    return res.status(403).json({ error: "هذه رحلة كابتن ثاني." });
   }
 
   res.json(await buildTripDetailResponse(trip, req.user));
@@ -325,10 +328,10 @@ router.post("/", async (req, res) => {
   const { order_ids, start_latitude, start_longitude, route_mode, driver_id } = req.body;
 
   let finalDriverId;
-  if (req.user.role === "driver") {
-    finalDriverId = req.user.id;
-  } else if (isPrivileged(req.user)) {
+  if (can(req.user, "trips", "edit")) {
     finalDriverId = driver_id || req.user.id;
+  } else if (can(req.user, "delivery", "edit")) {
+    finalDriverId = req.user.id;
   } else {
     return res.status(403).json({ error: "ليست لديك صلاحية إنشاء رحلة." });
   }
@@ -679,7 +682,7 @@ router.post("/stops/:stopId/postpone", async (req, res) => {
 });
 
 router.post("/stops/:stopId/cancel", async (req, res) => {
-  if (!isPrivileged(req.user) && !req.user.can_cancel_order) {
+  if (!canAction(req.user, "cancel_order")) {
     return res.status(403).json({ error: "ليست لديك صلاحية إلغاء الطلبات." });
   }
 
@@ -719,7 +722,7 @@ router.post("/:id/reoptimize", async (req, res) => {
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
   const trip = tripResult.rows[0];
   if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
-  if (!canOperateTrip(req.user, trip) && !isPrivileged(req.user)) return res.status(403).json({ error: "غير مصرح." });
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
   if (trip.status === "COMPLETED") return res.status(400).json({ error: "الرحلة منتهية." });
 
   const result = await reoptimizeTrip(trip.id);

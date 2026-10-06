@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiChevronRight, FiChevronLeft, FiEdit2 } from "react-icons/fi";
 
 function getJordanToday() {
@@ -136,6 +137,8 @@ function TrendSection() {
 }
 
 export default function Cash() {
+  const { canEdit } = usePerms();
+  const canEditCash = canEdit("cash");
   const today = getJordanToday();
 
   const [data, setData] = useState(null);
@@ -276,6 +279,7 @@ export default function Cash() {
     <div className="page">
       <h1 className="title-lg">الحساب اليومي</h1>
       {error && <div className="error-box">{error}</div>}
+      <ViewOnlyNote section="cash" />
 
       <div className="card" ref={formRef}>
         <h2 className="title-md">{isToday ? "إدخال اليوم" : "تعديل يوم سابق"}</h2>
@@ -317,7 +321,7 @@ export default function Cash() {
           <p className="text-secondary">جاري تحميل اليوم...</p>
         ) : (
           <>
-            {!dayExists && <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 0 }}>هذا اليوم مش مسجّل — عبّي الأرقام واحفظ.</p>}
+            {!dayExists && canEditCash && <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 0 }}>هذا اليوم مش مسجّل — عبّي الأرقام واحفظ.</p>}
             {dayInClosedPeriod && (
               <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 0 }}>
                 هذا اليوم تابع لفترة مُصفَّرة — تعديله بيحدّث أرقامها بالأرشيف.
@@ -327,24 +331,26 @@ export default function Cash() {
             <div className="field-row">
               <div className="field">
                 <label>المبيعات (JD)</label>
-                <input type="number" inputMode="decimal" step="0.01" min="0" value={sales} onChange={(e) => setSales(e.target.value)} placeholder="0" />
+                <input type="number" inputMode="decimal" step="0.01" min="0" value={sales} onChange={(e) => setSales(e.target.value)} placeholder="0" readOnly={!canEditCash} />
               </div>
               <div className="field">
                 <label>الصرفيات (JD)</label>
-                <input type="number" inputMode="decimal" step="0.01" min="0" value={expenses} onChange={(e) => setExpenses(e.target.value)} placeholder="0" />
+                <input type="number" inputMode="decimal" step="0.01" min="0" value={expenses} onChange={(e) => setExpenses(e.target.value)} placeholder="0" readOnly={!canEditCash} />
               </div>
             </div>
 
             <div className="field">
               <label>ملاحظة (اختياري)</label>
-              <textarea rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="مثلاً: صرفنا على تصليح السيارة" />
+              <textarea rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="مثلاً: صرفنا على تصليح السيارة" readOnly={!canEditCash} />
             </div>
 
             {success && <div style={{ color: "var(--success)", fontWeight: 700, marginBottom: 8 }}>{success}</div>}
 
-            <button className="btn-primary" disabled={saving} onClick={handleSave}>
-              {saving ? "جاري الحفظ..." : dayExists ? "حفظ التعديل" : "حفظ اليوم"}
-            </button>
+            {canEditCash && (
+              <button className="btn-primary" disabled={saving} onClick={handleSave}>
+                {saving ? "جاري الحفظ..." : dayExists ? "حفظ التعديل" : "حفظ اليوم"}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -404,9 +410,9 @@ export default function Cash() {
 
       <TrendSection />
 
-      <button className="btn-danger-text" disabled={resetting} onClick={handleReset}>
+      {canEditCash && <button className="btn-danger-text" disabled={resetting} onClick={handleReset}>
         {resetting ? "جاري التصفير..." : "🔄 تصفير الحساب (بدء فترة جديدة)"}
-      </button>
+      </button>}
 
       <button className="btn-secondary" style={{ marginTop: 10 }} onClick={toggleHistory}>
         {showHistory ? "إخفاء الأرشيف" : "📁 أرشيف الفترات المُصفَّرة سابقًا"}

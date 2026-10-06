@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { can } from "../permissions.js";
 import { checkRemindersThrottled } from "./reminders.js";
 
 const router = Router();
 router.use(requireAuth);
 
+// الإشعارات العامة (القديمة) بتظهر للي بيتابع الرحلات
 function isPrivileged(user) {
-  return user.role === "super_admin" || user.role === "admin";
+  return can(user, "trips", "view");
 }
 
 // كل مستخدم بيشوف الإشعارات الموجّهة إله،

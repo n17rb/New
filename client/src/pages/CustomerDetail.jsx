@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, API_ORIGIN } from "../api.js";
+import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import OrderForm from "../components/OrderForm.jsx";
@@ -14,9 +15,10 @@ export default function CustomerDetail({ user }) {
   const [loading, setLoading] = useState(true);
   const [showOrderForm, setShowOrderForm] = useState(false);
 
-  const canManage = ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
-  const canDelete = user.role === "super_admin" || user.role === "admin" || user.can_delete_customer;
-  const canOrder = user.role !== "data_entry";
+  const perms = usePerms();
+  const canManage = perms.canEdit("customers");
+  const canDelete = perms.canAction("delete_customer");
+  const canOrder = perms.canEdit("orders");
 
   async function load() {
     setError("");
@@ -56,6 +58,7 @@ export default function CustomerDetail({ user }) {
       </button>
 
       {error && <div className="error-box">{error}</div>}
+      <ViewOnlyNote section="customers" />
 
       <CustomerHeader customer={customer} canManage={canManage} canDelete={canDelete} onChanged={load} onDeleted={() => navigate("/customers")} />
       <ReminderNoteSection customer={customer} canManage={canManage} onChanged={load} />
@@ -67,7 +70,7 @@ export default function CustomerDetail({ user }) {
       )}
 
       <LocationSection customer={customer} canManage={canManage} onChanged={load} />
-      <CouponSection customer={customer} isSuperAdmin={user.role === "super_admin"} onChanged={load} />
+      <CouponSection customer={customer} isSuperAdmin={perms.canAction("adjust_coupons")} onChanged={load} />
       {canManage && <CustomPricesSection customerId={customer.id} />}
       <OrderHistorySection customerId={customer.id} />
     </div>

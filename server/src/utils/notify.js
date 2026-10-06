@@ -1,5 +1,14 @@
 import { query } from "../db.js";
 import { sendPushToUser } from "./push.js";
+import { can } from "../permissions.js";
+
+async function activeUsersWhere(test) {
+  const result = await query(
+    `SELECT id, role, permissions, can_discount, can_delete_customer, can_edit_product_price, can_cancel_order
+     FROM users WHERE status = 'active'`
+  );
+  return result.rows.filter(test);
+}
 
 function listNames(names) {
   if (names.length <= 3) return names.join("، ");
@@ -49,10 +58,9 @@ export async function notifyOrdersAddedToTrip({ tripId, orderIds, actorId = null
   const recipients = new Map(); // userId -> message
   if (trip.driver_id && trip.driver_id !== actorId) recipients.set(trip.driver_id, driverMessage);
 
-  const adminsResult = await query(
-    `SELECT id FROM users WHERE status = 'active' AND role IN ('super_admin','admin')`
-  );
-  for (const a of adminsResult.rows) {
+  // اللي بيتابعوا كل الرحلات
+  const admins = await activeUsersWhere((u) => can(u, "trips", "view"));
+  for (const a of admins) {
     if (a.id === actorId || recipients.has(a.id)) continue;
     recipients.set(a.id, adminMessage);
   }
@@ -100,11 +108,12 @@ export async function notifyNewOrder({ orderId, actorId = null }) {
   const bottle = order.bottle_type === "new" ? " · قوارير جديدة 🆕" : order.bottle_type === "used" ? " · قوارير مستعملة ♻️" : "";
   const message = `🆕 ${urgent}طلب جديد: ${order.customer_name || "بدون اسم"}${region}${itemsText ? ` — ${itemsText}` : ""}${bottle}`;
 
-  const recipientsResult = await query(
-    `SELECT id FROM users WHERE status = 'active' AND role IN ('driver','super_admin','admin')`
+  // الكباتن + اللي بيتابعوا الطلبات أو الرحلات
+  const recipients = await activeUsersWhere(
+    (u) => can(u, "delivery", "edit") || can(u, "trips", "view") || can(u, "orders", "view")
   );
 
-  for (const u of recipientsResult.rows) {
+  for (const u of recipients) {
     if (u.id === actorId) continue;
     await query(
       `INSERT INTO notifications (type, message, related_customer_id, target_user_id)

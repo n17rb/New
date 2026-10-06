@@ -1,4 +1,6 @@
 import jwt from "jsonwebtoken";
+import { query } from "../db.js";
+import { effectivePermissions } from "../permissions.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -24,7 +26,32 @@ export function signToken(user) {
   );
 }
 
-export function requireAuth(req, res, next) {
+// بيانات المستخدم بتنقرأ من قاعدة البيانات مع كل طلب (مع ذاكرة قصيرة ٥ ثواني)
+// عشان أي تغيير بالصلاحيات أو إيقاف الحساب يطبّق فورًا بدون تسجيل خروج.
+const userCache = new Map();
+const CACHE_MS = 5000;
+
+export function invalidateUserCache(userId) {
+  if (userId == null) userCache.clear();
+  else userCache.delete(Number(userId));
+}
+
+async function loadUser(id) {
+  const cached = userCache.get(id);
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.user;
+  const result = await query(
+    `SELECT id, username, full_name, role, status, permissions,
+            can_discount, can_delete_customer, can_edit_product_price, can_cancel_order
+     FROM users WHERE id = $1`,
+    [id]
+  );
+  const user = result.rows[0] || null;
+  if (user) user._perms = effectivePermissions(user);
+  userCache.set(id, { user, at: Date.now() });
+  return user;
+}
+
+export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
@@ -32,11 +59,21 @@ export function requireAuth(req, res, next) {
     return res.status(401).json({ error: "يجب تسجيل الدخول." });
   }
 
+  let payload;
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
     return res.status(401).json({ error: "جلسة الدخول منتهية، الرجاء تسجيل الدخول مجددًا." });
+  }
+
+  try {
+    const user = await loadUser(Number(payload.id));
+    if (!user) return res.status(401).json({ error: "الحساب غير موجود. سجّل دخول من جديد." });
+    if (user.status !== "active") return res.status(401).json({ error: "هذا الحساب موقوف. راجع الإدارة." });
+    req.user = user;
+    next();
+  } catch (err) {
+    next(err);
   }
 }
 

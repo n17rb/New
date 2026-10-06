@@ -1,14 +1,27 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { can, canAction, canAny } from "../permissions.js";
 import { tryAutoAddToActiveTrip } from "./trips.js";
 import { notifyNewOrder } from "../utils/notify.js";
 
 const router = Router();
 router.use(requireAuth);
+router.use((req, res, next) => (req.method === "GET" ? requireOrdersView(req, res, next) : requireOrdersEdit(req, res, next)));
 
-function isPrivileged(user) {
-  return user.role === "super_admin" || user.role === "admin";
+// قراءة الطلبات: لقسم الطلبات أو للكابتن (بيختار طلبات لرحلته)
+function requireOrdersView(req, res, next) {
+  if (canAny(req.user, [["orders", "view"], ["delivery", "edit"], ["trips", "view"]])) return next();
+  return res.status(403).json({ error: "ما عندك صلاحية لقسم الطلبات." });
+}
+
+// تغيير الطلبات بده «تعديل» على الطلبات.
+// تحديد كمية الطلب مسموح كمان للكابتن (بيحددها عند الباب).
+function requireOrdersEdit(req, res, next) {
+  const isItemsUpdate = req.method === "PUT" && /\/items$/.test(req.path);
+  if (can(req.user, "orders", "edit") || (isItemsUpdate && can(req.user, "delivery", "edit"))) return next();
+  const message = can(req.user, "orders", "view") ? "صلاحيتك على الطلبات مشاهدة فقط." : "ما عندك صلاحية لقسم الطلبات.";
+  return res.status(403).json({ error: message });
 }
 
 async function nextOrderNumber(client) {
@@ -262,7 +275,7 @@ router.put("/:id/priority", async (req, res) => {
 });
 
 router.put("/:id/discount", async (req, res) => {
-  if (!isPrivileged(req.user) && !req.user.can_discount) {
+  if (!canAction(req.user, "discount")) {
     return res.status(403).json({ error: "ليست لديك صلاحية إعطاء خصم." });
   }
 
@@ -297,7 +310,7 @@ router.put("/:id/discount", async (req, res) => {
 });
 
 router.post("/:id/cancel", async (req, res) => {
-  if (!isPrivileged(req.user) && !req.user.can_cancel_order) {
+  if (!canAction(req.user, "cancel_order")) {
     return res.status(403).json({ error: "ليست لديك صلاحية إلغاء الطلبات." });
   }
   const { reason } = req.body;

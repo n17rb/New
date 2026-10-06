@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { can } from "../permissions.js";
 import { logActivity } from "../db.js";
 import { getShopLocation, setShopLocation, resolveCoordsFromMapsLink, isValidLatLon } from "../utils/routing.js";
 
@@ -7,7 +8,7 @@ const router = Router();
 router.use(requireAuth);
 
 function isPrivileged(user) {
-  return user.role === "super_admin" || user.role === "admin";
+  return can(user, "settings", "edit");
 }
 
 router.get("/shop-location", async (req, res) => {
@@ -17,7 +18,7 @@ router.get("/shop-location", async (req, res) => {
 
 // بيقبل إحداثيات مباشرة، أو رابط خرائط جوجل (حتى المختصر)
 router.put("/shop-location", async (req, res) => {
-  if (!isPrivileged(req.user)) return res.status(403).json({ error: "تحديد موقع المحل للإدارة فقط." });
+  if (!isPrivileged(req.user)) return res.status(403).json({ error: "ما عندك صلاحية تعديل إعدادات المحل." });
 
   const { latitude, longitude, maps_url } = req.body || {};
   let lat = latitude != null ? Number(latitude) : null;

@@ -1,49 +1,28 @@
 import { NavLink } from "react-router-dom";
-import { FiHome, FiUsers, FiPackage, FiTruck, FiBox, FiShield, FiDollarSign } from "react-icons/fi";
+import { FiHome, FiUsers, FiPackage, FiTruck, FiGrid } from "react-icons/fi";
+import { usePerms } from "../auth.jsx";
 
-export default function BottomNav({ role }) {
-  const isSuperAdmin = role === "super_admin";
-  const isPrivileged = role === "super_admin" || role === "admin";
-  const isDriver = role === "driver";
+function Item({ to, icon: Icon, label, end }) {
+  return (
+    <NavLink to={to} end={end} className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
+      <Icon className="nav-icon" aria-hidden="true" />
+      {label}
+    </NavLink>
+  );
+}
+
+export default function BottomNav() {
+  const { can } = usePerms();
+  const canCustomers = can("customers") || can("orders") || can("delivery", "edit");
+  const canTrip = can("delivery", "edit") || can("trips");
 
   return (
-    <nav className="bottom-nav">
-      {!isDriver && (
-        <NavLink to="/" end className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-          <FiHome className="nav-icon" />
-          الرئيسية
-        </NavLink>
-      )}
-      <NavLink to="/customers" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-        <FiUsers className="nav-icon" />
-        العملاء
-      </NavLink>
-      <NavLink to="/orders" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-        <FiPackage className="nav-icon" />
-        الطلبات
-      </NavLink>
-      <NavLink to="/trip" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-        <FiTruck className="nav-icon" />
-        الرحلة
-      </NavLink>
-      {(isPrivileged || role === "data_entry") && (
-        <NavLink to="/products" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-          <FiBox className="nav-icon" />
-          المنتجات
-        </NavLink>
-      )}
-      {isDriver && (
-        <NavLink to="/my-balance" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-          <FiDollarSign className="nav-icon" />
-          رصيدي
-        </NavLink>
-      )}
-      {isSuperAdmin && (
-        <NavLink to="/users" className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
-          <FiShield className="nav-icon" />
-          المستخدمون
-        </NavLink>
-      )}
+    <nav className="bottom-nav" aria-label="التنقل الرئيسي">
+      {can("dashboard") && <Item to="/" end icon={FiHome} label="الرئيسية" />}
+      {canCustomers && <Item to="/customers" icon={FiUsers} label="العملاء" />}
+      {can("orders") && <Item to="/orders" icon={FiPackage} label="الطلبات" />}
+      {canTrip && <Item to="/trip" icon={FiTruck} label="الرحلة" />}
+      <Item to="/more" icon={FiGrid} label="المزيد" />
     </nav>
   );
 }

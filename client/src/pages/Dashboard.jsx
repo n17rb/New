@@ -1,110 +1,111 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle } from "react-icons/fi";
 import { api } from "../api.js";
-import { FiSearch, FiBox, FiUsers, FiBarChart2, FiDollarSign, FiClock, FiTrendingUp, FiMap, FiDatabase, FiList, FiArchive, FiUserPlus } from "react-icons/fi";
+import { usePerms } from "../auth.jsx";
 
-const ROLE_LABELS = {
-  super_admin: "مدير",
-  admin: "مساعد مدير",
-  driver: "سائق توصيل",
-  data_entry: "موظف الإدخال",
-};
+function greetingWord() {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Amman", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  if (hour < 12) return "صباح الخير";
+  if (hour < 18) return "مساء الخير";
+  return "مساء النور";
+}
+
+function todayLabel() {
+  return new Date().toLocaleDateString("ar-JO", { timeZone: "Asia/Amman", weekday: "long", day: "numeric", month: "long" });
+}
 
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
-  const isPrivileged = user.role === "super_admin" || user.role === "admin";
-  const isDriver = user.role === "driver";
+  const { can } = usePerms();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
   const [myBalance, setMyBalance] = useState(null);
 
   useEffect(() => {
-    api.getDriverBalance(user.id).then((d) => setMyBalance(d.balance)).catch(() => {});
+    api.getDashboard().then(setData).catch((err) => setError(err.message));
+    if (can("delivery", "edit")) {
+      api.getDriverBalance(user.id).then((d) => setMyBalance(d.balance)).catch(() => {});
+    }
   }, [user.id]);
+
+  const firstName = (user.full_name || "").split(" ")[0];
 
   return (
     <div className="page">
-      <h1 className="title-lg">جوهرة الرابية</h1>
-      <p className="text-secondary" style={{ marginBottom: 20 }}>
-        أهلًا {user.full_name} — {ROLE_LABELS[user.role] || user.role}
-      </p>
+      <div className="greeting">
+        <h1>{greetingWord()} {firstName}</h1>
+        <p>{todayLabel()}</p>
+      </div>
 
-      {myBalance !== null && myBalance !== 0 && (
-        <div className="card">
-          <div className="text-secondary">{isDriver ? "رصيدك الحالي المستحق للمحل" : "رصيدك الشخصي (من رحلات وصّلتها بنفسك)"}</div>
-          <div className="tabular-num" style={{ fontSize: "1.6rem", fontWeight: 700, color: myBalance > 0 ? "var(--urgent)" : "var(--success)" }}>
-            {myBalance.toFixed(2)} JD
-          </div>
-        </div>
-      )}
+      {error && <div className="error-box">{error}</div>}
 
-      <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => navigate("/customers")}>
-        <FiSearch /> بحث عن عميل
-      </button>
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => navigate("/products")}>
-          <FiBox /> إدارة المنتجات والأسعار
+      {data?.needs_quantity > 0 && (
+        <button className="alert-row" onClick={() => navigate("/orders")}>
+          <FiAlertCircle size={20} aria-hidden="true" />
+          <span style={{ flex: 1 }}>
+            {data.needs_quantity === 1 ? "طلب تلقائي واحد" : `${data.needs_quantity} طلبات تلقائية`} لسا ما انحددت كميتها
+          </span>
+          <FiChevronLeft aria-hidden="true" />
         </button>
       )}
 
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => navigate("/driver-balances")}>
-          <FiUsers /> أرصدة السائقين
+      <div className="today-strip" aria-busy={!data}>
+        <button className="today-cell" onClick={() => navigate("/orders")}>
+          <div className="today-num tabular-num">{data ? data.new_orders : "–"}</div>
+          <div className="today-label">طلبات جديدة</div>
         </button>
+        <button className="today-cell" onClick={() => navigate("/trip")}>
+          <div className="today-num tabular-num">{data ? data.in_route : "–"}</div>
+          <div className="today-label">بالطريق</div>
+        </button>
+        <button className="today-cell" onClick={() => navigate(can("reports") ? "/reports" : "/orders")}>
+          <div className="today-num tabular-num">{data ? data.delivered_today : "–"}</div>
+          <div className="today-label">تسلّمت اليوم</div>
+        </button>
+      </div>
+
+      {data?.delivered_value_today != null && (
+        <p className="text-secondary" style={{ margin: "-2px 4px 14px" }}>
+          قيمة اللي تسلّم اليوم: <strong className="tabular-num" style={{ color: "var(--text)" }}>{Number(data.delivered_value_today).toFixed(2)} JD</strong>
+        </p>
       )}
 
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} onClick={() => navigate("/reports")}>
-          <FiBarChart2 /> التقارير
-        </button>
-      )}
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/cash")}>
-          <FiDollarSign /> الحساب اليومي
-        </button>
-      )}
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/overdue-customers")}>
-          <FiClock /> عملاء متأخرين
-        </button>
-      )}
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/driver-performance")}>
-          <FiTrendingUp /> أداء السائقين
-        </button>
-      )}
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/customers-map")}>
-          <FiMap /> خريطة العملاء
-        </button>
-      )}
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/customer-growth")}>
-          <FiUserPlus /> نمو العملاء
-        </button>
-      )}
-
-      {isPrivileged && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/trip-archive")}>
-          <FiArchive /> أرشيف الرحلات
-        </button>
-      )}
-
-      {user.role === "super_admin" && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/activity-log")}>
-          <FiList /> سجل النشاطات
-        </button>
-      )}
-
-      {user.role === "super_admin" && (
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 12 }} onClick={() => navigate("/backup")}>
-          <FiDatabase /> النسخ الاحتياطية
-        </button>
-      )}
+      <div className="list-group">
+        <Link to="/customers" className="list-row">
+          <span className="list-icon"><FiSearch aria-hidden="true" /></span>
+          <span className="list-text"><span className="list-title">دوّر على عميل</span><div className="list-sub">بالاسم أو أول أرقام التلفون أو الرقم التسلسلي</div></span>
+          <FiChevronLeft className="list-chevron" aria-hidden="true" />
+        </Link>
+        <Link to="/notifications?tab=schedule" className="list-row">
+          <span className="list-icon"><FiCalendar aria-hidden="true" /></span>
+          <span className="list-text">
+            <span className="list-title">مواعيد اليوم</span>
+            <div className="list-sub">{data ? (data.appointments_today ? `${data.appointments_today} زبون موعده اليوم` : "ما في مواعيد اليوم") : " "}</div>
+          </span>
+          <FiChevronLeft className="list-chevron" aria-hidden="true" />
+        </Link>
+        {(can("trips") || can("delivery", "edit")) && (
+          <Link to="/trip" className="list-row">
+            <span className="list-icon"><FiTruck aria-hidden="true" /></span>
+            <span className="list-text">
+              <span className="list-title">الرحلات</span>
+              <div className="list-sub">{data ? (data.active_trips ? `${data.active_trips} رحلة شغّالة هلّق` : "ما في رحلات شغّالة") : " "}</div>
+            </span>
+            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          </Link>
+        )}
+        {myBalance !== null && myBalance !== 0 && (
+          <Link to="/my-balance" className="list-row">
+            <span className="list-icon"><FiCreditCard aria-hidden="true" /></span>
+            <span className="list-text">
+              <span className="list-title">رصيدي</span>
+              <div className="list-sub tabular-num">{myBalance.toFixed(2)} JD مستحق للمحل</div>
+            </span>
+            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

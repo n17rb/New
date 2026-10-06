@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
+import { can } from "../permissions.js";
 import { sendPushToUser } from "../utils/push.js";
 
 const router = Router();
@@ -10,7 +11,7 @@ router.use(requireAuth);
 const REMINDER_HOUR = 7;
 
 function canManage(user) {
-  return ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
+  return can(user, "customers", "edit");
 }
 
 function getJordanNowParts() {

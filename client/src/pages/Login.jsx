@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api.js";
+import { LogoMark, Wordmark } from "../components/Logo.jsx";
 
 export default function Login({ onLoggedIn }) {
   const [username, setUsername] = useState("");
@@ -24,27 +25,32 @@ export default function Login({ onLoggedIn }) {
   }
 
   return (
-    <div className="centered-screen">
-      <div style={{ width: "100%", maxWidth: 380 }}>
-        <h1 className="title-lg">جوهرة الرابية</h1>
-        <p className="text-secondary" style={{ marginBottom: 20 }}>تسجيل الدخول لنظام التوزيع</p>
+    <div className="login-screen">
+      <div className="login-hero">
+        <LogoMark size={76} color="#fff" strokeWidth={3} />
+        <div style={{ marginTop: 18 }}>
+          <Wordmark light size="lg" />
+        </div>
+        <div className="login-tagline">نقاء تثق به</div>
+      </div>
+
+      <form className="login-form" onSubmit={handleSubmit}>
+        <h1 className="title-md" style={{ fontSize: "1.15rem", marginBottom: 18 }}>تسجيل الدخول</h1>
 
         {error && <div className="error-box">{error}</div>}
 
-        <form onSubmit={handleSubmit}>
-          <div className="field">
-            <label>اسم المستخدم</label>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
-          </div>
-          <div className="field">
-            <label>كلمة المرور</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
-          <button className="btn-primary" disabled={loading}>
-            {loading ? "جاري الدخول..." : "تسجيل الدخول"}
-          </button>
-        </form>
-      </div>
+        <div className="field">
+          <label htmlFor="login-user">اسم المستخدم</label>
+          <input id="login-user" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus autoComplete="username" dir="auto" />
+        </div>
+        <div className="field" style={{ marginBottom: 22 }}>
+          <label htmlFor="login-pass">كلمة المرور</label>
+          <input id="login-pass" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+        </div>
+        <button className="btn-primary" disabled={loading}>
+          {loading ? "جاري الدخول..." : "دخول"}
+        </button>
+      </form>
     </div>
   );
 }

@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { query, logActivity } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { can, canAction, requirePerm } from "../permissions.js";
 
 const router = Router();
 router.use(requireAuth);
 
 router.get("/", async (req, res) => {
-  const includeArchived = req.query.all === "true" && req.user.role === "admin";
+  const includeArchived = req.query.all === "true" && can(req.user, "products", "edit");
   const result = await query(
     `SELECT * FROM products
      WHERE ($1 = true OR status != 'archived')
@@ -16,7 +17,7 @@ router.get("/", async (req, res) => {
   res.json(result.rows);
 });
 
-router.post("/", requireRole("admin", "super_admin"), async (req, res) => {
+router.post("/", requirePerm("products", "edit"), async (req, res) => {
   const { name, type, unit_price, sort_order, coupon_eligible, grants_coupons } = req.body;
   if (!name || unit_price == null) {
     return res.status(400).json({ error: "اسم المنتج والسعر مطلوبان." });
@@ -40,7 +41,7 @@ router.post("/", requireRole("admin", "super_admin"), async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin" && !req.user.can_edit_product_price) {
+  if (!can(req.user, "products", "edit") && !canAction(req.user, "edit_prices")) {
     return res.status(403).json({ error: "ليست لديك صلاحية تعديل المنتجات أو الأسعار." });
   }
 
@@ -74,7 +75,7 @@ router.put("/:id", async (req, res) => {
   res.json(updated.rows[0]);
 });
 
-router.delete("/:id", requireRole("admin", "super_admin"), async (req, res) => {
+router.delete("/:id", requirePerm("products", "edit"), async (req, res) => {
   const result = await query(
     "UPDATE products SET status = 'archived', updated_at = now() WHERE id = $1 RETURNING *",
     [req.params.id]

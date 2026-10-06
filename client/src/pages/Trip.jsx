@@ -4,6 +4,8 @@ import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefr
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
+import ShopLocationCard from "../components/ShopLocationCard.jsx";
+import { usePerms } from "../auth.jsx";
 
 function formatMinutes(mins) {
   if (mins <= 0) return "أقل من دقيقة";
@@ -19,14 +21,19 @@ function formatClockTime(input) {
 }
 
 export default function Trip({ user }) {
-  const isPrivileged = user.role === "super_admin" || user.role === "admin";
-  if (user.role === "data_entry") {
-    return <div className="page"><p className="text-secondary">لا يوجد وصول لهذا القسم.</p></div>;
+  const perms = usePerms();
+  // متابعة رحلات الكباتن الثانيين
+  const isPrivileged = perms.can("trips");
+  if (!isPrivileged && !perms.canEdit("delivery")) {
+    return <div className="page"><p className="text-secondary">ما عندك صلاحية لقسم الرحلات.</p></div>;
   }
   return <UnifiedTripView user={user} isPrivileged={isPrivileged} />;
 }
 
 function UnifiedTripView({ user, isPrivileged }) {
+  const perms = usePerms();
+  const canManageTrips = perms.canEdit("trips");
+  const canCreate = perms.canEdit("delivery") || canManageTrips;
   const [myTrip, setMyTrip] = useState(undefined);
   const [otherTrips, setOtherTrips] = useState([]);
   const [selectedOtherId, setSelectedOtherId] = useState(null);
@@ -90,7 +97,7 @@ function UnifiedTripView({ user, isPrivileged }) {
   if (selectedOtherId) {
     return (
       <div className="page">
-        <OtherTripDetail tripId={selectedOtherId} isSuperAdmin={user.role === "super_admin"} onBack={() => { setSelectedOtherId(null); load(); }} />
+        <OtherTripDetail tripId={selectedOtherId} isSuperAdmin={canManageTrips} onBack={() => { setSelectedOtherId(null); load(); }} />
       </div>
     );
   }
@@ -114,11 +121,15 @@ function UnifiedTripView({ user, isPrivileged }) {
       {error && <div className="error-box">{error}</div>}
 
       {!myTrip ? (
-        <CreateTripForm isPrivileged={isPrivileged} onCreated={load} />
+        canCreate ? (
+          <CreateTripForm isPrivileged={canManageTrips} onCreated={load} />
+        ) : (
+          <div className="card text-secondary">ما عندك رحلة شغّالة. تحت بتلاقي رحلات الكباتن.</div>
+        )
       ) : (
         <ActiveTripView
           trip={myTrip}
-          isSuperAdmin={user.role === "super_admin"}
+          isSuperAdmin={false}
           isManagerViewOnly={false}
           canOperate={myTrip.can_operate}
           onChanged={load}
@@ -128,7 +139,7 @@ function UnifiedTripView({ user, isPrivileged }) {
 
       {isPrivileged && otherTrips.length > 0 && (
         <div className="card">
-          <h2 className="title-md">رحلات سائقين آخرين (عرض فقط)</h2>
+          <h2 className="title-md">رحلات الكباتن</h2>
           {otherTrips.map((t) => (
             <div key={t.id} className="customer-row" style={{ padding: "10px 0", cursor: "pointer" }} onClick={() => setSelectedOtherId(t.id)}>
               <div>
@@ -181,91 +192,8 @@ function OtherTripDetail({ tripId, isSuperAdmin, onBack }) {
   );
 }
 
-function ShopLocationCard({ compact = false }) {
-  const [shop, setShop] = useState(undefined);
-  const [editing, setEditing] = useState(false);
-  const [link, setLink] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    api.getShopLocation().then((r) => setShop(r)).catch(() => setShop(null));
-  }, []);
-
-  async function save(body) {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const r = await api.setShopLocation(body);
-      setShop({ latitude: r.latitude, longitude: r.longitude });
-      setMessage(r.message);
-      setEditing(false);
-      setLink("");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function useMyLocation() {
-    if (!navigator.geolocation) {
-      setError("الجهاز ما بيدعم تحديد الموقع.");
-      return;
-    }
-    if (!confirm("متأكد إنك موجود هلّق بالمحل؟ رح ينحفظ موقعك الحالي كموقع المحل.")) return;
-    setBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => save({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => { setBusy(false); setError("ما قدرت آخذ موقعك — اسمح للتطبيق بالوصول للموقع."); },
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
-  }
-
-  if (shop === undefined) return null;
-
-  if (shop && !editing) {
-    return (
-      <div className="text-secondary" style={{ fontSize: "0.85rem", marginBottom: compact ? 0 : 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        🏪 كل رحلة بتخلص بالرجوع للمحل
-        <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noreferrer">(شوف الموقع)</a>
-        <button type="button" onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--primary, #0094FF)", cursor: "pointer", padding: 0, fontSize: "0.85rem" }}>
-          تغيير
-        </button>
-        {message && <span style={{ color: "var(--success)" }}>{message}</span>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="card" style={{ border: shop ? undefined : "2px solid var(--warning)" }}>
-      <h2 className="title-md" style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 6 }}>
-        <FiMapPin /> موقع المحل
-      </h2>
-      {!shop && (
-        <p style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          حدد موقع المحل مرة وحدة، وبعدها كل رحلة بتترتب من الأقرب للأبعد وبتخلص بالرجوع للمحل تلقائيًا.
-        </p>
-      )}
-      {error && <div className="error-box">{error}</div>}
-      <button className="btn-primary" disabled={busy} onClick={useMyLocation} style={{ marginBottom: 10 }}>
-        📍 أنا بالمحل هلّق — استخدم موقعي
-      </button>
-      <div className="field" style={{ marginBottom: 8 }}>
-        <label>أو الصق رابط موقع المحل من خرائط جوجل</label>
-        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://maps.app.goo.gl/..." dir="ltr" />
-      </div>
-      <button className="btn-secondary" disabled={busy || !link.trim()} onClick={() => save({ maps_url: link.trim() })} style={{ marginBottom: shop ? 8 : 0 }}>
-        {busy ? "جاري الحفظ..." : "حفظ الرابط"}
-      </button>
-      {shop && <button className="btn-secondary" onClick={() => { setEditing(false); setError(""); }}>إلغاء</button>}
-    </div>
-  );
-}
-
 function CreateTripForm({ isPrivileged, onCreated }) {
+  const perms = usePerms();
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState({});
   const [routeMode, setRouteMode] = useState("nearest");
@@ -350,7 +278,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   if (orders.length === 0) {
     return (
       <div>
-        {isPrivileged ? <ShopLocationCard /> : null}
+        {perms.can("settings") ? <ShopLocationCard /> : null}
         <p className="text-secondary" style={{ marginBottom: 10 }}>لا يوجد طلبات جديدة جاهزة للتوزيع حاليًا.</p>
         <button className="btn-secondary" onClick={loadOrders}>🔄 تحديث</button>
       </div>
@@ -365,7 +293,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
         <button className="btn-secondary" style={{ width: "auto", padding: "8px 12px" }} onClick={loadOrders}>🔄 تحديث</button>
       </div>
 
-      {isPrivileged ? <ShopLocationCard /> : null}
+      {perms.can("settings") ? <ShopLocationCard /> : null}
 
       {isPrivileged && (
         <div className="field">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { usePerms } from "../auth.jsx";
 
 export default function DriverBalances() {
   const [drivers, setDrivers] = useState([]);
@@ -27,7 +28,7 @@ export default function DriverBalances() {
 
   return (
     <div className="page">
-      <h1 className="title-lg">أرصدة السائقين</h1>
+      <h1 className="title-lg">ذمم الكباتن</h1>
       {error && <div className="error-box">{error}</div>}
 
       <div className="card" style={{ padding: 0 }}>
@@ -51,6 +52,7 @@ export default function DriverBalances() {
 }
 
 function DriverDetail({ driverId, name, onBack }) {
+  const { canEdit } = usePerms();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [amount, setAmount] = useState("");
@@ -110,7 +112,7 @@ function DriverDetail({ driverId, name, onBack }) {
 
       {error && <div className="error-box">{error}</div>}
 
-      <div className="card">
+      {canEdit("driver_balances") && <div className="card">
         <h2 className="title-md">جرد / تسوية</h2>
         <p className="text-secondary" style={{ marginBottom: 10 }}>مثال: باع اليوم ٢٠ دينار كاش وجمع ١٠ كوبونات — اكتبهم مع بعض هون.</p>
         <div className="field-row">
@@ -130,7 +132,7 @@ function DriverDetail({ driverId, name, onBack }) {
         <button className="btn-primary" disabled={saving} onClick={handleSettle}>
           {saving ? "جاري الحفظ..." : "تسجيل الجرد"}
         </button>
-      </div>
+      </div>}
 
       <div className="card">
         <h2 className="title-md">سجل الحساب (آخر 50 حركة)</h2>

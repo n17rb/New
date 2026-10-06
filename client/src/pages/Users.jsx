@@ -1,23 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { FiUserPlus, FiChevronLeft, FiArrowRight, FiTrash2 } from "react-icons/fi";
 import { api } from "../api.js";
-import { FiUserPlus } from "react-icons/fi";
+import { usePerms } from "../auth.jsx";
+import { ROLE_LABELS } from "./More.jsx";
 
-const ROLE_LABELS = {
-  super_admin: "مدير",
-  admin: "مساعد مدير",
-  driver: "سائق",
-  data_entry: "موظف الإدخال",
-};
+const LEVEL_LABELS = { none: "مخفي", view: "متفرج", edit: "تعديل" };
 
 export default function Users() {
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState(null);
+  const [meta, setMeta] = useState(null);
   const [error, setError] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [editing, setEditing] = useState(null); // null | "new" | user
 
   async function load() {
+    setError("");
     try {
-      setUsers(await api.getUsers());
+      const [list, m] = await Promise.all([api.getUsers(), meta ? Promise.resolve(meta) : api.getPermissionsMeta()]);
+      setUsers(list);
+      setMeta(m);
     } catch (err) {
       setError(err.message);
     }
@@ -25,12 +25,14 @@ export default function Users() {
 
   useEffect(() => { load(); }, []);
 
-  if (selectedUser) {
+  if (editing) {
     return (
       <div className="page">
-        <EditUserForm
-          user={selectedUser}
-          onBack={() => { setSelectedUser(null); load(); }}
+        <UserEditor
+          meta={meta}
+          user={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
         />
       </div>
     );
@@ -38,204 +40,276 @@ export default function Users() {
 
   return (
     <div className="page">
-      <h1 className="title-lg">المستخدمون</h1>
+      <h1 className="title-lg">الموظفين والصلاحيات</h1>
+      <p className="text-secondary" style={{ marginTop: -8, marginBottom: 16 }}>
+        لكل موظف بتحدد كل قسم: مخفي، متفرج (بشوف بس)، أو تعديل.
+      </p>
       {error && <div className="error-box">{error}</div>}
 
-      <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 16 }} onClick={() => setShowAdd(!showAdd)}>
-        {showAdd ? "إغلاق" : (<><FiUserPlus /> إضافة مستخدم</>)}
+      <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 16 }} disabled={!meta} onClick={() => setEditing("new")}>
+        <FiUserPlus aria-hidden="true" /> إضافة موظف
       </button>
 
-      {showAdd && <AddUserForm onSaved={() => { setShowAdd(false); load(); }} />}
+      {!users && !error && <p className="text-secondary">جاري التحميل...</p>}
 
-      <div className="card" style={{ padding: 0 }}>
-        {users.map((u) => (
-          <div key={u.id} className="customer-row" style={{ padding: "12px 14px", cursor: "pointer" }} onClick={() => setSelectedUser(u)}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{u.full_name}</div>
-              <div className="text-secondary">
-                {u.username} · {ROLE_LABELS[u.role] || u.role}
-              </div>
-            </div>
-            <span className="badge">{u.status === "active" ? "فعّال" : "معطّل"}</span>
-          </div>
-        ))}
-      </div>
+      {users && (
+        <div className="list-group">
+          {users.map((u) => (
+            <button key={u.id} className="list-row" onClick={() => setEditing(u)} disabled={!meta}>
+              <span className="avatar">{(u.full_name || "?").trim().charAt(0)}</span>
+              <span className="list-text">
+                <span className="list-title">{u.full_name}</span>
+                <div className="list-sub">
+                  <span dir="ltr">@{u.username}</span> · {ROLE_LABELS[u.role] || "موظف"}
+                </div>
+              </span>
+              {u.status !== "active" && <span className="badge" style={{ color: "var(--urgent)", background: "var(--urgent-soft)" }}>موقوف</span>}
+              <FiChevronLeft className="list-chevron" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function EditUserForm({ user, onBack }) {
-  const [username, setUsername] = useState(user.username);
-  const [fullName, setFullName] = useState(user.full_name);
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
-  const [saving, setSaving] = useState(false);
+function samePermissions(a, b) {
+  return JSON.stringify(a.sections) === JSON.stringify(b.sections) && JSON.stringify(a.actions) === JSON.stringify(b.actions);
+}
 
-  async function handleSave() {
-    setSaving(true);
-    setError("");
-    setInfo("");
-    try {
-      await api.updateUser(user.id, {
-        username: username !== user.username ? username.trim() : undefined,
-        full_name: fullName,
-        password: password || undefined,
-      });
-      setInfo("تم حفظ التعديلات بنجاح.");
-      setPassword("");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
+function normalize(meta, input) {
+  const sections = {};
+  for (const s of meta.sections) {
+    let lvl = input?.sections?.[s.key] || "none";
+    if (s.viewOnly && lvl === "edit") lvl = "view";
+    sections[s.key] = lvl;
+  }
+  const actions = {};
+  for (const a of meta.actions) actions[a.key] = input?.actions?.[a.key] === true;
+  return { sections, actions };
+}
+
+function UserEditor({ meta, user, onClose, onSaved }) {
+  const { user: me } = usePerms();
+  const isNew = !user;
+  const isSelf = user && user.id === me.id;
+
+  const [fullName, setFullName] = useState(user?.full_name || "");
+  const [username, setUsername] = useState(user?.username || "");
+  const [password, setPassword] = useState("");
+  const [active, setActive] = useState(user ? user.status === "active" : true);
+  const [isOwnerRole, setIsOwnerRole] = useState(user?.role === "super_admin");
+  const [perms, setPerms] = useState(() =>
+    normalize(meta, user ? user.effective_permissions : meta.templates.driver)
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // القالب اللي بيطابق الصلاحيات الحالية (لو في)
+  const matchingTemplate = useMemo(() => {
+    for (const [key, t] of Object.entries(meta.templates)) {
+      if (samePermissions(normalize(meta, t), perms)) return key;
     }
+    return null;
+  }, [perms, meta]);
+
+  function applyTemplate(key) {
+    setIsOwnerRole(false);
+    setPerms(normalize(meta, meta.templates[key]));
   }
 
-  async function toggleStatus() {
-    setSaving(true);
+  function setLevel(section, level) {
+    setPerms((p) => ({ ...p, sections: { ...p.sections, [section]: level } }));
+  }
+
+  function setAll(level) {
+    setPerms((p) => ({
+      ...p,
+      sections: Object.fromEntries(meta.sections.map((s) => [s.key, s.viewOnly && level === "edit" ? "view" : level])),
+    }));
+  }
+
+  function setAction(action, value) {
+    setPerms((p) => ({ ...p, actions: { ...p.actions, [action]: value } }));
+  }
+
+  async function handleSave() {
     setError("");
+    if (!fullName.trim() || !username.trim()) {
+      setError("اكتب الاسم واسم المستخدم.");
+      return;
+    }
+    if (isNew && password.length < 6) {
+      setError("كلمة المرور لازم تكون ٦ أحرف على الأقل.");
+      return;
+    }
+    if (isOwnerRole && !isNew && user.role !== "super_admin" &&
+        !confirm(`«${fullName}» رح يصير مدير عام: بيشوف وبيعدّل كل شي، وبيقدر يغيّر صلاحيات الموظفين. متأكد؟`)) {
+      return;
+    }
+
+    const role = isOwnerRole ? "super_admin" : matchingTemplate || "staff";
+    const body = {
+      full_name: fullName.trim(),
+      username: username.trim(),
+      role,
+      permissions: isOwnerRole ? undefined : perms,
+    };
+    if (password) body.password = password;
+    if (!isNew) body.status = active ? "active" : "disabled";
+
+    setSaving(true);
     try {
-      await api.updateUser(user.id, { status: user.status === "active" ? "disabled" : "active" });
-      onBack();
+      if (isNew) await api.createUser(body);
+      else await api.updateUser(user.id, body);
+      onSaved();
     } catch (err) {
       setError(err.message);
-    } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm(`متأكد إنك بدك تحذف حساب "${user.full_name}"؟ هذا الإجراء لا يمكن التراجع عنه.`)) return;
+    if (!confirm(`متأكد إنك بدك تحذف حساب «${user.full_name}»؟`)) return;
     setSaving(true);
-    setError("");
     try {
       const result = await api.deleteUser(user.id);
       alert(result.message);
-      onBack();
+      onSaved();
     } catch (err) {
       setError(err.message);
-    } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div>
-      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع لقائمة المستخدمين</button>
+    <>
+      <button className="btn-danger-text icon-row" style={{ color: "var(--text-secondary)", marginBottom: 6 }} onClick={onClose}>
+        <FiArrowRight aria-hidden="true" /> رجوع
+      </button>
+      <h1 className="title-lg">{isNew ? "موظف جديد" : user.full_name}</h1>
+      {error && <div className="error-box">{error}</div>}
 
       <div className="card">
-        <h2 className="title-md">{ROLE_LABELS[user.role] || user.role}</h2>
-        {error && <div className="error-box">{error}</div>}
-        {info && <div className="success-box">{info}</div>}
-
         <div className="field">
-          <label>اسم المستخدم</label>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} />
+          <label htmlFor="u-name">الاسم</label>
+          <input id="u-name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="مثلاً: أبو أحمد" />
         </div>
-        <div className="field">
-          <label>الاسم الكامل</label>
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>كلمة مرور جديدة (اتركها فاضية لعدم التغيير)</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} />
-        </div>
-
-        <button className="btn-primary" style={{ marginBottom: 10 }} disabled={saving} onClick={handleSave}>
-          {saving ? "جاري الحفظ..." : "حفظ التعديلات"}
-        </button>
-        <button className="btn-secondary" style={{ marginBottom: 10 }} disabled={saving} onClick={toggleStatus}>
-          {user.status === "active" ? "تعطيل الحساب" : "تفعيل الحساب"}
-        </button>
-        <button className="btn-danger-text" disabled={saving} onClick={handleDelete}>
-          حذف الحساب نهائيًا
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function AddUserForm({ onSaved }) {
-  const [fullName, setFullName] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("driver");
-  const [canDiscount, setCanDiscount] = useState(false);
-  const [canDeleteCustomer, setCanDeleteCustomer] = useState(false);
-  const [canEditPrice, setCanEditPrice] = useState(false);
-  const [canCancelOrder, setCanCancelOrder] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
-    try {
-      await api.createUser({
-        full_name: fullName,
-        username,
-        password,
-        role,
-        can_discount: canDiscount,
-        can_delete_customer: canDeleteCustomer,
-        can_edit_product_price: canEditPrice,
-        can_cancel_order: canCancelOrder,
-      });
-      onSaved();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  return (
-    <div className="card">
-      {error && <div className="error-box">{error}</div>}
-      <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label>الاسم الكامل</label>
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-        </div>
-        <div className="field">
-          <label>اسم المستخدم</label>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} required />
-        </div>
-        <div className="field">
-          <label>كلمة المرور</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
-        </div>
-        <div className="field">
-          <label>الدور</label>
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="driver">سائق (توصيل فقط، بدون تعديل عملاء)</option>
-            <option value="data_entry">موظف الإدخال (إضافة/تعديل عملاء فقط)</option>
-            <option value="admin">مساعد مدير (كل الصلاحيات، بدون إدارة مستخدمين)</option>
-            <option value="super_admin">مدير (كل الصلاحيات)</option>
-          </select>
-        </div>
-
-        {role === "driver" && (
+        <div className="field-row">
           <div className="field">
-            <label>صلاحيات إضافية للسائق</label>
-            <label style={{ display: "flex", gap: 8, marginBottom: 6, fontWeight: 400 }}>
-              <input type="checkbox" checked={canDiscount} onChange={(e) => setCanDiscount(e.target.checked)} />
-              يستطيع إعطاء خصم
-            </label>
-            <label style={{ display: "flex", gap: 8, marginBottom: 6, fontWeight: 400 }}>
-              <input type="checkbox" checked={canDeleteCustomer} onChange={(e) => setCanDeleteCustomer(e.target.checked)} />
-              يستطيع أرشفة عملاء
-            </label>
-            <label style={{ display: "flex", gap: 8, marginBottom: 6, fontWeight: 400 }}>
-              <input type="checkbox" checked={canEditPrice} onChange={(e) => setCanEditPrice(e.target.checked)} />
-              يستطيع تعديل أسعار المنتجات
-            </label>
-            <label style={{ display: "flex", gap: 8, fontWeight: 400 }}>
-              <input type="checkbox" checked={canCancelOrder} onChange={(e) => setCanCancelOrder(e.target.checked)} />
-              يستطيع إلغاء الطلبات
+            <label htmlFor="u-user">اسم المستخدم</label>
+            <input id="u-user" value={username} onChange={(e) => setUsername(e.target.value)} dir="ltr" autoComplete="off" />
+          </div>
+          <div className="field">
+            <label htmlFor="u-pass">{isNew ? "كلمة المرور" : "كلمة مرور جديدة"}</label>
+            <input id="u-pass" type="text" value={password} onChange={(e) => setPassword(e.target.value)} dir="ltr" autoComplete="off" placeholder={isNew ? "" : "اتركها فاضية"} />
+          </div>
+        </div>
+        {!isNew && !isSelf && (
+          <div className="toggle-row" style={{ padding: "4px 0 0", border: "none" }}>
+            <span>الحساب فعّال</span>
+            <label className="switch">
+              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+              <span />
             </label>
           </div>
         )}
+      </div>
 
-        <button className="btn-primary">إضافة المستخدم</button>
-      </form>
-    </div>
+      <div className="section-title">نوع الحساب</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+        {Object.entries(meta.templates).map(([key, t]) => (
+          <button
+            key={key}
+            type="button"
+            className={!isOwnerRole && matchingTemplate === key ? "btn-primary" : "btn-secondary"}
+            style={{ width: "auto", padding: "9px 14px", fontSize: "0.85rem" }}
+            onClick={() => applyTemplate(key)}
+          >
+            {t.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={isOwnerRole ? "btn-primary" : "btn-secondary"}
+          style={{ width: "auto", padding: "9px 14px", fontSize: "0.85rem" }}
+          onClick={() => setIsOwnerRole(true)}
+          disabled={isSelf}
+        >
+          مدير عام
+        </button>
+      </div>
+      <p className="text-secondary" style={{ margin: "0 4px 4px", fontSize: "0.8rem" }}>
+        {isOwnerRole
+          ? "المدير العام بيشوف وبيعدّل كل شي، وبيدير الموظفين."
+          : matchingTemplate
+            ? "اختار قالب وبعدين عدّل أي قسم تحت."
+            : "صلاحيات مخصصة لهذا الموظف."}
+      </p>
+
+      {!isOwnerRole && (
+        <>
+          <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>الأقسام</span>
+            <span style={{ display: "flex", gap: 12, fontWeight: 600 }}>
+              <button type="button" onClick={() => setAll("view")} style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.8rem" }}>الكل متفرج</button>
+              <button type="button" onClick={() => setAll("none")} style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.8rem" }}>إخفاء الكل</button>
+            </span>
+          </div>
+          <div className="list-group">
+            {meta.sections.map((s) => {
+              const levels = s.viewOnly ? ["none", "view"] : ["none", "view", "edit"];
+              return (
+                <div key={s.key} className="perm-row">
+                  <div className="perm-head">
+                    <span className="perm-label">{s.label}</span>
+                    <span className="perm-hint">{s.hint}</span>
+                  </div>
+                  <div className="seg" role="radiogroup" aria-label={s.label}>
+                    {levels.map((lvl) => {
+                      const on = perms.sections[s.key] === lvl;
+                      return (
+                        <button
+                          key={lvl}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          className={on ? `on lvl-${lvl}` : ""}
+                          onClick={() => setLevel(s.key, lvl)}
+                        >
+                          {s.viewOnly && lvl === "view" ? "يشوف" : LEVEL_LABELS[lvl]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="section-title">صلاحيات خاصة</div>
+          <div className="list-group">
+            {meta.actions.map((a) => (
+              <label key={a.key} className="toggle-row" style={{ cursor: "pointer" }}>
+                <span>{a.label}</span>
+                <span className="switch">
+                  <input type="checkbox" checked={perms.actions[a.key]} onChange={(e) => setAction(a.key, e.target.checked)} />
+                  <span />
+                </span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
+      <button className="btn-primary" style={{ marginTop: 8, marginBottom: 10 }} disabled={saving} onClick={handleSave}>
+        {saving ? "جاري الحفظ..." : isNew ? "إضافة الموظف" : "حفظ التغييرات"}
+      </button>
+      {!isNew && !isSelf && (
+        <button className="btn-danger-text icon-row" style={{ justifyContent: "center", width: "100%", marginBottom: 12 }} disabled={saving} onClick={handleDelete}>
+          <FiTrash2 aria-hidden="true" /> حذف الحساب
+        </button>
+      )}
+    </>
   );
 }

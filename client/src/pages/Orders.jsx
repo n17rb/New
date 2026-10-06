@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
 
 const STATUS_LABELS = {
@@ -118,9 +119,10 @@ function OrderDetail({ orderId, user, onBack }) {
   const [busy, setBusy] = useState(false);
   const [editingItems, setEditingItems] = useState(false);
 
-  const isPrivileged = user.role === "super_admin" || user.role === "admin";
-  const canDiscount = isPrivileged || user.can_discount;
-  const canCancel = isPrivileged || user.can_cancel_order;
+  const perms = usePerms();
+  const canEditOrders = perms.canEdit("orders");
+  const canDiscount = canEditOrders && perms.canAction("discount");
+  const canCancel = canEditOrders && perms.canAction("cancel_order");
 
   async function load() {
     try {
@@ -210,7 +212,7 @@ function OrderDetail({ orderId, user, onBack }) {
 
       {error && <div className="error-box">{error}</div>}
 
-      {order.needs_quantity && !isFinal && (
+      {order.needs_quantity && !isFinal && canEditOrders && (
         <div className="card" style={{ border: "2px solid #E8A020", background: "rgba(232, 160, 32, 0.08)" }}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 هذا طلب تلقائي لزبون موعده اليوم — لسا ما انحدد شو بده</div>
           <button className="btn-primary" disabled={busy} onClick={() => setEditingItems(true)}>
@@ -248,7 +250,7 @@ function OrderDetail({ orderId, user, onBack }) {
 
       {order.notes && <p className="text-secondary">📝 {order.notes}</p>}
 
-      {!isFinal && (
+      {!isFinal && canEditOrders && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
           <button className="btn-secondary" disabled={busy} onClick={() => setEditingItems(true)}>
             ✏️ تعديل محتوى الطلب
@@ -272,7 +274,7 @@ function OrderDetail({ orderId, user, onBack }) {
         </div>
       )}
 
-      {(order.status === "POSTPONED" || order.status === "FAILED") && (
+      {(order.status === "POSTPONED" || order.status === "FAILED") && canEditOrders && (
         <button className="btn-primary" style={{ marginTop: 10 }} disabled={busy} onClick={() => withBusy(() => api.reactivateOrder(order.id))}>
           إعادة الطلب لقائمة التوزيع
         </button>

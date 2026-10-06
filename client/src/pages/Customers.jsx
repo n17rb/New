@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { FiUserPlus, FiSearch, FiUpload } from "react-icons/fi";
+import { usePerms, ViewOnlyNote } from "../auth.jsx";
+import { FiUserPlus, FiSearch, FiUpload, FiTool, FiMapPin, FiHash } from "react-icons/fi";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
 
 export default function Customers({ user }) {
@@ -17,9 +18,11 @@ export default function Customers({ user }) {
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState("");
   const [renumbering, setRenumbering] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const navigate = useNavigate();
 
-  const canAdd = ["super_admin", "admin", "data_entry", "driver"].includes(user.role);
+  const perms = usePerms();
+  const canAdd = perms.canEdit("customers");
 
   async function handleRenumber() {
     if (!confirm("هذا الإجراء يعيد ترقيم كل العملاء من ٠٠٠٠٠١ بالتتابع حسب تاريخ الإضافة. متأكد؟")) return;
@@ -116,29 +119,40 @@ export default function Customers({ user }) {
           )}
 
           {canAdd && (
-            <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => setShowAddForm(true)}>
-              <FiUserPlus /> زبون جديد
-            </button>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button className="btn-primary icon-row" style={{ justifyContent: "center", flex: 1 }} onClick={() => setShowAddForm(true)}>
+                <FiUserPlus aria-hidden="true" /> زبون جديد
+              </button>
+              <button
+                className="btn-secondary icon-row"
+                style={{ width: "auto", padding: "0 16px", justifyContent: "center" }}
+                aria-expanded={showTools}
+                onClick={() => setShowTools(!showTools)}
+              >
+                <FiTool aria-hidden="true" /> أدوات
+              </button>
+            </div>
           )}
 
-          {canAdd && (
-            <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => setShowImportForm(true)}>
-              <FiUpload /> استيراد عملاء دفعة وحدة
-            </button>
-          )}
-
-          {canAdd && (
-            <button className="btn-secondary" style={{ marginBottom: 16, fontSize: "0.85rem" }} disabled={fixing} onClick={handleFixLocations}>
-              {fixing ? "جاري الإصلاح..." : "🔧 إصلاح مواقع العملاء القدامى الناقصة"}
-            </button>
+          {canAdd && showTools && (
+            <div className="list-group">
+              <button className="list-row" onClick={() => setShowImportForm(true)}>
+                <span className="list-icon"><FiUpload aria-hidden="true" /></span>
+                <span className="list-text"><span className="list-title">استيراد عملاء دفعة وحدة</span></span>
+              </button>
+              <button className="list-row" disabled={fixing} onClick={handleFixLocations}>
+                <span className="list-icon"><FiMapPin aria-hidden="true" /></span>
+                <span className="list-text"><span className="list-title">{fixing ? "جاري الإصلاح..." : "إصلاح مواقع العملاء القدامى"}</span></span>
+              </button>
+              {perms.isOwner && (
+                <button className="list-row" disabled={renumbering} onClick={handleRenumber}>
+                  <span className="list-icon"><FiHash aria-hidden="true" /></span>
+                  <span className="list-text"><span className="list-title">{renumbering ? "جاري إعادة الترقيم..." : "إعادة ترقيم كل العملاء بالتتابع"}</span></span>
+                </button>
+              )}
+            </div>
           )}
           {fixResult && <div className="success-box">{fixResult}</div>}
-
-          {user.role === "super_admin" && (
-            <button className="btn-secondary" style={{ marginBottom: 16, fontSize: "0.85rem" }} disabled={renumbering} onClick={handleRenumber}>
-              {renumbering ? "جاري إعادة الترقيم..." : "🔢 إعادة ترقيم كل العملاء بالتتابع"}
-            </button>
-          )}
 
           {error && <div className="error-box">{error}</div>}
           {loading && <p className="text-secondary">جاري البحث...</p>}

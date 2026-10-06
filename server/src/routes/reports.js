@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requirePerm } from "../permissions.js";
 
 const router = Router();
-router.use(requireAuth, requireRole("super_admin", "admin"));
+router.use(requireAuth, requirePerm("reports", "view"));
 
 function getPeriodStartUtc(period) {
   const now = new Date();

@@ -26,6 +26,10 @@ async function request(path, { method = "GET", body, isFormData = false } = {}) 
   }
 
   if (!res.ok) {
+    // الجلسة انتهت أو الحساب انوقف — التطبيق بيرجع لشاشة الدخول
+    if (res.status === 401 && !path.startsWith("/auth/login")) {
+      window.dispatchEvent(new CustomEvent("auth:expired", { detail: data?.error }));
+    }
     throw new Error(data?.error || "حدث خطأ غير متوقع.");
   }
   return data;
@@ -155,6 +159,9 @@ export const api = {
   testPush: () => request("/push/test", { method: "POST" }),
 
   getReminderSchedule: () => request("/reminders/schedule"),
+  getDashboard: () => request("/dashboard"),
+  getMe: () => request("/auth/me"),
+  getPermissionsMeta: () => request("/auth/permissions-meta"),
   getShopLocation: () => request("/settings/shop-location"),
   setShopLocation: (body) => request("/settings/shop-location", { method: "PUT", body }),
   getCustomerReminder: (customerId) => request(`/reminders/${customerId}`),

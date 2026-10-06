@@ -2,7 +2,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
 import { isPushSupported, refreshPushIfGranted, disablePushForLogout } from "./push.js";
-import { FiBell, FiMoon, FiSun, FiEdit3 } from "react-icons/fi";
+import { FiBell } from "react-icons/fi";
+import { UserContext, canUser } from "./auth.jsx";
+import { LogoMark, Wordmark } from "./components/Logo.jsx";
 
 import Setup from "./pages/Setup.jsx";
 import Login from "./pages/Login.jsx";
@@ -27,6 +29,8 @@ const CustomerGrowth = lazy(() => import("./pages/CustomerGrowth.jsx"));
 const Notes = lazy(() => import("./pages/Notes.jsx"));
 const Users = lazy(() => import("./pages/Users.jsx"));
 import BottomNav from "./components/BottomNav.jsx";
+const More = lazy(() => import("./pages/More.jsx"));
+const ShopSettings = lazy(() => import("./pages/ShopSettings.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
 function prefetchCommonPages() {
@@ -116,15 +120,45 @@ export default function App() {
       .finally(() => setLoadingSetup(false));
   }
 
+  function saveUser(next) {
+    if (next) localStorage.setItem("user", JSON.stringify(next));
+    setUser(next);
+  }
+
+  // تحديث الصلاحيات من السيرفر (لو المدير غيّرها) — بالخلفية
+  function refreshMe() {
+    api.getMe().then(saveUser).catch(() => {});
+  }
+
   useEffect(() => {
     if (user) {
-      // نصحّي السيرفر بالخلفية بدون ما نوقف الشاشة
-      api.setupStatus().catch(() => {});
+      refreshMe();
       prefetchCommonPages();
     } else {
       checkSetup();
     }
   }, []);
+
+  // أي طلب رجع «الجلسة انتهت» بيرجّعنا لشاشة الدخول
+  useEffect(() => {
+    function onExpired() {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setUser(null);
+    }
+    window.addEventListener("auth:expired", onExpired);
+    return () => window.removeEventListener("auth:expired", onExpired);
+  }, []);
+
+  // كل ما يرجع المستخدم للتطبيق منحدّث صلاحياته
+  useEffect(() => {
+    if (!user) return;
+    function onVisible() {
+      if (document.visibilityState === "visible") refreshMe();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -160,7 +194,7 @@ export default function App() {
     poll();
     const interval = setInterval(poll, 15000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user?.id]);
 
   async function handleLogout() {
     await disablePushForLogout();
@@ -170,7 +204,7 @@ export default function App() {
   }
 
   if (loadingSetup) {
-    return <div className="centered-screen">جاري التحميل...</div>;
+    return <SplashScreen />;
   }
 
   if (connectionError) {
@@ -178,93 +212,118 @@ export default function App() {
       <div className="centered-screen">
         <div style={{ width: "100%", maxWidth: 380 }}>
           <div className="error-box">
-            تعذّر الاتصال بالسيرفر: {connectionError}
-            <br /><br />
-            تأكد أن رابط الـ API بملف <code>src/api.js</code> صحيح ويشير لخدمة الـ Backend الصحيحة على Render، وأن السيرفر شغّال (Live).
+            ما قدرنا نوصل للسيرفر: {connectionError}
+            <br />
+            ممكن السيرفر نايم — جرّب كمان مرة بعد نص دقيقة.
           </div>
-          <button className="btn-primary" onClick={checkSetup}>إعادة المحاولة</button>
+          <button className="btn-primary" onClick={checkSetup}>جرّب مرة ثانية</button>
         </div>
       </div>
     );
   }
 
   if (needsSetup) {
-    return <Setup onDone={(u) => { setUser(u); setNeedsSetup(false); }} />;
+    return <Setup onDone={(u) => { saveUser(u); setNeedsSetup(false); }} />;
   }
 
   if (!user) {
-    return <Login onLoggedIn={setUser} />;
+    return <Login onLoggedIn={saveUser} />;
   }
 
-  const isPrivileged = user.role === "super_admin" || user.role === "admin";
-  const isSuperAdmin = user.role === "super_admin";
-  const isDriver = user.role === "driver";
-  const canSeeProducts = isPrivileged || user.role === "data_entry";
+  // حساب قديم ما معه صلاحيات محفوظة — منستنى أول تحديث من السيرفر
+  if (!user.permissions) {
+    return <PermissionsLoader onLoaded={saveUser} />;
+  }
+
+  const can = (section, level = "view") => canUser(user, section, level);
+  const isOwner = user.role === "super_admin";
+  const canCustomers = can("customers") || can("orders") || can("delivery", "edit");
+  const canTrip = can("delivery", "edit") || can("trips");
+  const home = can("dashboard") ? "/" : canTrip ? "/trip" : canCustomers ? "/customers" : can("orders") ? "/orders" : "/more";
 
   return (
-    <div className="app-shell">
-      <TopBar user={user} isPrivileged={isPrivileged} unreadCount={unreadCount} darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />
+    <UserContext.Provider value={user}>
+      <div className="app-shell">
+        <TopBar unreadCount={unreadCount} />
 
-      <Suspense fallback={<PageLoading />}>
-      <Routes>
-        <Route path="/" element={isDriver ? <Navigate to="/customers" replace /> : <Dashboard user={user} />} />
-        <Route path="/customers" element={<Customers user={user} />} />
-        <Route path="/customers/:id" element={<CustomerDetail user={user} />} />
-        <Route path="/orders" element={<Orders user={user} />} />
-        <Route path="/trip" element={<Trip user={user} />} />
-        <Route path="/notes" element={<Notes />} />
-        {canSeeProducts && <Route path="/products" element={<Products user={user} />} />}
-        {isPrivileged && <Route path="/driver-balances" element={<DriverBalances />} />}
-        {isPrivileged && <Route path="/reports" element={<Reports />} />}
-        {isPrivileged && <Route path="/cash" element={<Cash />} />}
-        {isPrivileged && <Route path="/overdue-customers" element={<OverdueCustomers />} />}
-        {isPrivileged && <Route path="/driver-performance" element={<DriverPerformance />} />}
-        {isPrivileged && <Route path="/customers-map" element={<CustomersMap />} />}
-        <Route path="/notifications" element={<Notifications />} />
-        {isPrivileged && <Route path="/trip-archive" element={<TripArchive />} />}
-        {isPrivileged && <Route path="/customer-growth" element={<CustomerGrowth />} />}
-        {isSuperAdmin && <Route path="/activity-log" element={<ActivityLog />} />}
-        {isSuperAdmin && <Route path="/backup" element={<Backup />} />}
-        {isDriver && <Route path="/my-balance" element={<MyBalance user={user} />} />}
-        {isSuperAdmin && <Route path="/users" element={<Users />} />}
-        <Route path="*" element={<Navigate to={isDriver ? "/customers" : "/"} replace />} />
-      </Routes>
-      </Suspense>
+        <Suspense fallback={<PageLoading />}>
+          <Routes>
+            <Route path="/" element={can("dashboard") ? <Dashboard user={user} /> : <Navigate to={home} replace />} />
+            {canCustomers && <Route path="/customers" element={<Customers user={user} />} />}
+            {canCustomers && <Route path="/customers/:id" element={<CustomerDetail user={user} />} />}
+            {can("orders") && <Route path="/orders" element={<Orders user={user} />} />}
+            {canTrip && <Route path="/trip" element={<Trip user={user} />} />}
+            <Route path="/notes" element={<Notes />} />
+            {can("products") && <Route path="/products" element={<Products user={user} />} />}
+            {can("driver_balances") && <Route path="/driver-balances" element={<DriverBalances />} />}
+            {can("reports") && <Route path="/reports" element={<Reports />} />}
+            {can("cash") && <Route path="/cash" element={<Cash />} />}
+            {can("reports") && <Route path="/overdue-customers" element={<OverdueCustomers />} />}
+            {can("reports") && <Route path="/driver-performance" element={<DriverPerformance />} />}
+            {can("reports") && <Route path="/customers-map" element={<CustomersMap />} />}
+            <Route path="/notifications" element={<Notifications />} />
+            {can("trips") && <Route path="/trip-archive" element={<TripArchive />} />}
+            {can("reports") && <Route path="/customer-growth" element={<CustomerGrowth />} />}
+            {can("activity_log") && <Route path="/activity-log" element={<ActivityLog />} />}
+            {can("backup") && <Route path="/backup" element={<Backup />} />}
+            {can("delivery", "edit") && <Route path="/my-balance" element={<MyBalance user={user} />} />}
+            {can("settings") && <Route path="/settings" element={<ShopSettings />} />}
+            {isOwner && <Route path="/users" element={<Users />} />}
+            <Route path="/more" element={<More darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />} />
+            <Route path="*" element={<Navigate to={home} replace />} />
+          </Routes>
+        </Suspense>
 
-      <BottomNav role={user.role} />
+        <BottomNav />
+      </div>
+    </UserContext.Provider>
+  );
+}
+
+function SplashScreen() {
+  return (
+    <div className="login-screen">
+      <div className="login-hero" style={{ flex: 1, justifyContent: "center", paddingBottom: 90 }}>
+        <LogoMark size={72} color="#fff" strokeWidth={3} />
+        <div style={{ marginTop: 16 }}><Wordmark light size="lg" /></div>
+      </div>
     </div>
   );
 }
 
-function TopBar({ isPrivileged, unreadCount, darkMode, setDarkMode, onLogout }) {
+function PermissionsLoader({ onLoaded }) {
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api.getMe().then(onLoaded).catch((err) => setError(err.message));
+  }, []);
+  if (error) {
+    return (
+      <div className="centered-screen">
+        <div style={{ width: "100%", maxWidth: 380 }}>
+          <div className="error-box">{error}</div>
+          <button className="btn-primary" onClick={() => window.location.reload()}>جرّب مرة ثانية</button>
+        </div>
+      </div>
+    );
+  }
+  return <SplashScreen />;
+}
+
+function TopBar({ unreadCount }) {
   const navigate = useNavigate();
 
   return (
-    <div className="top-bar">
-      <strong>جوهرة الرابية</strong>
-      <div className="icon-row">
-        <button className="icon-btn" onClick={() => navigate("/notes")} title="ملاحظاتي">
-          <FiEdit3 size={16} />
+    <header className="top-bar">
+      <button className="brand" onClick={() => navigate("/")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="الرئيسية">
+        <LogoMark size={34} color="#fff" />
+        <Wordmark light />
+      </button>
+      <div className="top-actions">
+        <button className="top-icon" onClick={() => navigate("/notifications")} aria-label="الإشعارات والمواعيد">
+          <FiBell size={19} />
+          {unreadCount > 0 && <span className="top-badge tabular-num">{unreadCount > 99 ? "99+" : unreadCount}</span>}
         </button>
-        <button className="icon-btn" onClick={() => setDarkMode(!darkMode)} title="الوضع الليلي">
-          {darkMode ? <FiSun size={16} /> : <FiMoon size={16} />}
-        </button>
-        {(
-          <button className="icon-btn" style={{ position: "relative" }} onClick={() => navigate("/notifications")} title="الإشعارات">
-            <FiBell size={16} />
-            {unreadCount > 0 && (
-              <span style={{
-                position: "absolute", top: -4, left: -4, background: "var(--urgent)", color: "#fff",
-                borderRadius: "50%", width: 16, height: 16, fontSize: "0.65rem",
-                display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
-              }}>
-                {unreadCount}
-              </span>
-            )}
-          </button>
-        )}
-        <button className="btn-danger-text" onClick={onLogout}>خروج</button>
       </div>
-    </div>
+    </header>
   );
 }

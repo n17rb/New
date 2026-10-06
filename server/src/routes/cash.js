@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { query, logActivity } from "../db.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { gate } from "../permissions.js";
 
 const router = Router();
-router.use(requireAuth, requireRole("super_admin", "admin"));
+router.use(requireAuth, gate("cash"));
 
 // نرجّع التاريخ كنص YYYY-MM-DD عشان ما يتزحلق يوم بسبب فرق التوقيت
 const ENTRY_COLUMNS = `id, period_id, to_char(entry_date, 'YYYY-MM-DD') AS entry_date,

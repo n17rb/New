@@ -1,7 +1,8 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../db.js";
-import { signToken } from "../middleware/auth.js";
+import { signToken, requireAuth } from "../middleware/auth.js";
+import { effectivePermissions, SECTIONS, ACTIONS, TEMPLATES } from "../permissions.js";
 
 const router = Router();
 
@@ -29,19 +30,27 @@ router.post("/login", async (req, res) => {
   }
 
   const token = signToken(user);
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      full_name: user.full_name,
-      role: user.role,
-      can_discount: user.can_discount,
-      can_delete_customer: user.can_delete_customer,
-      can_edit_product_price: user.can_edit_product_price,
-      can_cancel_order: user.can_cancel_order,
-    },
-  });
+  res.json({ token, user: publicUser(user) });
+});
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    full_name: user.full_name,
+    role: user.role,
+    permissions: user._perms || effectivePermissions(user),
+  };
+}
+
+// بيانات المستخدم الحالي وصلاحياته الحالية — التطبيق بيسأل عنها عند الفتح
+router.get("/me", requireAuth, (req, res) => {
+  res.json(publicUser(req.user));
+});
+
+// تعريف الأقسام والإجراءات والقوالب — لشاشة الصلاحيات
+router.get("/permissions-meta", requireAuth, (req, res) => {
+  res.json({ sections: SECTIONS, actions: ACTIONS, templates: TEMPLATES });
 });
 
 export default router;

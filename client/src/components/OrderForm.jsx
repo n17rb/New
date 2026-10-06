@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { usePerms } from "../auth.jsx";
 
 export default function OrderForm({ customer, user, onClose, onCreated }) {
+  const perms = usePerms();
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [priority, setPriority] = useState("normal");
@@ -72,7 +74,7 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
         <p className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>
           الإجمالي: {Number(success.final_total).toFixed(2)} JD
         </p>
-        {user?.role === "driver" && (
+        {perms.canEdit("delivery") && (
           <AddToActiveTripButton orderId={success.id} onDone={onCreated} />
         )}
         <button className="btn-primary" onClick={onCreated}>تم</button>

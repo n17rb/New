@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiPlus, FiEdit2 } from "react-icons/fi";
 
 export default function Products({ user }) {
-  const canManage = user.role === "super_admin" || user.role === "admin" || user.can_edit_product_price;
+  const perms = usePerms();
+  const canManage = perms.canEdit("products") || perms.canAction("edit_prices");
 
   const [products, setProducts] = useState([]);
   const [error, setError] = useState("");
@@ -60,9 +62,9 @@ export default function Products({ user }) {
     <div className="page">
       <h1 className="title-lg">المنتجات والأسعار</h1>
       {error && <div className="error-box">{error}</div>}
-      {!canManage && <p className="text-secondary" style={{ marginBottom: 14 }}>عرض فقط — التعديل متاح للمدير ومساعد المدير.</p>}
+      <ViewOnlyNote section="products" />
 
-      {canManage && (
+      {perms.canEdit("products") && (
         <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 16 }} onClick={() => setShowAdd(!showAdd)}>
           {showAdd ? "إغلاق" : (<><FiPlus /> إضافة منتج جديد</>)}
         </button>
@@ -104,7 +106,7 @@ export default function Products({ user }) {
               )}
             </div>
 
-            {canManage && p.status !== "archived" && (
+            {perms.canEdit("products") && p.status !== "archived" && (
               <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
                 <button className="btn-danger-text" onClick={() => toggleStatus(p)}>
                   {p.status === "active" ? "إيقاف" : "تفعيل"}
