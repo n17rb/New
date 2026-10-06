@@ -59,6 +59,10 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request(`/customers${qs ? `?${qs}` : ""}`);
   },
+  searchCustomers: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/customers/search?${qs}`);
+  },
   getCustomer: (id) => request(`/customers/${id}`),
   createCustomer: (body) => request("/customers", { method: "POST", body }),
   updateCustomer: (id, body) => request(`/customers/${id}`, { method: "PUT", body }),

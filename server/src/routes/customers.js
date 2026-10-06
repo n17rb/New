@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
 import { normalizePhone, formatPhoneForDisplay } from "../utils/phone.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
+import { parseSearch, buildSearchSql } from "../utils/smartSearch.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -45,28 +46,57 @@ async function nextAutoSequentialNumber() {
 // قائمة العملاء — بترجع كل العملاء النشطين بدون حد أقصى،
 // وكل عميل مرة وحدة بس (حتى لو إله أكثر من موقع محفوظ)
 const CUSTOMER_LIST_SELECT = `
-  SELECT c.*, l.region_id, l.maps_url, l.latitude, l.longitude, r.name AS region_name
+  SELECT c.*, l.region_id, l.maps_url, l.latitude, l.longitude, r.name AS region_name,
+         l.street, l.building_number, l.building_name, l.floor, l.apartment
   FROM customers c
   LEFT JOIN LATERAL (
-    SELECT region_id, maps_url, latitude, longitude
-    FROM customer_locations
+    SELECT * FROM customer_locations
     WHERE customer_id = c.id
     ORDER BY id ASC
     LIMIT 1
   ) l ON true
   LEFT JOIN regions r ON r.id = l.region_id`;
 
+// بحث ذكي: «عمارة 5 طابق ثاني»، «شارع الكندي»، «أبو أحمد الرابية»، «0791»...
+async function smartCustomerSearch(q, regionId) {
+  const regionsResult = await query("SELECT name FROM regions");
+  const parsed = parseSearch(q, regionsResult.rows.map((r) => r.name));
+
+  const conditions = ["c.status = 'active'"];
+  const params = [];
+  if (regionId) {
+    params.push(regionId);
+    conditions.push(`l.region_id = $${params.length}`);
+  }
+
+  const { conds, params: searchParams, rankSql } = buildSearchSql(parsed, params.length + 1);
+  conditions.push(...conds);
+  params.push(...searchParams);
+
+  // لو ما فهمنا ولا شي من النص (رموز مثلًا) — منرجّع ولا نتيجة بدل كل العملاء
+  if (q.trim() && conds.length === 0) return { understood: parsed.understood, results: [] };
+
+  const result = await query(
+    `${CUSTOMER_LIST_SELECT}
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY ${rankSql ? `${rankSql}, ` : ""}c.created_at DESC
+     LIMIT 300`,
+    params
+  );
+  return { understood: parsed.understood, results: result.rows };
+}
+
 router.get("/", async (req, res) => {
   const q = (req.query.q || "").trim();
   const regionId = req.query.region_id;
 
+  if (q) {
+    const { results } = await smartCustomerSearch(q, regionId);
+    return res.json(results);
+  }
+
   const conditions = ["c.status = 'active'"];
   const params = [];
-
-  if (q) {
-    params.push(q);
-    conditions.push(`(c.phone_display LIKE $${params.length} || '%' OR c.sequential_number = $${params.length} OR c.name ILIKE '%' || $${params.length} || '%')`);
-  }
   if (regionId) {
     params.push(regionId);
     conditions.push(`l.region_id = $${params.length}`);
@@ -79,6 +109,12 @@ router.get("/", async (req, res) => {
     params
   );
   res.json(result.rows);
+});
+
+// نفس البحث، بس كمان بيرجّع شو فهم من الكلام (للعرض بالشاشة)
+router.get("/search", async (req, res) => {
+  const q = String(req.query.q || "").slice(0, 120);
+  res.json(await smartCustomerSearch(q, req.query.region_id));
 });
 
 router.get("/count", async (req, res) => {

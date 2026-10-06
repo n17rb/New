@@ -1,9 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiUserPlus, FiSearch, FiUpload, FiTool, FiMapPin, FiHash } from "react-icons/fi";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
+
+// سطر العنوان المختصر: الشارع · عمارة · طابق · شقة
+function withLabel(label, value, alreadyLabeled) {
+  const v = String(value).trim();
+  return alreadyLabeled.test(v) ? v : `${label} ${v}`;
+}
+
+function addressLine(c) {
+  const parts = [];
+  if (c.street) parts.push(c.street);
+  const building = [c.building_number, c.building_name].filter(Boolean).join(" ");
+  if (building) parts.push(withLabel("عمارة", building, /^(عمار|بناي|مبن|ع\s*\d)/));
+  if (c.floor) parts.push(withLabel("طابق", c.floor, /^(طابق|الطابق|ط\s*\d|ط\.)/));
+  if (c.apartment) parts.push(withLabel("شقة", c.apartment, /^(شق|ش\s*\d)/));
+  return parts.join(" · ");
+}
 
 export default function Customers({ user }) {
   const [query, setQuery] = useState("");
@@ -19,6 +35,7 @@ export default function Customers({ user }) {
   const [fixResult, setFixResult] = useState("");
   const [renumbering, setRenumbering] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [understood, setUnderstood] = useState([]);
   const navigate = useNavigate();
 
   const perms = usePerms();
@@ -39,19 +56,34 @@ export default function Customers({ user }) {
     }
   }
 
+  // كل بحث إله رقم — بنعرض نتيجة آخر بحث بس، حتى لو رد قديم وصل متأخر
+  const searchSeq = useRef(0);
+  const debounceRef = useRef(null);
+
   async function search(q, region) {
+    const seq = ++searchSeq.current;
     setLoading(true);
     setError("");
     try {
       const params = {};
-      if (q) params.q = q;
       if (region) params.region_id = region;
-      const result = await api.getCustomers(params);
-      setCustomers(result);
+      let list;
+      if (q.trim()) {
+        params.q = q.trim();
+        const result = await api.searchCustomers(params);
+        if (seq !== searchSeq.current) return;
+        setUnderstood(result.understood || []);
+        list = result.results;
+      } else {
+        list = await api.getCustomers(params);
+        if (seq !== searchSeq.current) return;
+        setUnderstood([]);
+      }
+      setCustomers(list);
     } catch (err) {
-      setError(err.message);
+      if (seq === searchSeq.current) setError(err.message);
     } finally {
-      setLoading(false);
+      if (seq === searchSeq.current) setLoading(false);
     }
   }
 
@@ -64,7 +96,8 @@ export default function Customers({ user }) {
   function handleSearchChange(e) {
     const q = e.target.value;
     setQuery(q);
-    search(q, regionId);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => search(q, regionId), 250);
   }
 
   function handleRegionChange(e) {
@@ -100,7 +133,7 @@ export default function Customers({ user }) {
           <div className="field icon-row">
             <FiSearch style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
             <input
-              placeholder="رقم الهاتف، جزء منه، الاسم، أو الرقم التسلسلي..."
+              placeholder="اسم، تلفون، أو مثلاً: عمارة 5 طابق ثاني"
               value={query}
               onChange={handleSearchChange}
               autoFocus
@@ -155,7 +188,18 @@ export default function Customers({ user }) {
           {fixResult && <div className="success-box">{fixResult}</div>}
 
           {error && <div className="error-box">{error}</div>}
-          {loading && <p className="text-secondary">جاري البحث...</p>}
+          {query.trim() && understood.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", margin: "-4px 0 12px" }} aria-live="polite">
+              <span className="text-secondary" style={{ fontSize: "0.8rem" }}>عم دوّر على:</span>
+              {understood.map((u, i) => (
+                <span key={i} className="badge" style={{ background: "var(--primary-soft)", color: "var(--navy)" }}>
+                  {u.label} {u.value}
+                </span>
+              ))}
+              {!loading && <span className="text-secondary" style={{ fontSize: "0.8rem" }}>· {customers.length} نتيجة</span>}
+            </div>
+          )}
+          {loading && !customers.length && <p className="text-secondary">جاري البحث...</p>}
 
           <div className="card" style={{ padding: 0 }}>
             {customers.length === 0 && !loading && (
@@ -180,6 +224,9 @@ export default function Customers({ user }) {
                       <span>{c.phone_display} · #{c.sequential_number}</span>
                       <BottleTypeBadge type={c.bottle_type} />
                     </div>
+                    {addressLine(c) && (
+                      <div className="text-secondary" style={{ fontSize: "0.8rem", marginTop: 2 }}>{addressLine(c)}</div>
+                    )}
                   </div>
                   {c.region_name && <span className="badge">{c.region_name}</span>}
                 </div>
