@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
-import { BottleTypeBadge } from "../components/BottleType.jsx";
+import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
 
 const STATUS_LABELS = {
   NEW: "جديد",
@@ -97,6 +97,7 @@ export default function Orders({ user }) {
                 #{o.order_number} · {o.customer_name}
                 {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
                 {" "}<BottleTypeBadge type={o.bottle_type} />
+                {" "}<NeedsQuantityBadge order={o} />
               </div>
               <div className="text-secondary tabular-num">{o.customer_phone} · {formatOrderTime(o.created_at)}</div>
             </div>
@@ -209,7 +210,17 @@ function OrderDetail({ orderId, user, onBack }) {
 
       {error && <div className="error-box">{error}</div>}
 
+      {order.needs_quantity && !isFinal && (
+        <div className="card" style={{ border: "2px solid #E8A020", background: "rgba(232, 160, 32, 0.08)" }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 هذا طلب تلقائي لزبون موعده اليوم — لسا ما انحدد شو بده</div>
+          <button className="btn-primary" disabled={busy} onClick={() => setEditingItems(true)}>
+            حدد عدد القوارير
+          </button>
+        </div>
+      )}
+
       <div className="card" style={{ background: "var(--bg)" }}>
+        {order.items.length === 0 && <p className="text-secondary" style={{ margin: 0 }}>لا يوجد منتجات بعد.</p>}
         {order.items.map((item) => (
           <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
             <span>{item.product_name_snapshot} × {item.quantity}</span>

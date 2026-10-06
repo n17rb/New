@@ -3,7 +3,7 @@ import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
-import { BottleTypeBadge } from "../components/BottleType.jsx";
+import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
 
 function formatMinutes(mins) {
   if (mins <= 0) return "أقل من دقيقة";
@@ -415,6 +415,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
                   #{o.order_number} · {o.customer_name}
                   {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
                   {" "}<BottleTypeBadge type={o.bottle_type} />
+                  {" "}<NeedsQuantityBadge order={o} />
                 </div>
                 <div className="text-secondary tabular-num">{Number(o.final_total).toFixed(2)} JD</div>
               </div>
@@ -770,6 +771,62 @@ function DeliveryPaymentForm({ stop, busy, deliverFast, onCancel }) {
   );
 }
 
+// تحديد كمية طلب تلقائي من شاشة التوصيل مباشرة
+function QuickQuantityForm({ stop, onSaved, onCancel }) {
+  const [products, setProducts] = useState([]);
+  const [quantities, setQuantities] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.getProducts()
+      .then((list) => setProducts(list.filter((p) => p.status === "active")))
+      .catch((err) => setError(err.message));
+  }, []);
+
+  function changeQty(id, delta) {
+    setQuantities((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
+  }
+
+  const hasAny = Object.values(quantities).some((q) => q > 0);
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      const items = Object.entries(quantities)
+        .filter(([, q]) => q > 0)
+        .map(([product_id, quantity]) => ({ product_id: Number(product_id), quantity }));
+      await api.updateOrderItems(stop.order_id, items);
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ background: "var(--bg)" }}>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>كم بده {stop.customer_name}؟</div>
+      {error && <div className="error-box">{error}</div>}
+      {products.map((p) => (
+        <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+          <span style={{ fontWeight: 600 }}>{p.name}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button type="button" onClick={() => changeQty(p.id, -1)} style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid var(--border)", background: "#fff", fontSize: "1.1rem" }}>−</button>
+            <span className="tabular-num" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>{quantities[p.id] || 0}</span>
+            <button type="button" onClick={() => changeQty(p.id, 1)} style={{ width: 36, height: 36, borderRadius: 8, border: "none", background: "var(--primary)", color: "#fff", fontSize: "1.1rem" }}>+</button>
+          </div>
+        </div>
+      ))}
+      <button className="btn-primary" style={{ marginTop: 12, marginBottom: 8 }} disabled={!hasAny || saving} onClick={handleSave}>
+        {saving ? "جاري الحفظ..." : "حفظ الكمية"}
+      </button>
+      <button className="btn-secondary" onClick={onCancel}>إلغاء</button>
+    </div>
+  );
+}
+
 function StopCard({ stop, busy, withBusy, deliverFast }) {
   const [showFailMenu, setShowFailMenu] = useState(false);
   const [showPostponeForm, setShowPostponeForm] = useState(false);
@@ -785,6 +842,8 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
   // لو الزبون ما عنده كوبونات يستخدمها: تسليم بضغطة وحدة.
   // غير هيك بتفتح شاشة الدفع (كاش/كوبون).
   const needsPaymentChoice = stop.coupon_balance > 0 && (stop.items || []).some((it) => it.coupon_eligible);
+  const missingQuantity = !stop.items || stop.items.length === 0;
+  const [showQuantityForm, setShowQuantityForm] = useState(false);
 
   function handleDeliverClick() {
     if (needsPaymentChoice) setShowPaymentForm(true);
@@ -817,6 +876,20 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
       <p className="tabular-num text-secondary">#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
 
       <BottleTypeBadge type={stop.bottle_type} large />
+
+      {missingQuantity && !showQuantityForm && (
+        <div className="card" style={{ border: "2px solid #E8A020", background: "rgba(232, 160, 32, 0.08)" }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 طلب تلقائي — لسا ما انحدد عدد القوارير</div>
+          <button className="btn-primary" onClick={() => setShowQuantityForm(true)}>حدد الكمية</button>
+        </div>
+      )}
+      {missingQuantity && showQuantityForm && (
+        <QuickQuantityForm
+          stop={stop}
+          onCancel={() => setShowQuantityForm(false)}
+          onSaved={() => withBusy(async () => { setShowQuantityForm(false); })}
+        />
+      )}
 
       {stop.items && stop.items.length > 0 && (
         <div className="card" style={{ background: "var(--bg)" }}>
@@ -856,8 +929,8 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
 
       <button
         className="btn-primary icon-row"
-        style={{ justifyContent: "center", marginBottom: 10, background: "var(--success)" }}
-        disabled={busy}
+        style={{ justifyContent: "center", marginBottom: 10, background: "var(--success)", opacity: missingQuantity ? 0.5 : 1 }}
+        disabled={busy || missingQuantity}
         onClick={handleDeliverClick}
       >
         <FiCheckCircle /> تم التسليم

@@ -183,6 +183,13 @@ router.put("/:id/items", async (req, res) => {
     const productsResult = await client.query(`SELECT * FROM products WHERE id = ANY($1::int[])`, [productIds]);
     const productsMap = Object.fromEntries(productsResult.rows.map((p) => [p.id, p]));
 
+    // سعر الزبون الخاص (لو إله) — زي إنشاء الطلب بالضبط
+    const customPricesResult = await client.query(
+      `SELECT product_id, custom_price FROM customer_product_prices WHERE customer_id = $1 AND product_id = ANY($2::int[])`,
+      [order.customer_id, productIds]
+    );
+    const customPricesMap = Object.fromEntries(customPricesResult.rows.map((p) => [p.product_id, p.custom_price]));
+
     let subtotal = 0;
     const preparedItems = [];
     for (const item of items) {
@@ -190,13 +197,14 @@ router.put("/:id/items", async (req, res) => {
       if (!product) throw new Error(`منتج غير موجود (ID: ${item.product_id}).`);
       const quantity = Number(item.quantity);
       if (!quantity || quantity <= 0) continue;
-      const lineTotal = Number(product.unit_price) * quantity;
+      const unitPrice = customPricesMap[item.product_id] != null ? Number(customPricesMap[item.product_id]) : Number(product.unit_price);
+      const lineTotal = unitPrice * quantity;
       subtotal += lineTotal;
       preparedItems.push({
         product_id: product.id,
         product_name_snapshot: product.name,
         quantity,
-        unit_price_snapshot: product.unit_price,
+        unit_price_snapshot: unitPrice,
         line_total: lineTotal,
       });
     }
@@ -214,7 +222,7 @@ router.put("/:id/items", async (req, res) => {
     }
 
     const updatedOrderResult = await client.query(
-      `UPDATE orders SET subtotal = $1, final_total = $2, updated_at = now() WHERE id = $3 RETURNING *`,
+      `UPDATE orders SET subtotal = $1, final_total = $2, needs_quantity = false, updated_at = now() WHERE id = $3 RETURNING *`,
       [subtotal, finalTotal, order.id]
     );
 

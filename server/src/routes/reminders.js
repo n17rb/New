@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendPushToUser } from "../utils/push.js";
 
@@ -41,7 +41,8 @@ router.get("/schedule", async (req, res) => {
             c.sequential_number, c.bottle_type,
             cr.days_of_week, cr.notes,
             r.name AS region_name,
-            today_order.status AS today_order_status
+            today_order.status AS today_order_status,
+            COALESCE(today_order.needs_quantity, false) AS today_order_needs_quantity
      FROM customer_reminders cr
      JOIN customers c ON c.id = cr.customer_id
      LEFT JOIN LATERAL (
@@ -49,7 +50,7 @@ router.get("/schedule", async (req, res) => {
      ) l ON true
      LEFT JOIN regions r ON r.id = l.region_id
      LEFT JOIN LATERAL (
-       SELECT o.status FROM orders o
+       SELECT o.status, o.needs_quantity FROM orders o
        WHERE o.customer_id = c.id
          AND (o.created_at AT TIME ZONE 'Asia/Amman')::date = $1::date
          AND o.status <> 'CANCELLED'
@@ -113,7 +114,7 @@ export async function checkAndFireReminders() {
   if (hour < REMINDER_HOUR) return;
 
   const dueResult = await query(
-    `SELECT cr.customer_id, c.name AS customer_name, c.bottle_type
+    `SELECT cr.customer_id, cr.notes, c.name AS customer_name, c.bottle_type
      FROM customer_reminders cr
      JOIN customers c ON c.id = cr.customer_id
      WHERE $1 = ANY(cr.days_of_week) AND c.status = 'active'`,
@@ -132,10 +133,20 @@ export async function checkAndFireReminders() {
   }
   if (fresh.length === 0) return;
 
+  // طلب تلقائي فاضي لكل زبون موعده اليوم (إلا إذا عنده طلب مفتوح أصلًا)
+  for (const row of fresh) {
+    row.autoOrder = await createReminderOrder(row).catch((e) => {
+      console.error("auto order error:", e.message);
+      return null;
+    });
+  }
+
   const usersResult = await query("SELECT id FROM users WHERE status = 'active'");
 
   for (const row of fresh) {
-    const message = `📅 اليوم موعد تسليم الزبون ${row.customer_name}`;
+    const message = row.autoOrder
+      ? `📅 اليوم موعد تسليم الزبون ${row.customer_name} — انضاف طلبه تلقائيًا، حدد عدد القوارير`
+      : `📅 اليوم موعد تسليم الزبون ${row.customer_name}`;
     for (const u of usersResult.rows) {
       await query(
         `INSERT INTO notifications (type, message, related_customer_id, target_user_id) VALUES ('REMINDER', $1, $2, $3)`,
@@ -146,13 +157,46 @@ export async function checkAndFireReminders() {
 
   // إشعار جهاز واحد لكل شخص بيجمع كل زباين اليوم
   const names = fresh.map((r) => r.customer_name || "بدون اسم");
-  const body = fresh.length === 1
+  const autoCount = fresh.filter((r) => r.autoOrder).length;
+  let body = fresh.length === 1
     ? `اليوم موعد تسليم الزبون ${names[0]}`
     : `اليوم موعد تسليم ${fresh.length} زباين: ${listNames(names)}`;
+  if (autoCount > 0) body += ` — انضاف ${autoCount === 1 ? "طلبه" : `${autoCount} طلبات`} تلقائيًا، حدد الكمية`;
   for (const u of usersResult.rows) {
     sendPushToUser(u.id, { title: "📅 مواعيد تسليم اليوم", body, url: "/notifications?tab=schedule", tag: `schedule-${date}` })
       .catch((e) => console.error("push error:", e.message));
   }
+}
+
+// ينشئ طلب فاضي (بدون كمية) لزبون موعده اليوم.
+// ما بينشئ إشي إذا الزبون عنده طلب مفتوح (جديد/جاهز/بالطريق/مؤجل).
+async function createReminderOrder(row) {
+  const open = await query(
+    `SELECT id FROM orders WHERE customer_id = $1 AND status IN ('NEW','READY','IN_ROUTE','POSTPONED') LIMIT 1`,
+    [row.customer_id]
+  );
+  if (open.rows[0]) return null;
+
+  const seq = await query("SELECT nextval('order_seq') AS n");
+  const orderNumber = String(seq.rows[0].n).padStart(6, "0");
+  const notes = ["📅 طلب تلقائي (موعد ثابت)", row.notes].filter(Boolean).join(" — ");
+
+  const inserted = await query(
+    `INSERT INTO orders (order_number, customer_id, status, priority, subtotal, final_total, notes, auto_from_reminder, needs_quantity)
+     VALUES ($1, $2, 'NEW', 'normal', 0, 0, $3, true, true)
+     RETURNING id`,
+    [orderNumber, row.customer_id, notes]
+  );
+  const orderId = inserted.rows[0].id;
+
+  await logActivity({
+    userId: null,
+    action: "AUTO_CREATE_REMINDER_ORDER",
+    recordType: "order",
+    recordId: orderId,
+    newValue: { order_number: orderNumber, customer_id: row.customer_id },
+  });
+  return orderId;
 }
 
 // بتنادى من طلبات الإشعارات — بتضمن إن الفحص بيصير حتى لو السيرفر كان نايم وقت الفحص كل ساعة

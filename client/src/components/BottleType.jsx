@@ -92,3 +92,23 @@ export function BottleTypeBadge({ type, large = false }) {
     </span>
   );
 }
+
+// شارة الطلب التلقائي اللي لسا ما انحددت كميته
+export function NeedsQuantityBadge({ order }) {
+  if (!order) return null;
+  if (order.needs_quantity) {
+    return (
+      <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 999, background: "rgba(232, 160, 32, 0.15)", color: "#B26B00", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap" }}>
+        ⚠️ حدد الكمية
+      </span>
+    );
+  }
+  if (order.auto_from_reminder) {
+    return (
+      <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 999, background: "var(--bg)", fontSize: "0.72rem", whiteSpace: "nowrap" }} className="text-secondary">
+        📅 تلقائي
+      </span>
+    );
+  }
+  return null;
+}

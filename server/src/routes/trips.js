@@ -123,6 +123,7 @@ async function insertNotification({ type, message, customerId, tripId }) {
 async function buildTripDetailResponse(trip, requestingUser) {
   const stopsResult = await query(
     `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes, o.requested_time,
+            o.needs_quantity, o.auto_from_reminder,
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance, c.bottle_type,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
             l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url
@@ -463,6 +464,9 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     [stop.order_id]
   );
   const items = itemsResult.rows;
+  if (items.length === 0) {
+    return res.status(400).json({ error: "هذا الطلب ما إله كمية — حدد عدد القوارير قبل التسليم." });
+  }
 
   const paymentMap = {};
   (item_payments || []).forEach((p) => { paymentMap[p.item_id] = Number(p.coupon_qty) || 0; });

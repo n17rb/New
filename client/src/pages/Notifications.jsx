@@ -112,8 +112,9 @@ function DevicePushCard() {
 
 const DAY_LABELS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-function todayStatusLabel(status) {
+function todayStatusLabel(status, needsQuantity) {
   if (!status) return { text: "لسا ما انطلب", color: "var(--warning)" };
+  if (needsQuantity && status !== "DELIVERED") return { text: "⚠️ انضاف تلقائي — حدد الكمية", color: "#B26B00" };
   if (status === "DELIVERED") return { text: "تم التسليم ✓", color: "var(--success)" };
   if (status === "IN_ROUTE") return { text: "بالطريق 🚚", color: "var(--primary, #0094FF)" };
   if (status === "FAILED") return { text: "تعذّر التسليم", color: "var(--urgent)" };
@@ -121,7 +122,7 @@ function todayStatusLabel(status) {
 }
 
 function ScheduleRow({ c, highlight, onOpen }) {
-  const status = highlight ? todayStatusLabel(c.today_order_status) : null;
+  const status = highlight ? todayStatusLabel(c.today_order_status, c.today_order_needs_quantity) : null;
   return (
     <div
       role="button"
@@ -204,7 +205,7 @@ function ScheduleTab() {
       ))}
 
       <p className="text-secondary" style={{ fontSize: "0.8rem" }}>
-        كل يوم الساعة ٧ الصبح بيوصل إشعار لكل الحسابات بزباين اليوم. اضغط على أي زبون لتفتح صفحته وتسجّل طلبه.
+        كل يوم الساعة ٧ الصبح بينضاف طلب تلقائي لكل زبون موعده اليوم (بدون كمية)، وبيوصل إشعار لكل الحسابات. افتح الطلب من «الطلبات» وحدد عدد القوارير.
       </p>
     </>
   );

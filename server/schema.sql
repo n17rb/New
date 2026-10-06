@@ -367,3 +367,7 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS end_longitude DOUBLE PRECISION;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS route_mode VARCHAR(20);
 -- التوقف اللي أجّله السائق بيضل بآخر الرحلة حتى لو انعاد ترتيب المسار
 ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS postponed_at TIMESTAMPTZ;
+
+-- طلبات بتنضاف لحالها لزباين المواعيد الثابتة — الكمية بيحددها المحل بعدين
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS auto_from_reminder BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS needs_quantity BOOLEAN NOT NULL DEFAULT false;
