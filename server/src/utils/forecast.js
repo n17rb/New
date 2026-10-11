@@ -98,10 +98,11 @@ function dueLabel(lateDays) {
 
 // ---------- الإعدادات ----------
 export async function getForecastSettings() {
-  const r = await query("SELECT key, value FROM app_settings WHERE key IN ('forecast_min_orders','forecast_reset_at')");
+  const r = await query("SELECT key, value FROM app_settings WHERE key IN ('forecast_min_orders','forecast_reset_at','forecast_learn_from')");
   const map = Object.fromEntries(r.rows.map((x) => [x.key, x.value]));
   const minOrders = Math.min(10, Math.max(2, Number(map.forecast_min_orders) || 3));
-  return { min_orders: minOrders, reset_at: map.forecast_reset_at || null };
+  // learn_from: النظام بيتعلم بس من الطلبات اللي بعد هالتاريخ (عشان طلبات التجربة القديمة ما تخرب التوقع)
+  return { min_orders: minOrders, reset_at: map.forecast_reset_at || null, learn_from: map.forecast_learn_from || null };
 }
 
 // ---------- الحساب ----------
@@ -208,6 +209,11 @@ export async function computeForecasts({ customerId = null, fresh = false } = {}
   const resetAt = settings.reset_at ? new Date(settings.reset_at) : null;
 
   const params = [];
+  let learnFilter = "";
+  if (settings.learn_from) {
+    params.push(settings.learn_from);
+    learnFilter = `AND o.created_at >= $${params.length}::timestamptz`;
+  }
   let customerFilter = "";
   if (customerId) {
     params.push(customerId);
@@ -222,7 +228,7 @@ export async function computeForecasts({ customerId = null, fresh = false } = {}
        JOIN customers c ON c.id = o.customer_id AND c.status = 'active'
        JOIN order_items oi ON oi.order_id = o.id
        LEFT JOIN products p ON p.id = oi.product_id
-       WHERE o.status = 'DELIVERED' AND o.created_at > now() - interval '400 days' ${customerFilter}
+       WHERE o.status = 'DELIVERED' AND o.created_at > now() - interval '400 days' ${learnFilter} ${customerFilter}
        ORDER BY o.customer_id, o.created_at, o.id`,
       params
     ),
@@ -230,13 +236,13 @@ export async function computeForecasts({ customerId = null, fresh = false } = {}
       `SELECT c.id, c.name, c.phone_display, c.phone_normalized, c.sequential_number, c.bottle_type,
               c.coupon_balance, c.debt_balance, c.forecast_disabled, c.forecast_snooze_until::text AS forecast_snooze_until,
               r.name AS region_name,
-              EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.status = ANY($${params.length + 1}::text[])) AS has_open_order,
+              EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.status = ANY($1::text[])) AS has_open_order,
               EXISTS (SELECT 1 FROM customer_reminders cr WHERE cr.customer_id = c.id) AS has_schedule
        FROM customers c
        LEFT JOIN LATERAL (SELECT region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id LIMIT 1) l ON true
        LEFT JOIN regions r ON r.id = l.region_id
-       WHERE c.status = 'active' ${customerFilter}`,
-      [...params, OPEN_STATUSES]
+       WHERE c.status = 'active' ${customerId ? "AND c.id = $2" : ""}`,
+      customerId ? [OPEN_STATUSES, customerId] : [OPEN_STATUSES]
     ),
     query("SELECT id, name, (is_returnable OR coupon_eligible) AS is_water FROM products"),
   ]);

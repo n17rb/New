@@ -88,6 +88,28 @@ router.post("/reset", async (req, res) => {
   res.json({ reset_at: at, cleared: before.late.length + before.lost.length });
 });
 
+// «ابدأ التعلم من جديد»: النظام بينسى كل الطلبات القديمة (مثل طلبات التجربة)
+// وبيتعلم عادة كل زبون بس من الطلبات اللي من هلّق وطالع.
+router.post("/relearn", async (req, res) => {
+  if (!canConfigure(req.user)) return res.status(403).json({ error: "هاد بده صلاحية تعديل إعدادات المحل." });
+  const at = new Date().toISOString();
+  await query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('forecast_learn_from', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+    [at]
+  );
+  invalidateForecastCache();
+  await logActivity({ userId: req.user.id, action: "FORECAST_RELEARN", recordType: "settings", recordId: null, newValue: { learn_from: at } });
+  res.json({ learn_from: at });
+});
+
+router.delete("/relearn", async (req, res) => {
+  if (!canConfigure(req.user)) return res.status(403).json({ error: "ما عندك صلاحية." });
+  await query("DELETE FROM app_settings WHERE key = 'forecast_learn_from'");
+  invalidateForecastCache();
+  res.json({ ok: true });
+});
+
 router.delete("/reset", async (req, res) => {
   if (!canConfigure(req.user)) return res.status(403).json({ error: "ما عندك صلاحية." });
   await query("DELETE FROM app_settings WHERE key = 'forecast_reset_at'");

@@ -487,3 +487,9 @@ SELECT 'forecast_reset_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24
 WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'forecast_init')
 ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('forecast_init', 'done') ON CONFLICT (key) DO NOTHING;
+-- يوسف طلب (١٢ أكتوبر ٢٠٢٦): التوقعات تتعلم من جديد — طلبات التجربة القديمة ما بتنحسب
+INSERT INTO app_settings (key, value)
+SELECT 'forecast_learn_from', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'forecast_learn_init')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+INSERT INTO app_settings (key, value) VALUES ('forecast_learn_init', 'done') ON CONFLICT (key) DO NOTHING;

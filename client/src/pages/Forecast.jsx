@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiRotateCcw, FiInfo } from "react-icons/fi";
+import { FiRotateCcw, FiInfo, FiRefreshCw } from "react-icons/fi";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
 import { ForecastRow, qtyWord } from "../components/Forecast.jsx";
@@ -68,6 +68,21 @@ export default function Forecast() {
     }
   }
 
+  async function relearn() {
+    if (!confirm("ابدأ التعلم من جديد؟\nالنظام رح ينسى كل الطلبات القديمة (مثل طلبات التجربة)، ويتعلم عادة كل زبون بس من الطلبات اللي من هلّق وطالع.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.relearnForecast();
+      setMessage("تمام — النظام بلّش يتعلم من جديد من هلّق.");
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setMinOrders(n) {
     try {
       await api.setForecastSettings({ min_orders: n });
@@ -115,7 +130,13 @@ export default function Forecast() {
 
       {!data && !error && <p className="text-secondary">جاري الحساب...</p>}
 
-      {data && list.length === 0 && <div className="card text-secondary">{EMPTY[tab]}</div>}
+      {data && list.length === 0 && (
+        <div className="card text-secondary">
+          {data.tracked_count === 0 && data.settings.learn_from
+            ? `النظام بلّش يتعلم عادة الزباين من ${shortDate(data.settings.learn_from)}. بعد ما كل زبون ياخذ ${data.settings.min_orders} طلبات مسلّمة، بيبلّش يتوقعلك متى مفروض يطلب.`
+            : EMPTY[tab]}
+        </div>
+      )}
 
       {data && tab === "lost" && data.stale.length > 0 && (
         <p className="text-secondary icon-row" style={{ fontSize: "0.78rem", margin: "0 4px 8px" }}>
@@ -166,6 +187,14 @@ export default function Forecast() {
                   ))}
                 </div>
               </div>
+              <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 8 }} disabled={busy} onClick={relearn}>
+                <FiRefreshCw aria-hidden="true" /> انسَ الطلبات القديمة وابدأ التعلم من جديد
+              </button>
+              {data.settings.learn_from && (
+                <div className="text-secondary" style={{ fontSize: "0.75rem", marginBottom: 10, textAlign: "center" }}>
+                  بيتعلم من الطلبات اللي من {shortDate(data.settings.learn_from)} وطالع
+                </div>
+              )}
               <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} disabled={busy} onClick={reset}>
                 <FiRotateCcw aria-hidden="true" /> صفّر المتأخرين وابدأ من جديد
               </button>

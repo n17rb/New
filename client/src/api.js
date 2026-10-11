@@ -193,6 +193,7 @@ export const api = {
   setForecastTracking: (id, disabled) => request(`/forecast/customer/${id}/tracking`, { method: "PUT", body: { disabled } }),
   resetForecast: () => request("/forecast/reset", { method: "POST" }),
   undoForecastReset: () => request("/forecast/reset", { method: "DELETE" }),
+  relearnForecast: () => request("/forecast/relearn", { method: "POST" }),
   setForecastSettings: (body) => request("/forecast/settings", { method: "PUT", body }),
 
   getChatMe: () => request("/chat/me"),
