@@ -185,6 +185,16 @@ export const api = {
   setTripLoad: (tripId, items) => request(`/trips/${tripId}/load`, { method: "POST", body: { items } }),
 
   // الشات
+  // توقعات الطلبات
+  getForecast: () => request("/forecast"),
+  getCustomerForecast: (id) => request(`/forecast/customer/${id}`),
+  snoozeForecast: (id, days = 1) => request(`/forecast/customer/${id}/snooze`, { method: "POST", body: { days } }),
+  unsnoozeForecast: (id) => request(`/forecast/customer/${id}/snooze`, { method: "DELETE" }),
+  setForecastTracking: (id, disabled) => request(`/forecast/customer/${id}/tracking`, { method: "PUT", body: { disabled } }),
+  resetForecast: () => request("/forecast/reset", { method: "POST" }),
+  undoForecastReset: () => request("/forecast/reset", { method: "DELETE" }),
+  setForecastSettings: (body) => request("/forecast/settings", { method: "PUT", body }),
+
   getChatMe: () => request("/chat/me"),
   getChatUnread: () => request("/chat/unread"),
   getChatThreads: () => request("/chat/threads"),

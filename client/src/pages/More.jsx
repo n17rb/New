@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import {
-  FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiClock,
+  FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiDroplet,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
   FiTag, FiAlertCircle, FiMessageCircle,
 } from "react-icons/fi";
@@ -54,6 +54,7 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
       </div>
 
       <Group title="الشغل اليومي">
+        {(can("orders") || can("customers")) && <Row key="forecast" to="/forecast" icon={FiDroplet} title="توقعات الطلبات" sub="مين مفروض يطلب اليوم، ومين متأخر" />}
         {can("cash") && <Row key="cash" to="/cash" icon={FiDollarSign} title="الحساب اليومي" sub="مبيعات وصرفيات كل يوم" />}
         {can("debts") && <Row key="debts" to="/debts" icon={FiAlertCircle} title="ديون العملاء" sub="مين عليه، وتذكير على واتساب" />}
         {can("coupons") && <Row key="coupons" to="/coupons" icon={FiTag} title="الكوبونات والباقات" sub="الباقات، المبيعات، واللي قربت تخلص" />}
@@ -68,7 +69,6 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         {can("reports") && <Row key="rep" to="/reports" icon={FiBarChart2} title="التقارير" />}
         {can("reports") && <Row key="perf" to="/driver-performance" icon={FiTrendingUp} title="أداء الكباتن" />}
         {can("reports") && <Row key="growth" to="/customer-growth" icon={FiUserPlus} title="نمو العملاء" />}
-        {can("reports") && <Row key="over" to="/overdue-customers" icon={FiClock} title="عملاء متأخرين عن طلبهم" />}
         {can("reports") && <Row key="map" to="/customers-map" icon={FiMap} title="خريطة العملاء" />}
       </Group>
 

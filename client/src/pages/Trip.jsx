@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -405,6 +406,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   const [reorderMessage, setReorderMessage] = useState("");
   // التوقفات اللي انضغط عليها «تم التسليم» وبنستنى رد السيرفر — بتظهر متسلّمة فورًا
   const [optimistic, setOptimistic] = useState({});
+  // آخر تسليم: بيطلع زر «ابعتله إيصال على واتساب»
+  const [receipt, setReceipt] = useState(null);
 
   useEffect(() => {
     // لما توصل البيانات الحقيقية من السيرفر، ما عاد في داعي للحالة المؤقتة
@@ -427,8 +430,12 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   function deliverFast(stop, itemPayments, extra = {}) {
     setError("");
     setOptimistic((prev) => ({ ...prev, [stop.id]: true }));
+    setReceipt(null);
     api.deliverStop(stop.id, itemPayments, extra)
-      .then(() => onChanged())
+      .then((result) => {
+        if (result && !result.already_delivered) setReceipt({ stop, result });
+        onChanged();
+      })
       .catch((err) => {
         setOptimistic((prev) => {
           const next = { ...prev };
@@ -588,6 +595,18 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
               {s.is_time_locked && <span style={{ color: "var(--warning)", fontSize: "0.75rem" }}> ⏰ لموعد {formatClockTime(s.requested_time)}</span>}
             </div>
             <div style={{ textAlign: "left" }}>
+              {s.order_status === "DELIVERED" && s.cash_collected != null && s.phone_normalized && (
+                <a
+                  href={receiptLink(s.phone_normalized, receiptFromStop(s))}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`إيصال ${s.customer_name} على واتساب`}
+                  title="ابعت الإيصال على واتساب"
+                  style={{ color: "var(--whatsapp)", marginLeft: 6, verticalAlign: "middle" }}
+                >
+                  <FaWhatsapp size={16} />
+                </a>
+              )}
               <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
               {s.estimated_eta_minutes != null && (
                 <div className="text-secondary tabular-num" style={{ fontSize: "0.7rem", marginTop: 2 }}>
@@ -620,6 +639,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
           </div>
         )}
       </div>
+
+      {canOperate && receipt && <ReceiptBanner receipt={receipt} onClose={() => setReceipt(null)} />}
 
       {canOperate && trip.status === "STARTED" && currentStop && (
         <StopCard key={currentStop.id} stop={currentStop} busy={busy} withBusy={withBusy} deliverFast={deliverFast} />

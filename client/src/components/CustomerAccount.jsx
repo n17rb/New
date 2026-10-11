@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { FiPlus, FiMinus, FiClock, FiCheck, FiX, FiPackage } from "react-icons/fi";
+import { FiPlus, FiMinus, FiClock, FiCheck, FiX, FiPackage, FiFileText } from "react-icons/fi";
+import { FaWhatsapp } from "react-icons/fa";
+import { couponsWord } from "./Receipt.jsx";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
 
@@ -34,6 +36,7 @@ function CouponWallet({ customer, onChanged }) {
   const [selling, setSelling] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [error, setError] = useState("");
+  const [sold, setSold] = useState(null); // بعد بيع باقة: رسالة تأكيد للزبون
 
   const balance = customer.coupon_balance || 0;
   const low = balance <= 2;
@@ -86,8 +89,26 @@ function CouponWallet({ customer, onChanged }) {
           <SellPackage
             customer={customer}
             onCancel={() => setSelling(false)}
-            onDone={() => { setSelling(false); setHistory(null); setShowHistory(false); onChanged(); }}
+            onDone={(info) => { setSelling(false); setHistory(null); setShowHistory(false); setSold({ ...info, newBalance: balance + info.added }); onChanged(); }}
           />
+        )}
+
+        {sold && !selling && (
+          <div className="success-box" style={{ marginBottom: 10 }}>
+            <div style={{ fontWeight: 700 }}>انضاف {sold.added} كوبون ✓</div>
+            <a
+              className="icon-row"
+              style={{ color: "var(--whatsapp)", fontWeight: 700, marginTop: 6, textDecoration: "none" }}
+              href={`https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(
+                `مرحبا ${customer.name} 🌊\nمعك مياه جوهرة الرابية.\n🎫 تم شحن رصيدك بـ${couponsWord(sold.added)} (${sold.packageName})\nرصيدك الحالي: ${couponsWord(sold.newBalance)}${sold.unpaid > 0 ? `\n💳 باقي من ثمن الباقة: ${sold.unpaid.toFixed(2)} دينار` : ""}\nكل كوبون = قارورة، وبينخصم لحاله وقت التوصيل 💧\nشكرًا لثقتك فينا`
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setSold(null)}
+            >
+              <FaWhatsapp aria-hidden="true" /> ابعتله تأكيد على واتساب
+            </a>
+          </div>
         )}
 
         {adjusting && (
@@ -156,7 +177,7 @@ function SellPackage({ customer, onCancel, onDone }) {
     setError("");
     try {
       await api.sellCouponPackage({ customer_id: customer.id, package_id: selected.id, paid_amount: paidNum });
-      onDone();
+      onDone({ added: selected.coupons + (selected.bonus_coupons || 0), unpaid, packageName: selected.name });
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -369,6 +390,46 @@ function DebtCard({ customer, onChanged }) {
   );
 }
 
+// ---------------- كشف حساب على واتساب ----------------
+
+function buildStatement(customer, orders) {
+  const debt = Number(customer.debt_balance || 0);
+  const lines = [`مرحبا ${customer.name} 🌊`, "كشف حسابك من مياه جوهرة الرابية 📄", ""];
+  lines.push(`🎫 رصيد الكوبونات: ${customer.coupon_balance > 0 ? couponsWord(customer.coupon_balance) : "ما في"}`);
+  lines.push(debt > 0 ? `💳 المستحق عليك: ${debt.toFixed(2)} دينار` : "✔️ ما عليك أي مبلغ");
+  if (customer.bottles_out > 0) lines.push(`🧴 قوارير المحل عندك: ${customer.bottles_out}`);
+  const delivered = orders.filter((o) => o.status === "DELIVERED").slice(0, 5);
+  if (delivered.length) {
+    lines.push("", "آخر الطلبات:");
+    for (const o of delivered) {
+      const items = (o.items || []).map((i) => `${i.quantity} × ${i.product_name_snapshot}`).join("، ");
+      lines.push(`• ${shortDate(o.created_at)} — ${items} — ${Number(o.final_total).toFixed(2)} دينار`);
+    }
+  }
+  lines.push("", "شكرًا لثقتك فينا 💧");
+  return lines.join("\n");
+}
+
+function StatementCard({ customer }) {
+  const [orders, setOrders] = useState(null);
+  useEffect(() => {
+    api.getCustomerHistory(customer.id).then((h) => setOrders(h.orders || [])).catch(() => setOrders([]));
+  }, [customer.id]);
+  const link = orders ? `https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(buildStatement(customer, orders))}` : null;
+  return (
+    <a
+      className="card icon-row"
+      style={{ textDecoration: "none", color: "var(--text)", justifyContent: "space-between", opacity: link ? 1 : 0.6, pointerEvents: link ? "auto" : "none" }}
+      href={link || undefined}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <span className="icon-row"><FiFileText aria-hidden="true" /> ابعتله كشف حساب</span>
+      <FaWhatsapp style={{ color: "var(--whatsapp)" }} size={20} aria-hidden="true" />
+    </a>
+  );
+}
+
 export default function CustomerAccount({ customer, onChanged }) {
   return (
     <>
@@ -380,6 +441,7 @@ export default function CustomerAccount({ customer, onChanged }) {
           <strong className="tabular-num">{customer.bottles_out}</strong>
         </div>
       )}
+      <StatementCard customer={customer} />
     </>
   );
 }

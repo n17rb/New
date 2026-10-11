@@ -7,6 +7,7 @@ import { FaWhatsapp } from "react-icons/fa";
 import OrderForm from "../components/OrderForm.jsx";
 import CustomerAccount from "../components/CustomerAccount.jsx";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
+import { CustomerForecastCard, compactBottles } from "../components/Forecast.jsx";
 
 const TABS = [
   { key: "orders", label: "الطلبات" },
@@ -23,6 +24,7 @@ export default function CustomerDetail({ user }) {
   const [loading, setLoading] = useState(true);
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [tab, setTab] = useState("orders");
+  const [forecast, setForecast] = useState(null);
 
   const perms = usePerms();
   const canManage = perms.canEdit("customers");
@@ -41,7 +43,11 @@ export default function CustomerDetail({ user }) {
     }
   }
 
-  useEffect(() => { load(); }, [id]);
+  function loadForecast() {
+    api.getCustomerForecast(id).then(setForecast).catch(() => setForecast(null));
+  }
+
+  useEffect(() => { load(); loadForecast(); }, [id]);
 
   if (loading) return <div className="page"><p className="text-secondary">جاري التحميل...</p></div>;
   if (error && !customer) return <div className="page"><div className="error-box">{error}</div></div>;
@@ -54,7 +60,7 @@ export default function CustomerDetail({ user }) {
           customer={customer}
           user={user}
           onClose={() => setShowOrderForm(false)}
-          onCreated={() => setShowOrderForm(false)}
+          onCreated={() => { setShowOrderForm(false); loadForecast(); }}
         />
       </div>
     );
@@ -94,9 +100,20 @@ export default function CustomerDetail({ user }) {
           </div>
           <div className="today-label">دين JD</div>
         </button>
-        <button className="today-cell" onClick={() => setTab("account")}>
-          <div className="today-num tabular-num">{customer.bottles_out || 0}</div>
-          <div className="today-label">قوارير عنده</div>
+        <button className="today-cell" onClick={() => setTab("orders")}>
+          {forecast && forecast.base_status !== "learning" && forecast.status !== "disabled" ? (
+            <>
+              <div className="today-num tabular-num" style={{ color: forecast.remaining <= 0 ? "var(--urgent)" : forecast.late_days >= 0 ? "var(--warning)" : undefined }}>
+                {compactBottles(forecast.remaining)}
+              </div>
+              <div className="today-label">قوارير بالبيت</div>
+            </>
+          ) : (
+            <>
+              <div className="today-num tabular-num">{customer.bottles_out || 0}</div>
+              <div className="today-label">قوارير عنده</div>
+            </>
+          )}
         </button>
       </div>
 
@@ -108,7 +125,12 @@ export default function CustomerDetail({ user }) {
         ))}
       </div>
 
-      {tab === "orders" && <OrderHistorySection customerId={customer.id} />}
+      {tab === "orders" && (
+        <>
+          {forecast && <CustomerForecastCard forecast={forecast} onReload={loadForecast} onOrder={canOrder ? () => setShowOrderForm(true) : null} />}
+          <OrderHistorySection customerId={customer.id} />
+        </>
+      )}
       {tab === "address" && <LocationSection customer={customer} canManage={canManage} onChanged={load} />}
       {tab === "account" && <CustomerAccount customer={customer} onChanged={load} />}
       {tab === "settings" && (

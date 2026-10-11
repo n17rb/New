@@ -223,6 +223,14 @@ export default function Customers({ user }) {
                     <div className="text-secondary tabular-num" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       <span>{c.phone_display} · #{c.sequential_number}</span>
                       <BottleTypeBadge type={c.bottle_type} />
+                      {c.fc_due_label && (c.fc_status === "today" || c.fc_status === "late" || c.fc_status === "tomorrow") && (
+                        <span className="badge" style={{
+                          background: c.fc_status === "late" ? "var(--urgent-soft)" : c.fc_status === "today" ? "var(--warning-soft)" : "var(--primary-soft)",
+                          color: c.fc_status === "late" ? "var(--urgent)" : c.fc_status === "today" ? "var(--warning)" : "var(--navy)",
+                        }}>
+                          💧 {c.fc_status === "late" ? c.fc_due_label : `بيطلب ${c.fc_due_label}`}
+                        </span>
+                      )}
                     </div>
                     {addressLine(c) && (
                       <div className="text-secondary" style={{ fontSize: "0.8rem", marginTop: 2 }}>{addressLine(c)}</div>

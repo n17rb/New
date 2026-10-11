@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle } from "react-icons/fi";
+import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet } from "react-icons/fi";
+import { qtyWord } from "../components/Forecast.jsx";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
 
@@ -85,6 +86,21 @@ export default function Dashboard({ user }) {
           </span>
           <FiChevronLeft className="list-chevron" aria-hidden="true" />
         </Link>
+        {data && data.forecast_today != null && (
+          <Link to={data.forecast_today === 0 && data.forecast_late > 0 ? "/forecast?tab=late" : "/forecast"} className="list-row">
+            <span className="list-icon"><FiDroplet aria-hidden="true" /></span>
+            <span className="list-text">
+              <span className="list-title">توقعات اليوم</span>
+              <div className="list-sub">
+                {data.forecast_today > 0
+                  ? `${data.forecast_today === 1 ? "زبون" : `${data.forecast_today} زباين`} مفروض يطلبوا (حوالي ${qtyWord(data.forecast_bottles)})`
+                  : "ما في حدا متوقع اليوم"}
+                {data.forecast_late > 0 && <span style={{ color: "var(--urgent)", fontWeight: 600 }}> · {data.forecast_late} متأخر</span>}
+              </div>
+            </span>
+            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          </Link>
+        )}
         {(can("trips") || can("delivery", "edit")) && (
           <Link to="/trip" className="list-row">
             <span className="list-icon"><FiTruck aria-hidden="true" /></span>

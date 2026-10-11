@@ -962,3 +962,135 @@ input[type="date"]:focus, textarea:focus {
 .pay-note.bad { background: var(--urgent-soft); color: var(--urgent); }
 
 .back-to-shop { border: 2px solid var(--success); }
+
+/* ============================================================
+   توقعات الطلبات
+   ============================================================ */
+.fc-row {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-row:last-child { border-bottom: none; }
+.fc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fc-name {
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.fc-qty {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--navy);
+  background: var(--primary-soft);
+  border-radius: 10px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+[data-theme="dark"] .fc-qty { color: var(--primary-dark); }
+.fc-qty.late { color: var(--urgent); background: var(--urgent-soft); }
+.fc-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+.fc-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  border-radius: 11px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 0 10px;
+}
+.fc-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.fc-btn.whatsapp { color: var(--whatsapp); }
+.fc-btn.quiet { flex: 0 0 auto; color: var(--text-secondary); }
+.fc-btn:disabled { opacity: 0.55; cursor: default; }
+.fc-done {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--success);
+}
+
+/* قارورة صغيرة بتبيّن كم ضايل */
+.bottle {
+  position: relative;
+  width: 26px;
+  height: 40px;
+  border: 2px solid var(--primary);
+  border-radius: 7px 7px 9px 9px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+.bottle::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 10px;
+  height: 5px;
+  margin-left: -5px;
+  background: var(--primary);
+  border-radius: 0 0 3px 3px;
+  z-index: 1;
+}
+.bottle-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, #5DB7F5, var(--primary));
+  transition: height 0.4s ease;
+}
+.bottle.low { border-color: var(--warning); }
+.bottle.low::before { background: var(--warning); }
+.bottle.low .bottle-fill { background: var(--warning); }
+.bottle.empty { border-color: var(--urgent); }
+.bottle.empty::before { background: var(--urgent); }
+.bottle.lg { width: 44px; height: 68px; border-width: 3px; border-radius: 10px 10px 14px 14px; }
+.bottle.lg::before { width: 16px; height: 7px; margin-left: -8px; }
+
+.fc-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.fc-fact {
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 9px 11px;
+}
+.fc-fact-label { font-size: 0.72rem; color: var(--text-secondary); }
+.fc-fact-value { font-weight: 800; font-size: 0.92rem; margin-top: 2px; }
+
+/* بطاقة بعد التسليم */
+.receipt-banner {
+  border: 1.5px solid var(--success);
+  background: var(--success-soft);
+}

@@ -18,7 +18,7 @@ const DriverBalances = lazy(() => import("./pages/DriverBalances.jsx"));
 const MyBalance = lazy(() => import("./pages/MyBalance.jsx"));
 const Reports = lazy(() => import("./pages/Reports.jsx"));
 const Cash = lazy(() => import("./pages/Cash.jsx"));
-const OverdueCustomers = lazy(() => import("./pages/OverdueCustomers.jsx"));
+const Forecast = lazy(() => import("./pages/Forecast.jsx"));
 const DriverPerformance = lazy(() => import("./pages/DriverPerformance.jsx"));
 const CustomersMap = lazy(() => import("./pages/CustomersMap.jsx"));
 const ActivityLog = lazy(() => import("./pages/ActivityLog.jsx"));
@@ -266,7 +266,8 @@ export default function App() {
             {can("driver_balances") && <Route path="/driver-balances" element={<DriverBalances />} />}
             {can("reports") && <Route path="/reports" element={<Reports />} />}
             {can("cash") && <Route path="/cash" element={<Cash />} />}
-            {can("reports") && <Route path="/overdue-customers" element={<OverdueCustomers />} />}
+            {(can("orders") || can("customers")) && <Route path="/forecast" element={<Forecast />} />}
+            <Route path="/overdue-customers" element={<Navigate to="/forecast?tab=late" replace />} />
             {can("reports") && <Route path="/driver-performance" element={<DriverPerformance />} />}
             {can("reports") && <Route path="/customers-map" element={<CustomersMap />} />}
             <Route path="/notifications" element={<Notifications />} />
