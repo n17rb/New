@@ -465,3 +465,25 @@ UPDATE products SET is_returnable = true
 WHERE coupon_eligible = true
   AND NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'returnable_init');
 INSERT INTO app_settings (key, value) VALUES ('returnable_init', 'done') ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- توقعات الطلبات: النظام بيتعلم كم بيسحب كل زبون ومتى مفروض يطلب
+-- ============================================================
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS forecast_disabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS forecast_snooze_until DATE;
+-- كل تنبيه (اليوم/متأخر) بينبعت مرة وحدة بس لكل موعد متوقع
+CREATE TABLE IF NOT EXISTS forecast_alerts (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  due_date DATE NOT NULL,
+  kind VARCHAR(10) NOT NULL CHECK (kind IN ('today','late')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_forecast_alerts_unique ON forecast_alerts(customer_id, due_date, kind);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_status_created ON orders(customer_id, status, created_at);
+-- أول مرة: منصفّر قائمة المتأخرين القديمة — من هون وطالع بس اللي بيتأخر بيطلع وبيوصل عنه إشعار
+INSERT INTO app_settings (key, value)
+SELECT 'forecast_reset_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'forecast_init')
+ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('forecast_init', 'done') ON CONFLICT (key) DO NOTHING;

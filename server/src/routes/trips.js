@@ -1,3 +1,4 @@
+import { invalidateForecastCache } from "../utils/forecast.js";
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { notifyOrdersAddedToTrip } from "../utils/notify.js";
@@ -656,6 +657,7 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     client.release();
   }
 
+  invalidateForecastCache();
   res.json({
     message: "تم تسجيل التسليم.",
     amount_due: amountDue,

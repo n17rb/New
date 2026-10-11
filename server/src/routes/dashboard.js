@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { can, requirePerm } from "../permissions.js";
+import { can, canAny, requirePerm } from "../permissions.js";
+import { computeForecasts, groupForecasts } from "../utils/forecast.js";
 
 const router = Router();
 router.use(requireAuth, requirePerm("dashboard", "view"));
@@ -38,6 +39,20 @@ router.get("/", async (req, res) => {
   if (!can(req.user, "debts", "view")) {
     delete row.debts_total;
     delete row.debtors_count;
+  }
+
+  // توقعات اليوم (مين مفروض يطلب ومين متأخر)
+  if (canAny(req.user, [["orders", "view"], ["customers", "view"]])) {
+    try {
+      const g = groupForecasts(await computeForecasts());
+      row.forecast_today = g.today.length;
+      row.forecast_tomorrow = g.tomorrow.length;
+      row.forecast_late = g.late.length;
+      row.forecast_bottles = g.expected_bottles_today;
+      row.forecast_names = g.today.slice(0, 3).map((f) => f.name);
+    } catch (e) {
+      console.error("forecast dashboard error:", e.message);
+    }
   }
 
   res.json({ today, ...row });

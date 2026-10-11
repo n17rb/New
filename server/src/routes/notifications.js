@@ -3,6 +3,7 @@ import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
 import { checkRemindersThrottled } from "./reminders.js";
+import { checkForecastThrottled } from "./forecast.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -23,6 +24,7 @@ function visibilityCondition(user) {
 router.get("/", async (req, res) => {
   // التطبيق بيسأل عن الإشعارات كل ١٥ ثانية — فرصة نتأكد إن مواعيد اليوم انبعتت
   checkRemindersThrottled();
+  checkForecastThrottled();
 
   const result = await query(
     `SELECT * FROM notifications

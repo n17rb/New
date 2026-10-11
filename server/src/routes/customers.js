@@ -5,6 +5,22 @@ import { can, canAction, canAny } from "../permissions.js";
 import { normalizePhone, formatPhoneForDisplay } from "../utils/phone.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 import { parseSearch, buildSearchSql } from "../utils/smartSearch.js";
+import { computeForecasts } from "../utils/forecast.js";
+
+// تلميح التوقع لكل زبون بالقائمة: كم ضايل عنده ومتى مفروض يطلب
+async function attachForecast(rows) {
+  try {
+    const data = await computeForecasts();
+    const map = new Map(data.customers.map((f) => [f.customer_id, f]));
+    return rows.map((r) => {
+      const f = map.get(r.id);
+      if (!f || f.base_status === "learning" || f.status === "disabled") return r;
+      return { ...r, fc_status: f.status, fc_remaining_label: f.remaining_label, fc_due_label: f.due_label };
+    });
+  } catch {
+    return rows;
+  }
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -92,7 +108,7 @@ router.get("/", async (req, res) => {
 
   if (q) {
     const { results } = await smartCustomerSearch(q, regionId);
-    return res.json(results);
+    return res.json(await attachForecast(results));
   }
 
   const conditions = ["c.status = 'active'"];
@@ -108,13 +124,14 @@ router.get("/", async (req, res) => {
      ORDER BY c.created_at DESC`,
     params
   );
-  res.json(result.rows);
+  res.json(await attachForecast(result.rows));
 });
 
 // نفس البحث، بس كمان بيرجّع شو فهم من الكلام (للعرض بالشاشة)
 router.get("/search", async (req, res) => {
   const q = String(req.query.q || "").slice(0, 120);
-  res.json(await smartCustomerSearch(q, req.query.region_id));
+  const out = await smartCustomerSearch(q, req.query.region_id);
+  res.json({ ...out, results: await attachForecast(out.results) });
 });
 
 router.get("/count", async (req, res) => {

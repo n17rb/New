@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
 import { tryAutoAddToActiveTrip } from "./trips.js";
 import { notifyNewOrder } from "../utils/notify.js";
+import { invalidateForecastCache } from "../utils/forecast.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -179,6 +180,7 @@ router.post("/", async (req, res) => {
       newValue: { order_number: order.order_number, total: finalTotal, items: preparedItems },
     });
 
+    invalidateForecastCache();
     res.status(201).json({ ...order, items: preparedItems });
 
     // لو انضاف تلقائيًا لرحلة شغّالة، إشعار الرحلة بيوصل لسائقها.

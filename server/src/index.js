@@ -30,6 +30,7 @@ import dashboardRoutes from "./routes/dashboard.js";
 import debtRoutes from "./routes/debts.js";
 import couponRoutes from "./routes/coupons.js";
 import chatRoutes from "./routes/chat.js";
+import forecastRoutes, { checkForecastAlerts } from "./routes/forecast.js";
 
 dotenv.config();
 
@@ -64,6 +65,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/debts", debtRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/forecast", forecastRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -95,7 +97,10 @@ initDbIfNeeded().then(() => {
 
   checkAndFireReminders().catch((err) => console.error("❌ فشل فحص التذكيرات الأولي:", err.message));
   setInterval(() => {
-    checkAndFireReminders().catch((err) => console.error("❌ فشل فحص التذكيرات:", err.message));
+    checkAndFireReminders()
+      .catch((err) => console.error("❌ فشل فحص التذكيرات:", err.message))
+      .then(() => checkForecastAlerts())
+      .catch((err) => console.error("❌ فشل فحص التوقعات:", err.message));
     pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'").catch(() => {});
   }, 60 * 60 * 1000);
 });
