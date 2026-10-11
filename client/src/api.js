@@ -114,7 +114,7 @@ export const api = {
   getTripArchive: () => request("/trips/archive"),
   getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
-  deliverStop: (stopId, itemPayments) => request(`/trips/stops/${stopId}/deliver`, { method: "POST", body: { item_payments: itemPayments } }),
+  deliverStop: (stopId, itemPayments, extra = {}) => request(`/trips/stops/${stopId}/deliver`, { method: "POST", body: { item_payments: itemPayments, ...extra } }),
   undoDeliver: (stopId) => request(`/trips/stops/${stopId}/undo-deliver`, { method: "POST" }),
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),
   completeTrip: (id) => request(`/trips/${id}/complete`, { method: "POST" }),
@@ -163,6 +163,46 @@ export const api = {
   testPush: () => request("/push/test", { method: "POST" }),
 
   getReminderSchedule: () => request("/reminders/schedule"),
+  // ديون العملاء
+  getDebts: () => request("/debts"),
+  getCustomerDebt: (customerId) => request(`/debts/customer/${customerId}`),
+  recordDebtPayment: (customerId, body) => request(`/debts/customer/${customerId}/payment`, { method: "POST", body }),
+  adjustDebt: (customerId, body) => request(`/debts/customer/${customerId}/adjust`, { method: "POST", body }),
+
+  // باقات الكوبونات
+  getCouponPackages: (all = false) => request(`/coupons/packages${all ? "?all=true" : ""}`),
+  createCouponPackage: (body) => request("/coupons/packages", { method: "POST", body }),
+  updateCouponPackage: (id, body) => request(`/coupons/packages/${id}`, { method: "PUT", body }),
+  uploadCouponPackageImage: (id, file) => {
+    const form = new FormData();
+    form.append("photo", file);
+    return request(`/coupons/packages/${id}/image`, { method: "POST", body: form, isFormData: true });
+  },
+  sellCouponPackage: (body) => request("/coupons/sell", { method: "POST", body }),
+  getCouponsOverview: () => request("/coupons/overview"),
+
+  // حمولة السيارة
+  setTripLoad: (tripId, items) => request(`/trips/${tripId}/load`, { method: "POST", body: { items } }),
+
+  // الشات
+  getChatMe: () => request("/chat/me"),
+  getChatUnread: () => request("/chat/unread"),
+  getChatThreads: () => request("/chat/threads"),
+  getChatStaff: () => request("/chat/staff"),
+  getChatThread: (userId, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/chat/thread/${userId}${qs ? `?${qs}` : ""}`);
+  },
+  sendChatMessage: (userId, body) => request(`/chat/thread/${userId}`, { method: "POST", body: { body } }),
+  sendChatImage: (userId, file, text = "") => {
+    const form = new FormData();
+    form.append("photo", file);
+    if (text) form.append("body", text);
+    return request(`/chat/thread/${userId}/image`, { method: "POST", body: form, isFormData: true });
+  },
+  markChatRead: (userId) => request(`/chat/thread/${userId}/read`, { method: "POST" }),
+  deleteChatMessage: (id) => request(`/chat/message/${id}`, { method: "DELETE" }),
+
   getDashboard: () => request("/dashboard"),
   getMe: () => request("/auth/me"),
   getPermissionsMeta: () => request("/auth/permissions-meta"),

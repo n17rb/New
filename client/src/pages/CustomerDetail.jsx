@@ -5,7 +5,15 @@ import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import OrderForm from "../components/OrderForm.jsx";
+import CustomerAccount from "../components/CustomerAccount.jsx";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
+
+const TABS = [
+  { key: "orders", label: "الطلبات" },
+  { key: "address", label: "العنوان" },
+  { key: "account", label: "الحساب" },
+  { key: "settings", label: "الإعدادات" },
+];
 
 export default function CustomerDetail({ user }) {
   const { id } = useParams();
@@ -14,6 +22,7 @@ export default function CustomerDetail({ user }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [showOrderForm, setShowOrderForm] = useState(false);
+  const [tab, setTab] = useState("orders");
 
   const perms = usePerms();
   const canManage = perms.canEdit("customers");
@@ -51,33 +60,68 @@ export default function CustomerDetail({ user }) {
     );
   }
 
+  const debt = Number(customer.debt_balance || 0);
+
   return (
     <div className="page">
-      <button className="btn-danger-text icon-row" style={{ marginBottom: 10 }} onClick={() => navigate("/customers")}>
-        <FiArrowRight /> رجوع لقائمة العملاء
+      <button className="back-link" onClick={() => navigate("/customers")}>
+        <FiArrowRight aria-hidden="true" /> العملاء
       </button>
 
       {error && <div className="error-box">{error}</div>}
       <ViewOnlyNote section="customers" />
 
-      <CustomerHeader customer={customer} canManage={canManage} canDelete={canDelete} onChanged={load} onDeleted={() => navigate("/customers")} />
-      <ReminderNoteSection customer={customer} canManage={canManage} onChanged={load} />
+      <CustomerHeader
+        customer={customer}
+        canManage={canManage}
+        canDelete={canDelete}
+        canOrder={canOrder}
+        onNewOrder={() => setShowOrderForm(true)}
+        onChanged={load}
+        onDeleted={() => navigate("/customers")}
+      />
 
-      {canOrder && (
-        <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={() => setShowOrderForm(true)}>
-          <FiPlusCircle /> طلب جديد لهذا العميل
+      <div className="today-strip" style={{ marginBottom: 14 }}>
+        <button className="today-cell" onClick={() => setTab("account")}>
+          <div className="today-num tabular-num" style={{ color: (customer.coupon_balance || 0) <= 2 ? "var(--warning)" : undefined }}>
+            {customer.coupon_balance || 0}
+          </div>
+          <div className="today-label">كوبونات</div>
         </button>
-      )}
+        <button className="today-cell" onClick={() => setTab("account")}>
+          <div className="today-num tabular-num" style={{ color: debt > 0 ? "var(--urgent)" : "var(--success)", fontSize: debt >= 100 ? "1.2rem" : undefined }}>
+            {debt > 0 ? debt.toFixed(2) : "0"}
+          </div>
+          <div className="today-label">دين JD</div>
+        </button>
+        <button className="today-cell" onClick={() => setTab("account")}>
+          <div className="today-num tabular-num">{customer.bottles_out || 0}</div>
+          <div className="today-label">قوارير عنده</div>
+        </button>
+      </div>
 
-      <LocationSection customer={customer} canManage={canManage} onChanged={load} />
-      <CouponSection customer={customer} isSuperAdmin={perms.canAction("adjust_coupons")} onChanged={load} />
-      {canManage && <CustomPricesSection customerId={customer.id} />}
-      <OrderHistorySection customerId={customer.id} />
+      <div className="seg" role="tablist" style={{ marginBottom: 14 }}>
+        {TABS.map((t) => (
+          <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "on" : ""} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "orders" && <OrderHistorySection customerId={customer.id} />}
+      {tab === "address" && <LocationSection customer={customer} canManage={canManage} onChanged={load} />}
+      {tab === "account" && <CustomerAccount customer={customer} onChanged={load} />}
+      {tab === "settings" && (
+        <>
+          <ReminderNoteSection customer={customer} canManage={canManage} onChanged={load} />
+          {canManage && <CustomPricesSection customerId={customer.id} />}
+        </>
+      )}
     </div>
   );
 }
 
-function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }) {
+function CustomerHeader({ customer, canManage, canDelete, canOrder, onNewOrder, onChanged, onDeleted }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone_display);
@@ -178,49 +222,66 @@ function CustomerHeader({ customer, canManage, canDelete, onChanged, onDeleted }
     );
   }
 
+  const mapLink = customer.latitude && customer.longitude
+    ? `https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`
+    : customer.maps_url || null;
+  const initial = (customer.name || "?").trim().charAt(0);
+
   return (
-    <div className="card">
+    <div className="card customer-hero">
       {error && <div className="error-box">{error}</div>}
 
-      {currentPhotoUrl ? (
-        <img src={currentPhotoUrl} alt="صورة العمارة" style={{ width: "100%", borderRadius: 8, marginBottom: 12 }} />
-      ) : (
-        <p className="text-secondary">لا توجد صورة للعمارة بعد — اضغط تعديل لإضافتها.</p>
-      )}
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h2 className="title-md" style={{ marginBottom: 4 }}>{customer.name}</h2>
-          <p className="tabular-num text-secondary" style={{ margin: 0 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {currentPhotoUrl ? (
+          <img src={currentPhotoUrl} alt="صورة العمارة" className="customer-hero-photo" />
+        ) : (
+          <span className="avatar" style={{ width: 52, height: 52, fontSize: "1.3rem", borderRadius: 16 }}>{initial}</span>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 className="customer-hero-name">{customer.name}</h1>
+          <div className="text-secondary tabular-num" style={{ fontSize: "0.85rem" }}>
             {customer.phone_display} · #{customer.sequential_number}
-          </p>
-          <div style={{ marginTop: 6 }}>
-            {customer.bottle_type ? (
-              <BottleTypeBadge type={customer.bottle_type} />
-            ) : (
-              <span className="text-secondary" style={{ fontSize: "0.8rem" }}>نوع القوارير مش محدد — اضغط تعديل لتحديده</span>
-            )}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+            {customer.region_name && <span className="badge">{customer.region_name}</span>}
+            <BottleTypeBadge type={customer.bottle_type} />
           </div>
         </div>
-        <div className="icon-row">
-          <a className="icon-btn whatsapp" href={whatsappLink} target="_blank" rel="noreferrer" title="فتح واتساب">
-            <FaWhatsapp size={18} />
-          </a>
-          <a className="icon-btn" href={`tel:${customer.phone_display}`} title="اتصال">
-            <FiPhone size={16} />
-          </a>
-          {canManage && (
-            <button className="icon-btn" onClick={() => setEditing(true)} title="تعديل">
-              <FiEdit2 size={16} />
-            </button>
-          )}
-          {canDelete && (
-            <button className="icon-btn" style={{ color: "var(--urgent)", borderColor: "#f6cfcb" }} onClick={handleDelete} title="حذف">
-              <FiTrash2 size={16} />
-            </button>
-          )}
-        </div>
+        {canManage && (
+          <button className="icon-btn" onClick={() => setEditing(true)} aria-label="تعديل بيانات الزبون">
+            <FiEdit2 size={16} />
+          </button>
+        )}
       </div>
+
+      <div className="quick-actions">
+        <a href={`tel:${customer.phone_display}`} className="quick-action">
+          <FiPhone aria-hidden="true" /><span>اتصال</span>
+        </a>
+        <a href={whatsappLink} target="_blank" rel="noreferrer" className="quick-action whatsapp">
+          <FaWhatsapp aria-hidden="true" /><span>واتساب</span>
+        </a>
+        {mapLink ? (
+          <a href={mapLink} target="_blank" rel="noreferrer" className="quick-action">
+            <FiMapPin aria-hidden="true" /><span>الموقع</span>
+          </a>
+        ) : (
+          <span className="quick-action disabled" title="ما في موقع محفوظ">
+            <FiMapPin aria-hidden="true" /><span>بدون موقع</span>
+          </span>
+        )}
+        {canOrder && (
+          <button className="quick-action primary" onClick={onNewOrder}>
+            <FiPlusCircle aria-hidden="true" /><span>طلب جديد</span>
+          </button>
+        )}
+      </div>
+
+      {canDelete && (
+        <button className="btn-danger-text icon-row" style={{ fontSize: "0.8rem", marginTop: 6, padding: "4px 0" }} onClick={handleDelete}>
+          <FiTrash2 size={13} aria-hidden="true" /> حذف الزبون
+        </button>
+      )}
     </div>
   );
 }
@@ -789,94 +850,3 @@ function CustomPricesSection({ customerId }) {
   );
 }
 
-function CouponSection({ customer, isSuperAdmin, onChanged }) {
-  const [history, setHistory] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
-  const [adjustValue, setAdjustValue] = useState("");
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function toggleHistory() {
-    if (!showHistory && !history) {
-      try {
-        setHistory(await api.getCouponHistory(customer.id));
-      } catch (err) {
-        setError(err.message);
-        return;
-      }
-    }
-    setShowHistory(!showHistory);
-  }
-
-  async function handleAdjust() {
-    const val = parseInt(adjustValue, 10);
-    if (!val) return;
-    setSaving(true);
-    setError("");
-    try {
-      await api.adjustCouponBalance(customer.id, { change_amount: val });
-      setAdjustValue("");
-      setAdjusting(false);
-      onChanged();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <h2 className="title-md">🎫 رصيد الكوبونات</h2>
-      {error && <div className="error-box">{error}</div>}
-      <div className="tabular-num" style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--primary)" }}>
-        {customer.coupon_balance || 0} كوبون
-      </div>
-      <p className="text-secondary" style={{ marginTop: 4 }}>يُستخدم فقط لدفع قوارير التعبئة، ويُشحن تلقائيًا عند تسليم منتج "كوبون".</p>
-
-      <button className="btn-secondary" style={{ marginTop: 8 }} onClick={toggleHistory}>
-        {showHistory ? "إخفاء السجل" : "عرض سجل الحركات"}
-      </button>
-
-      {showHistory && history && (
-        <div style={{ marginTop: 10 }}>
-          {history.length === 0 && <p className="text-secondary">لا يوجد حركات بعد.</p>}
-          {history.map((h) => (
-            <div key={h.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: "0.85rem" }}>
-              <span className="text-secondary">
-                {new Date(h.created_at).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman" })}
-                {" · "}
-                {h.reason === "recharge" ? "تعبئة" : h.reason === "order_payment" ? "دفع طلب" : "تعديل يدوي"}
-              </span>
-              <span className="tabular-num" style={{ fontWeight: 700, color: h.change_amount >= 0 ? "var(--success)" : "var(--urgent)" }}>
-                {h.change_amount >= 0 ? "+" : ""}{h.change_amount} (صار {h.balance_after})
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {isSuperAdmin && (
-        <>
-          {!adjusting ? (
-            <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setAdjusting(true)}>
-              ⚙️ تعديل يدوي للرصيد
-            </button>
-          ) : (
-            <div style={{ marginTop: 10 }}>
-              <div className="field">
-                <label>القيمة (سالب للخصم، مثال: -5 أو 5)</label>
-                <input type="number" value={adjustValue} onChange={(e) => setAdjustValue(e.target.value)} />
-              </div>
-              <button className="btn-primary" style={{ marginBottom: 8 }} disabled={saving || !adjustValue} onClick={handleAdjust}>
-                {saving ? "جاري الحفظ..." : "حفظ التعديل"}
-              </button>
-              <button className="btn-secondary" onClick={() => { setAdjusting(false); setAdjustValue(""); }}>إلغاء</button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}

@@ -5,6 +5,7 @@ import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
 import ShopLocationCard from "../components/ShopLocationCard.jsx";
+import { LoadInputs, TripLoadCard } from "../components/TripLoad.jsx";
 import { usePerms } from "../auth.jsx";
 
 function formatMinutes(mins) {
@@ -203,12 +204,15 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [loadValues, setLoadValues] = useState({});
+  const [showLoad, setShowLoad] = useState(false);
 
   async function loadOrders() {
     setFetching(true);
     setError("");
     try {
-      const list = await api.getOrders({ status: "NEW", limit: 200 });
+      const list = await api.getOrders({ status: "NEW", limit: 200, with_items: "true" });
       setOrders(list);
       const all = {};
       list.forEach((o) => { all[o.id] = true; });
@@ -222,6 +226,7 @@ function CreateTripForm({ isPrivileged, onCreated }) {
 
   useEffect(() => {
     loadOrders();
+    api.getProducts().then((list) => setProducts(list.filter((p) => p.status === "active"))).catch(() => {});
     if (isPrivileged) {
       api.getAvailableDrivers().then(setDrivers).catch(() => {});
     }
@@ -262,12 +267,24 @@ function CreateTripForm({ isPrivileged, onCreated }) {
         start_longitude,
         route_mode: routeMode,
         driver_id: isPrivileged && assignTo !== "self" ? Number(assignTo) : undefined,
+        load: Object.entries(loadValues)
+          .filter(([, q]) => q > 0)
+          .map(([product_id, quantity]) => ({ product_id: Number(product_id), quantity })),
       });
       onCreated();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // الحمولة المقترحة = مجموع كميات الطلبات المختارة لكل منتج
+  const loadSuggestions = {};
+  for (const o of orders) {
+    if (!selected[o.id]) continue;
+    for (const it of o.items || []) {
+      loadSuggestions[it.product_id] = (loadSuggestions[it.product_id] || 0) + Number(it.quantity);
     }
   }
 
@@ -352,6 +369,23 @@ function CreateTripForm({ isPrivileged, onCreated }) {
         ))}
       </div>
 
+      <div className="card" style={{ background: "var(--surface-2)", border: "none", marginBottom: 14 }}>
+        <button
+          type="button"
+          onClick={() => setShowLoad(!showLoad)}
+          aria-expanded={showLoad}
+          style={{ all: "unset", display: "flex", justifyContent: "space-between", width: "100%", cursor: "pointer", fontWeight: 700 }}
+        >
+          <span>🚚 حمولة السيارة {Object.values(loadValues).some((v) => v > 0) ? `(${Object.values(loadValues).reduce((a, b) => a + b, 0)})` : "(اختياري)"}</span>
+          <span className="text-secondary">{showLoad ? "إخفاء" : "تعبئة"}</span>
+        </button>
+        {showLoad && (
+          <div style={{ marginTop: 8 }}>
+            <LoadInputs products={products} values={loadValues} onChange={setLoadValues} suggestions={loadSuggestions} />
+          </div>
+        )}
+      </div>
+
       <label className="icon-row" style={{ marginBottom: 16, fontWeight: 600 }}>
         <input type="checkbox" checked={useLocation} onChange={(e) => setUseLocation(e.target.checked)} />
         ابدأ الترتيب من موقعي الحالي (لو مطفي بيبدأ من المحل)
@@ -390,10 +424,10 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
       : s
   );
 
-  function deliverFast(stop, itemPayments) {
+  function deliverFast(stop, itemPayments, extra = {}) {
     setError("");
     setOptimistic((prev) => ({ ...prev, [stop.id]: true }));
-    api.deliverStop(stop.id, itemPayments)
+    api.deliverStop(stop.id, itemPayments, extra)
       .then(() => onChanged())
       .catch((err) => {
         setOptimistic((prev) => {
@@ -498,6 +532,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         )}
       </div>
 
+      <TripLoadCard trip={trip} canOperate={canOperate} onChanged={onChanged} />
+
       {(isSuperAdmin || isManagerViewOnly) && !trip.current_latitude && (
         <div className="card" style={{ background: "var(--bg)" }}>
           🚚 لسا ما وصلنا أول تحديث موقع من السائق — تأكد إنه فاتح صفحة "الرحلة" بجهازه وموافق على إذن الموقع بالمتصفح.
@@ -569,7 +605,14 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
                 width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: "0.8rem", background: "#B8862E", color: "#fff",
               }}>🏪</span>
-              <span style={{ fontWeight: 600 }}>الرجوع للمحل</span>
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${trip.shop_location.lat},${trip.shop_location.lon}&travelmode=driving`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontWeight: 600, color: "inherit" }}
+              >
+                الرجوع للمحل
+              </a>
             </div>
             {trip.return_leg_km != null && (
               <span className="text-secondary tabular-num" style={{ fontSize: "0.75rem" }}>{Number(trip.return_leg_km).toFixed(1)} كم من آخر زبون</span>
@@ -589,8 +632,25 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
       )}
 
       {canOperate && trip.status === "STARTED" && !currentStop && !nextLockedStop && (
-        <div className="success-box">
-          كل التوقفات انتهت{trip.shop_location ? " — ارجع للمحل وأنهِ الرحلة 🏪" : " — جاهز لإنهاء الرحلة."}
+        <div className="card back-to-shop">
+          <div style={{ fontWeight: 800, fontSize: "1.05rem" }}>✅ خلّصت كل الطلبات</div>
+          <p className="text-secondary" style={{ margin: "4px 0 12px" }}>
+            {trip.shop_location ? "آخر محطة: الرجوع للمحل." : "حدد موقع المحل من الإعدادات عشان يطلعلك زر الرجوع."}
+          </p>
+          {trip.shop_location && (
+            <a
+              className="btn-primary icon-row"
+              style={{ justifyContent: "center", textDecoration: "none", marginBottom: 8 }}
+              href={`https://www.google.com/maps/dir/?api=1&destination=${trip.shop_location.lat},${trip.shop_location.lon}&travelmode=driving`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FiNavigation aria-hidden="true" /> ارجع للمحل
+            </a>
+          )}
+          <button className="btn-secondary" disabled={busy} onClick={handleComplete}>
+            وصلت المحل — إنهاء الرحلة
+          </button>
         </div>
       )}
 
@@ -614,87 +674,149 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   );
 }
 
-function DeliveryPaymentForm({ stop, busy, deliverFast, onCancel }) {
-  const eligibleItems = stop.items.filter((it) => it.coupon_eligible);
-  const [couponQty, setCouponQty] = useState(() => {
-    const initial = {};
-    eligibleItems.forEach((it) => { initial[it.id] = it.coupon_quantity || 0; });
-    return initial;
-  });
-
-  const totalCouponsSelected = Object.values(couponQty).reduce((sum, v) => sum + v, 0);
-  const exceedsBalance = totalCouponsSelected > stop.coupon_balance;
-
-  const cashTotal = stop.items.reduce((sum, it) => {
-    const used = couponQty[it.id] || 0;
+// المبلغ المطلوب كاش بعد الكوبونات والخصم (نفس حساب السيرفر)
+function computeAmountDue(stop, couponQty = {}) {
+  const cashPart = (stop.items || []).reduce((sum, it) => {
+    const used = it.coupon_eligible ? Math.min(couponQty[it.id] || 0, it.quantity) : 0;
     return sum + (it.quantity - used) * Number(it.unit_price_snapshot);
   }, 0);
+  const subtotal = Number(stop.subtotal) || 0;
+  const finalTotal = Number(stop.final_total) || 0;
+  const ratio = subtotal > 0 ? Math.min(1, finalTotal / subtotal) : 1;
+  return Math.round(cashPart * ratio * 100) / 100;
+}
+
+function DeliveryPaymentForm({ stop, deliverFast, onCancel }) {
+  const { canAction } = usePerms();
+  const eligibleItems = stop.items.filter((it) => it.coupon_eligible);
+  const returnableQty = stop.items.filter((it) => it.is_returnable).reduce((s, it) => s + it.quantity, 0);
+  const oldDebt = Number(stop.debt_balance || 0);
+
+  // افتراضيًا: لو معه كوبونات بنستخدمها على القوارير المؤهلة
+  const [couponQty, setCouponQty] = useState(() => {
+    const initial = {};
+    let left = stop.coupon_balance || 0;
+    eligibleItems.forEach((it) => {
+      const use = Math.min(it.quantity, left);
+      initial[it.id] = use;
+      left -= use;
+    });
+    return initial;
+  });
+  const totalCoupons = Object.values(couponQty).reduce((sum, v) => sum + v, 0);
+  const exceedsBalance = totalCoupons > (stop.coupon_balance || 0);
+  const amountDue = computeAmountDue(stop, couponQty);
+
+  const [received, setReceived] = useState(String(amountDue));
+  const [touchedReceived, setTouchedReceived] = useState(false);
+  const [empties, setEmpties] = useState(returnableQty);
+
+  // لما تتغير الكوبونات، المبلغ المستلم بيتبعها (إلا إذا السائق غيّره بإيده)
+  useEffect(() => {
+    if (!touchedReceived) setReceived(String(amountDue));
+  }, [amountDue]);
+
+  const receivedNum = received === "" ? 0 : Number(received);
+  const diff = Math.round((receivedNum - amountDue) * 100) / 100;
+  const willAddDebt = diff < 0 ? -diff : 0;
+  const willPayDebt = diff > 0 ? diff : 0;
+  const tooMuch = willPayDebt > oldDebt + 0.001;
+  const creditBlocked = willAddDebt > 0 && !canAction("give_credit");
 
   function setQty(itemId, value, max) {
-    const v = Math.max(0, Math.min(max, value));
-    setCouponQty((prev) => ({ ...prev, [itemId]: v }));
+    setCouponQty((prev) => ({ ...prev, [itemId]: Math.max(0, Math.min(max, value)) }));
   }
 
-  function handleConfirm() {
+  function confirm() {
     const item_payments = eligibleItems.map((it) => ({ item_id: it.id, coupon_qty: couponQty[it.id] || 0 }));
-    deliverFast(stop, item_payments);
+    deliverFast(stop, item_payments, { cash_received: receivedNum, empties: returnableQty > 0 ? empties : undefined });
     onCancel();
   }
 
   return (
     <div className="card">
-      <h2 className="title-md">طريقة الدفع — {stop.customer_name}</h2>
-      <p className="text-secondary" style={{ marginBottom: 12 }}>
-        رصيد كوبونات العميل الحالي: <strong className="tabular-num">{stop.coupon_balance}</strong>
-      </p>
+      <h2 className="title-md">تسليم {stop.customer_name}</h2>
 
-      {stop.items.map((it) => {
-        if (!it.coupon_eligible) {
-          return (
-            <div key={it.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-              <span>{it.product_name_snapshot} × {it.quantity}</span>
-              <span className="text-secondary">كاش دايمًا (غير مؤهل لكوبون)</span>
-            </div>
-          );
-        }
-        return (
-          <div key={it.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontWeight: 600 }}>{it.product_name_snapshot} (الكمية: {it.quantity})</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="text-secondary" style={{ fontSize: "0.85rem" }}>كوبون:</span>
-              <button type="button" onClick={() => setQty(it.id, (couponQty[it.id] || 0) - 1, it.quantity)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "#fff" }}>−</button>
-              <span className="tabular-num" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>{couponQty[it.id] || 0}</span>
-              <button type="button" onClick={() => setQty(it.id, (couponQty[it.id] || 0) + 1, it.quantity)} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "var(--primary)", color: "#fff" }}>+</button>
-              <span className="text-secondary" style={{ fontSize: "0.85rem" }}>
-                · كاش: {it.quantity - (couponQty[it.id] || 0)}
+      {eligibleItems.length > 0 && (stop.coupon_balance || 0) > 0 && (
+        <div className="pay-section">
+          <div className="pay-section-title">
+            🎫 كوبونات <span className="text-secondary" style={{ fontWeight: 400 }}>(معه {stop.coupon_balance})</span>
+          </div>
+          {eligibleItems.map((it) => (
+            <div key={it.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+              <span style={{ fontSize: "0.9rem" }}>{it.product_name_snapshot} × {it.quantity}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button type="button" className="step-btn" onClick={() => setQty(it.id, (couponQty[it.id] || 0) - 1, it.quantity)} aria-label="كوبون أقل">−</button>
+                <strong className="tabular-num" style={{ minWidth: 18, textAlign: "center" }}>{couponQty[it.id] || 0}</strong>
+                <button type="button" className="step-btn plus" onClick={() => setQty(it.id, (couponQty[it.id] || 0) + 1, it.quantity)} aria-label="كوبون أكثر">+</button>
               </span>
             </div>
-          </div>
-        );
-      })}
+          ))}
+          {exceedsBalance && <div style={{ color: "var(--urgent)", fontSize: "0.85rem" }}>معه {stop.coupon_balance} كوبون بس.</div>}
+        </div>
+      )}
 
-      <div className="card" style={{ background: "var(--bg)", marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>إجمالي الكاش المطلوب</span>
-          <span className="tabular-num" style={{ fontWeight: 700 }}>{cashTotal.toFixed(2)} JD</span>
+      <div className="pay-section">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span className="pay-section-title" style={{ margin: 0 }}>💵 المطلوب كاش</span>
+          <strong className="tabular-num" style={{ fontSize: "1.4rem" }}>{amountDue.toFixed(2)} JD</strong>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>كوبونات مستخدمة</span>
-          <span className="tabular-num" style={{ fontWeight: 700, color: exceedsBalance ? "var(--urgent)" : "inherit" }}>{totalCouponsSelected}</span>
+        <div className="field" style={{ margin: "10px 0 6px" }}>
+          <label htmlFor="pay-received">المبلغ اللي استلمته</label>
+          <input
+            id="pay-received"
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={received}
+            onChange={(e) => { setReceived(e.target.value); setTouchedReceived(true); }}
+          />
         </div>
-        {exceedsBalance && (
-          <p className="text-secondary" style={{ color: "var(--urgent)", marginTop: 6, marginBottom: 0 }}>
-            ⚠️ هذا أكتر من رصيد العميل ({stop.coupon_balance} فقط) — خفّض العدد.
-          </p>
+        <div className="chips" style={{ marginBottom: 4 }}>
+          <button type="button" className={`chip${diff === 0 ? " on" : ""}`} onClick={() => { setReceived(String(amountDue)); setTouchedReceived(true); }}>كامل</button>
+          {canAction("give_credit") && amountDue > 0 && (
+            <button type="button" className={`chip${receivedNum === 0 && amountDue > 0 ? " on" : ""}`} onClick={() => { setReceived("0"); setTouchedReceived(true); }}>آجل (دين)</button>
+          )}
+          {oldDebt > 0 && (
+            <button type="button" className={`chip${Math.abs(diff - oldDebt) < 0.005 ? " on" : ""}`} onClick={() => { setReceived(String(Math.round((amountDue + oldDebt) * 100) / 100)); setTouchedReceived(true); }}>
+              + سدّد دينه ({oldDebt.toFixed(2)})
+            </button>
+          )}
+        </div>
+        {willAddDebt > 0 && !creditBlocked && (
+          <div className="pay-note warn">رح ينضاف {willAddDebt.toFixed(2)} JD دين عليه{oldDebt > 0 ? ` (صار ${(oldDebt + willAddDebt).toFixed(2)})` : ""}</div>
         )}
+        {creditBlocked && <div className="pay-note bad">ما عندك صلاحية البيع بالدين — لازم يدفع المبلغ كامل.</div>}
+        {willPayDebt > 0 && !tooMuch && (
+          <div className="pay-note ok">{willPayDebt.toFixed(2)} JD بتسدّد من دينه — بيضل عليه {(oldDebt - willPayDebt).toFixed(2)}</div>
+        )}
+        {tooMuch && <div className="pay-note bad">المبلغ أكثر من المطلوب{oldDebt > 0 ? ` ودينه (${oldDebt.toFixed(2)})` : ""}.</div>}
       </div>
 
-      <button className="btn-primary icon-row" style={{ justifyContent: "center", marginTop: 14, marginBottom: 10, background: "var(--success)" }} disabled={busy || exceedsBalance} onClick={handleConfirm}>
+      {returnableQty > 0 && (
+        <div className="pay-section" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div className="pay-section-title" style={{ margin: 0 }}>♻️ فوارغ استلمتها</div>
+            <div className="text-secondary" style={{ fontSize: "0.78rem" }}>نزّلت {returnableQty} قارورة</div>
+          </div>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button type="button" className="step-btn" onClick={() => setEmpties(Math.max(0, empties - 1))} aria-label="فوارغ أقل">−</button>
+            <strong className="tabular-num" style={{ minWidth: 22, textAlign: "center" }}>{empties}</strong>
+            <button type="button" className="step-btn plus" onClick={() => setEmpties(empties + 1)} aria-label="فوارغ أكثر">+</button>
+          </span>
+        </div>
+      )}
+
+      <button
+        className="btn-primary icon-row"
+        style={{ justifyContent: "center", marginTop: 6, marginBottom: 8, background: "var(--success)" }}
+        disabled={exceedsBalance || tooMuch || creditBlocked || receivedNum < 0}
+        onClick={confirm}
+      >
         <FiCheckCircle /> تأكيد التسليم
       </button>
-      <button className="btn-secondary" onClick={onCancel}>إلغاء</button>
+      <button className="btn-secondary" onClick={onCancel}>رجوع</button>
     </div>
   );
 }
@@ -767,16 +889,25 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
     : stop.maps_url || null;
   const whatsappLink = `https://wa.me/${stop.phone_normalized}`;
 
-  // لو الزبون ما عنده كوبونات يستخدمها: تسليم بضغطة وحدة.
-  // غير هيك بتفتح شاشة الدفع (كاش/كوبون).
+  // لو الزبون معه كوبونات بيستخدمها: بتفتح شاشة الدفع.
+  // غير هيك: تسليم بضغطة وحدة وقبض المبلغ كامل كاش.
   const needsPaymentChoice = stop.coupon_balance > 0 && (stop.items || []).some((it) => it.coupon_eligible);
   const missingQuantity = !stop.items || stop.items.length === 0;
   const [showQuantityForm, setShowQuantityForm] = useState(false);
+  const amountDue = missingQuantity ? 0 : computeAmountDue(stop);
+  const debt = Number(stop.debt_balance || 0);
 
   function handleDeliverClick() {
     if (needsPaymentChoice) setShowPaymentForm(true);
-    else deliverFast(stop, []);
+    else deliverFast(stop, [], { cash_received: amountDue });
   }
+
+  const etaText = stop.estimated_eta_minutes != null && stop.estimated_eta_minutes > 0
+    ? `خلال حوالي ${Math.max(5, Math.round(stop.estimated_eta_minutes / 5) * 5)} دقيقة`
+    : "خلال دقائق";
+  const onMyWayLink = `https://wa.me/${stop.phone_normalized}?text=${encodeURIComponent(
+    `مرحبا ${stop.customer_name} 🌊\nمعك مياه جوهرة الرابية — طلبك بالطريق وبيوصلك ${etaText} 💧`
+  )}`;
 
   function handlePostponeSubmit() {
     withBusy(() => api.postponeStop(stop.id, { note: postponeNote, new_time: postponeTime })).then(() => {
@@ -788,7 +919,7 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
   }
 
   if (showPaymentForm) {
-    return <DeliveryPaymentForm stop={stop} busy={busy} deliverFast={deliverFast} onCancel={() => setShowPaymentForm(false)} />;
+    return <DeliveryPaymentForm stop={stop} deliverFast={deliverFast} onCancel={() => setShowPaymentForm(false)} />;
   }
 
   return (
@@ -801,7 +932,14 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
         {stop.customer_name}
         {stop.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
       </h2>
-      <p className="tabular-num text-secondary">#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
+      <p className="tabular-num text-secondary" style={{ marginTop: 0 }}>#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
+
+      {(debt > 0 || (stop.coupon_balance || 0) > 0) && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {debt > 0 && <span className="badge" style={{ background: "var(--urgent-soft)", color: "var(--urgent)" }}>عليه دين {debt.toFixed(2)} JD</span>}
+          {(stop.coupon_balance || 0) > 0 && <span className="badge" style={{ background: "var(--primary-soft)", color: "var(--navy)" }}>🎫 معه {stop.coupon_balance} كوبون</span>}
+        </div>
+      )}
 
       <BottleTypeBadge type={stop.bottle_type} large />
 
@@ -841,28 +979,44 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
         {stop.order_notes && <>📝 {stop.order_notes}</>}
       </p>
 
-      <div className="icon-row" style={{ marginBottom: 16 }}>
-        {mapLink && (
-          <a className="icon-btn map" href={mapLink} target="_blank" rel="noreferrer" title="الملاحة">
-            <FiNavigation size={16} />
+      <div className="quick-actions" style={{ marginTop: 0, marginBottom: 14 }}>
+        {mapLink ? (
+          <a className="quick-action primary" href={mapLink} target="_blank" rel="noreferrer">
+            <FiNavigation aria-hidden="true" /><span>الملاحة</span>
           </a>
+        ) : (
+          <span className="quick-action disabled"><FiNavigation aria-hidden="true" /><span>بدون موقع</span></span>
         )}
-        <a className="icon-btn whatsapp" href={whatsappLink} target="_blank" rel="noreferrer" title="واتساب">
-          <FaWhatsapp size={16} />
+        <a className="quick-action" href={`tel:${stop.phone_display}`}>
+          <FiPhone aria-hidden="true" /><span>اتصال</span>
         </a>
-        <a className="icon-btn" href={`tel:${stop.phone_display}`} title="اتصال">
-          <FiPhone size={16} />
+        <a className="quick-action whatsapp" href={whatsappLink} target="_blank" rel="noreferrer">
+          <FaWhatsapp aria-hidden="true" /><span>واتساب</span>
+        </a>
+        <a className="quick-action whatsapp" href={onMyWayLink} target="_blank" rel="noreferrer">
+          <FaWhatsapp aria-hidden="true" /><span>أنا جاي</span>
         </a>
       </div>
 
       <button
         className="btn-primary icon-row"
-        style={{ justifyContent: "center", marginBottom: 10, background: "var(--success)", opacity: missingQuantity ? 0.5 : 1 }}
+        style={{ justifyContent: "center", marginBottom: 6, background: "var(--success)", opacity: missingQuantity ? 0.5 : 1 }}
         disabled={busy || missingQuantity}
         onClick={handleDeliverClick}
       >
-        <FiCheckCircle /> تم التسليم
+        <FiCheckCircle />
+        {needsPaymentChoice ? "تم التسليم" : amountDue > 0 ? `تم التسليم · قبضت ${amountDue.toFixed(2)} JD` : "تم التسليم"}
       </button>
+      {!missingQuantity && !needsPaymentChoice && (
+        <button
+          className="btn-danger-text"
+          style={{ width: "100%", color: "var(--primary)", marginBottom: 6, fontSize: "0.88rem" }}
+          disabled={busy}
+          onClick={() => setShowPaymentForm(true)}
+        >
+          دين، دفع جزئي، أو فوارغ
+        </button>
+      )}
 
       {!showFailMenu && (
         <button className="btn-danger-text icon-row" style={{ justifyContent: "center" }} disabled={busy} onClick={() => setShowFailMenu(true)}>
@@ -940,6 +1094,41 @@ function TripSummary({ summary, onDone }) {
         <span style={{ fontWeight: 700 }}>كوبونات مُحصَّلة</span>
         <span className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>🎫 {summary.total_coupons_collected}</span>
       </div>
+
+      {(summary.total_debt_added > 0 || summary.total_debt_paid > 0 || summary.total_empties > 0) && (
+        <div className="card" style={{ background: "var(--bg)" }}>
+          {summary.total_debt_added > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>انباع بالدين</span>
+              <span className="tabular-num" style={{ fontWeight: 700, color: "var(--urgent)" }}>{Number(summary.total_debt_added).toFixed(2)} JD</span>
+            </div>
+          )}
+          {summary.total_debt_paid > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>تحصيل ديون قديمة</span>
+              <span className="tabular-num" style={{ fontWeight: 700, color: "var(--success)" }}>{Number(summary.total_debt_paid).toFixed(2)} JD</span>
+            </div>
+          )}
+          {summary.total_empties > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>فوارغ رجعت</span>
+              <span className="tabular-num" style={{ fontWeight: 700 }}>{summary.total_empties}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {summary.load_summary?.length > 0 && (
+        <div className="card" style={{ background: "var(--bg)" }}>
+          <div className="text-secondary" style={{ marginBottom: 6 }}>حمولة السيارة</div>
+          {summary.load_summary.map((l, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
+              <span>{l.name}</span>
+              <span className="tabular-num">حمّلت {l.loaded} · نزل {l.delivered} · <strong>رجع {l.returned}</strong></span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {summary.products_summary.length > 0 && (
         <div className="card" style={{ background: "var(--bg)" }}>

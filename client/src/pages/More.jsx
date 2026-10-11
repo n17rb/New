@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import {
   FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiClock,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
+  FiTag, FiAlertCircle, FiMessageCircle,
 } from "react-icons/fi";
 import { usePerms } from "../auth.jsx";
 
@@ -39,7 +40,7 @@ function Group({ title, children }) {
 }
 
 export default function More({ darkMode, setDarkMode, onLogout }) {
-  const { user, can, isOwner } = usePerms();
+  const { user, can, canAction, isOwner } = usePerms();
   const initial = (user.full_name || "?").trim().charAt(0);
 
   return (
@@ -54,6 +55,8 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
 
       <Group title="الشغل اليومي">
         {can("cash") && <Row key="cash" to="/cash" icon={FiDollarSign} title="الحساب اليومي" sub="مبيعات وصرفيات كل يوم" />}
+        {can("debts") && <Row key="debts" to="/debts" icon={FiAlertCircle} title="ديون العملاء" sub="مين عليه، وتذكير على واتساب" />}
+        {can("coupons") && <Row key="coupons" to="/coupons" icon={FiTag} title="الكوبونات والباقات" sub="الباقات، المبيعات، واللي قربت تخلص" />}
         <Row key="schedule" to="/notifications?tab=schedule" icon={FiCalendar} title="المواعيد" sub="زباين أيام التسليم الثابتة" />
         {can("delivery", "edit") && <Row key="mybal" to="/my-balance" icon={FiCreditCard} title="رصيدي" sub="الكاش والكوبونات اللي معي" />}
         {can("driver_balances") && <Row key="bal" to="/driver-balances" icon={FiCreditCard} title="ذمم الكباتن" />}
@@ -78,6 +81,9 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
 
       <div className="section-title">حسابي</div>
       <div className="list-group">
+        {(can("chat") || canAction("chat_with_admin")) && (
+          <Row to="/chat" icon={FiMessageCircle} title={can("chat") ? "رسائل الموظفين" : "راسل الإدارة"} />
+        )}
         <Row to="/notes" icon={FiEdit3} title="ملاحظاتي" />
         <label className="list-row" style={{ cursor: "pointer" }}>
           <span className="list-icon"><FiMoon aria-hidden="true" /></span>

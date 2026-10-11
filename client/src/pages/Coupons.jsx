@@ -1,0 +1,247 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { FiPlus, FiImage, FiEdit2, FiArchive, FiRotateCcw } from "react-icons/fi";
+import { FaWhatsapp } from "react-icons/fa";
+import { api } from "../api.js";
+import { usePerms, ViewOnlyNote } from "../auth.jsx";
+
+const money = (n) => `${Number(n || 0).toFixed(2)} JD`;
+
+function lowBalanceLink(c) {
+  const text = `مرحبا ${c.name} 🌊\nمعك مياه جوهرة الرابية.\nرصيد كوبوناتك صار ${c.coupon_balance}. حابب نجددلك الباقة؟ 💧`;
+  return `https://wa.me/${c.phone_normalized}?text=${encodeURIComponent(text)}`;
+}
+
+function PackageForm({ initial, onCancel, onSaved }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [coupons, setCoupons] = useState(initial?.coupons ?? "");
+  const [bonus, setBonus] = useState(initial?.bonus_coupons ?? 0);
+  const [price, setPrice] = useState(initial?.price != null ? String(Number(initial.price)) : "");
+  const [description, setDescription] = useState(initial?.description || "");
+  const [image, setImage] = useState(null);
+  const [preview, setPreview] = useState(initial?.image_url || null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function pick(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImage(f);
+    setPreview(URL.createObjectURL(f));
+  }
+
+  const perCoupon = Number(price) && Number(coupons) ? Number(price) / (Number(coupons) + Number(bonus || 0)) : null;
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      const body = { name, coupons: Number(coupons), bonus_coupons: Number(bonus) || 0, price: Number(price), description, status: initial?.status || "active" };
+      const saved = initial ? await api.updateCouponPackage(initial.id, body) : await api.createCouponPackage(body);
+      if (image) await api.uploadCouponPackageImage(saved.id, image);
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="title-md">{initial ? "تعديل الباقة" : "باقة جديدة"}</h2>
+      {error && <div className="error-box">{error}</div>}
+
+      <label className="package-image-picker">
+        {preview ? <img src={preview} alt="" /> : <span><FiImage aria-hidden="true" /> صورة الباقة (اختياري)</span>}
+        <input type="file" accept="image/*" onChange={pick} style={{ display: "none" }} />
+      </label>
+
+      <div className="field">
+        <label htmlFor="pk-name">اسم الباقة</label>
+        <input id="pk-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: باقة التوفير" />
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="pk-c">عدد الكوبونات</label>
+          <input id="pk-c" type="number" inputMode="numeric" min="1" value={coupons} onChange={(e) => setCoupons(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="pk-b">هدية (اختياري)</label>
+          <input id="pk-b" type="number" inputMode="numeric" min="0" value={bonus} onChange={(e) => setBonus(e.target.value)} />
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="pk-p">السعر (JD)</label>
+        <input id="pk-p" type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
+        {perCoupon != null && (
+          <div className="text-secondary" style={{ fontSize: "0.8rem", marginTop: 4 }}>
+            يعني الكوبون بـ {perCoupon.toFixed(3)} JD
+          </div>
+        )}
+      </div>
+      <div className="field">
+        <label htmlFor="pk-d">وصف قصير (اختياري)</label>
+        <input id="pk-d" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="مثلاً: الأوفر للعائلات" />
+      </div>
+      <button className="btn-primary" style={{ marginBottom: 8 }} disabled={saving || !name || !coupons || price === ""} onClick={save}>
+        {saving ? "جاري الحفظ..." : initial ? "حفظ التعديل" : "إضافة الباقة"}
+      </button>
+      <button className="btn-secondary" onClick={onCancel}>إلغاء</button>
+    </div>
+  );
+}
+
+export default function Coupons() {
+  const navigate = useNavigate();
+  const { canEdit } = usePerms();
+  const editable = canEdit("coupons");
+  const [packages, setPackages] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [editing, setEditing] = useState(null); // null | "new" | package
+  const [error, setError] = useState("");
+
+  async function load() {
+    setError("");
+    try {
+      const [p, o] = await Promise.all([api.getCouponPackages(true), api.getCouponsOverview()]);
+      setPackages(p);
+      setOverview(o);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function toggleArchive(p) {
+    try {
+      await api.updateCouponPackage(p.id, { ...p, price: Number(p.price), status: p.status === "active" ? "archived" : "active" });
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="page">
+        <PackageForm initial={editing === "new" ? null : editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <h1 className="title-lg">الكوبونات والباقات</h1>
+      <ViewOnlyNote section="coupons" />
+      {error && <div className="error-box">{error}</div>}
+
+      {overview && (
+        <div className="today-strip">
+          <div className="today-cell" style={{ cursor: "default" }}>
+            <div className="today-num tabular-num" style={{ fontSize: "1.25rem" }}>{Number(overview.month_sales).toFixed(0)}</div>
+            <div className="today-label">مبيعات الشهر JD</div>
+          </div>
+          <div className="today-cell" style={{ cursor: "default" }}>
+            <div className="today-num tabular-num">{overview.month_count}</div>
+            <div className="today-label">باقات انباعت</div>
+          </div>
+          <div className="today-cell" style={{ cursor: "default" }}>
+            <div className="today-num tabular-num">{overview.coupons_outstanding}</div>
+            <div className="today-label">كوبون عند الزباين</div>
+          </div>
+        </div>
+      )}
+
+      <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>الباقات</span>
+        {editable && (
+          <button onClick={() => setEditing("new")} style={{ background: "none", border: "none", color: "var(--primary)", fontWeight: 700, cursor: "pointer", display: "inline-flex", gap: 4, alignItems: "center" }}>
+            <FiPlus aria-hidden="true" /> باقة جديدة
+          </button>
+        )}
+      </div>
+
+      {packages && packages.length === 0 && (
+        <div className="card text-secondary">
+          ما في باقات لسا. {editable && "ضيف أول باقة — مثلاً «١٠ كوبونات + ١ هدية بـ ١٥ دينار»."}
+        </div>
+      )}
+
+      {packages && packages.length > 0 && (
+        <div className="list-group">
+          {packages.map((p) => (
+            <div key={p.id} className="list-row" style={{ cursor: "default", opacity: p.status === "active" ? 1 : 0.55 }}>
+              {p.image_url ? (
+                <img src={p.image_url} alt="" style={{ width: 52, height: 52, borderRadius: 12, objectFit: "cover", flexShrink: 0 }} />
+              ) : (
+                <span className="list-icon" style={{ width: 52, height: 52, borderRadius: 12, fontWeight: 800 }}>{p.coupons}</span>
+              )}
+              <span className="list-text">
+                <span className="list-title">{p.name}{p.status !== "active" && " (مخفية)"}</span>
+                <div className="list-sub tabular-num">
+                  {p.coupons} كوبون{p.bonus_coupons > 0 && ` + ${p.bonus_coupons} هدية`} · {money(p.price)}
+                </div>
+              </span>
+              {editable && (
+                <>
+                  <button className="icon-btn" onClick={() => setEditing(p)} aria-label={`تعديل ${p.name}`}><FiEdit2 size={15} /></button>
+                  <button className="icon-btn" onClick={() => toggleArchive(p)} aria-label={p.status === "active" ? "إخفاء الباقة" : "إرجاع الباقة"}>
+                    {p.status === "active" ? <FiArchive size={15} /> : <FiRotateCcw size={15} />}
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {overview && overview.low_balance.length > 0 && (
+        <>
+          <div className="section-title">كوبوناتهم قربت تخلص</div>
+          <div className="list-group">
+            {overview.low_balance.map((c) => (
+              <div key={c.id} className="list-row" style={{ cursor: "default" }}>
+                <button onClick={() => navigate(`/customers/${c.id}`)} style={{ all: "unset", flex: 1, minWidth: 0, cursor: "pointer" }}>
+                  <div className="list-title">{c.name}</div>
+                  <div className="list-sub tabular-num">{c.phone_display}</div>
+                </button>
+                <span className="badge" style={{ background: c.coupon_balance === 0 ? "var(--urgent-soft)" : "var(--warning-soft)", color: c.coupon_balance === 0 ? "var(--urgent)" : "var(--warning)" }}>
+                  {c.coupon_balance === 0 ? "خلصت" : `باقي ${c.coupon_balance}`}
+                </span>
+                <a className="icon-btn whatsapp" href={lowBalanceLink(c)} target="_blank" rel="noreferrer" aria-label={`ذكّر ${c.name}`}>
+                  <FaWhatsapp size={17} />
+                </a>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {overview && overview.recent_sales.length > 0 && (
+        <>
+          <div className="section-title">آخر المبيعات</div>
+          <div className="list-group">
+            {overview.recent_sales.slice(0, 15).map((s) => (
+              <div key={s.id} className="list-row" style={{ cursor: "default" }}>
+                <span className="list-text">
+                  <span className="list-title">{s.customer_name}</span>
+                  <div className="list-sub">
+                    {s.package_name_snapshot} · {new Date(s.created_at).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "short" })}
+                    {s.sold_by_name && ` · ${s.sold_by_name}`}
+                  </div>
+                </span>
+                <span className="tabular-num" style={{ textAlign: "left", fontWeight: 700 }}>
+                  {money(s.price)}
+                  {Number(s.paid_amount) < Number(s.price) && (
+                    <div style={{ fontSize: "0.72rem", color: "var(--urgent)", fontWeight: 600 }}>دين {money(Number(s.price) - Number(s.paid_amount))}</div>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

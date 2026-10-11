@@ -82,6 +82,16 @@ router.get("/", async (req, res) => {
      LIMIT $${params.length}`,
     params
   );
+  // with_items=true: مع محتوى كل طلب (لحساب حمولة السيارة)
+  if (req.query.with_items === "true" && result.rows.length) {
+    const items = await query(
+      `SELECT order_id, product_id, product_name_snapshot, quantity FROM order_items WHERE order_id = ANY($1::int[])`,
+      [result.rows.map((o) => o.id)]
+    );
+    const byOrder = {};
+    for (const it of items.rows) (byOrder[it.order_id] ||= []).push(it);
+    for (const o of result.rows) o.items = byOrder[o.id] || [];
+  }
   res.json(result.rows);
 });
 

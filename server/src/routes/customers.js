@@ -208,9 +208,11 @@ router.get("/:id", async (req, res) => {
     `SELECT c.*,
             l.latitude, l.longitude, l.maps_url, l.region_id,
             l.street, l.building_number, l.building_name, l.floor,
-            l.apartment, l.side, l.access_notes, l.building_photo_url, l.preferred_delivery_note
+            l.apartment, l.side, l.access_notes, l.building_photo_url, l.preferred_delivery_note,
+            r.name AS region_name
      FROM customers c
-     LEFT JOIN customer_locations l ON l.customer_id = c.id
+     LEFT JOIN LATERAL (SELECT * FROM customer_locations WHERE customer_id = c.id ORDER BY id LIMIT 1) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
      WHERE c.id = $1`,
     [req.params.id]
   );

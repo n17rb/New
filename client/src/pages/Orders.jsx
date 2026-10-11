@@ -37,26 +37,75 @@ function formatOrderTime(iso) {
   });
 }
 
+function jordanToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+function shiftDays(dateStr, n) {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// الفترات: الأسبوع بيبدأ السبت (زي الشغل بالأردن)
+const PERIODS = [
+  { key: "today", label: "اليوم", range: (t) => [t, t] },
+  { key: "yesterday", label: "أمس", range: (t) => [shiftDays(t, -1), shiftDays(t, -1)] },
+  {
+    key: "week",
+    label: "هالأسبوع",
+    range: (t) => {
+      const dow = new Date(`${t}T12:00:00Z`).getUTCDay(); // 0=أحد ... 6=سبت
+      const sinceSat = (dow + 1) % 7;
+      return [shiftDays(t, -sinceSat), t];
+    },
+  },
+  { key: "month", label: "هالشهر", range: (t) => [`${t.slice(0, 8)}01`, t] },
+  { key: "all", label: "الكل", range: () => [null, null] },
+];
+
+const STATUS_CHIPS = [
+  { key: "", label: "كل الحالات" },
+  { key: "NEW", label: "جديد" },
+  { key: "IN_ROUTE", label: "بالطريق" },
+  { key: "DELIVERED", label: "تسلّم" },
+  { key: "POSTPONED", label: "مؤجل" },
+  { key: "FAILED", label: "تعذّر" },
+  { key: "CANCELLED", label: "ملغي" },
+];
+
 export default function Orders({ user }) {
   const [orders, setOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [period, setPeriod] = useState("today");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
 
   async function load() {
     setError("");
+    setLoading(true);
     try {
-      const params = {};
+      const params = { limit: 500 };
       if (statusFilter) params.status = statusFilter;
       if (priorityFilter) params.priority = priorityFilter;
+      const [from, to] = PERIODS.find((p) => p.key === period).range(jordanToday());
+      if (from) params.from = from;
+      if (to) params.to = to;
+      if (search.trim()) params.q = search.trim();
       setOrders(await api.getOrders(params));
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, [statusFilter, priorityFilter]);
+  useEffect(() => {
+    const t = setTimeout(load, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [statusFilter, priorityFilter, period, search]);
 
   if (selectedId) {
     return (
@@ -70,39 +119,74 @@ export default function Orders({ user }) {
     );
   }
 
+  const active = orders.filter((o) => o.status !== "CANCELLED");
+  const total = active.reduce((sum, o) => sum + Number(o.final_total || 0), 0);
+  const delivered = orders.filter((o) => o.status === "DELIVERED").length;
+
   return (
     <div className="page">
       <h1 className="title-lg">الطلبات</h1>
       {error && <div className="error-box">{error}</div>}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--border)" }}>
-          <option value="">كل الحالات</option>
-          {Object.entries(STATUS_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
-          ))}
-        </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--border)" }}>
-          <option value="">كل الأولويات</option>
-          <option value="urgent">🚨 مستعجل فقط</option>
-          <option value="normal">عادي فقط</option>
-        </select>
+      <div className="chips" role="radiogroup" aria-label="الفترة">
+        {PERIODS.map((p) => (
+          <button key={p.key} className={`chip${period === p.key ? " on" : ""}`} role="radio" aria-checked={period === p.key} onClick={() => setPeriod(p.key)}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="field-row" style={{ marginBottom: 4 }}>
+        <div className="field" style={{ flex: 2 }}>
+          <input placeholder="اسم، تلفون، أو رقم طلب" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="بحث بالطلبات" />
+        </div>
+        <div className="field" style={{ flex: 1 }}>
+          <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} aria-label="الأولوية">
+            <option value="">الكل</option>
+            <option value="urgent">مستعجل</option>
+            <option value="normal">عادي</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="chips" role="radiogroup" aria-label="الحالة">
+        {STATUS_CHIPS.map((c) => (
+          <button key={c.key || "all"} className={`chip${statusFilter === c.key ? " on" : ""}`} role="radio" aria-checked={statusFilter === c.key} onClick={() => setStatusFilter(c.key)}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="today-strip" style={{ marginBottom: 12 }}>
+        <div className="today-cell" style={{ cursor: "default" }}>
+          <div className="today-num tabular-num">{orders.length}</div>
+          <div className="today-label">طلب</div>
+        </div>
+        <div className="today-cell" style={{ cursor: "default" }}>
+          <div className="today-num tabular-num">{delivered}</div>
+          <div className="today-label">تسلّم</div>
+        </div>
+        <div className="today-cell" style={{ cursor: "default" }}>
+          <div className="today-num tabular-num" style={{ fontSize: total >= 1000 ? "1.15rem" : undefined }}>{total.toFixed(0)}</div>
+          <div className="today-label">المجموع JD</div>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
-        {orders.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>لا يوجد طلبات مطابقة.</p>}
+        {loading && orders.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>جاري التحميل...</p>}
+        {!loading && orders.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>ما في طلبات بهالفترة.</p>}
         {orders.map((o) => (
           <div key={o.id} className="customer-row" style={{ padding: "12px 14px", cursor: "pointer" }} onClick={() => setSelectedId(o.id)}>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>
-                #{o.order_number} · {o.customer_name}
+                {o.customer_name}
                 {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
                 {" "}<BottleTypeBadge type={o.bottle_type} />
                 {" "}<NeedsQuantityBadge order={o} />
               </div>
-              <div className="text-secondary tabular-num">{o.customer_phone} · {formatOrderTime(o.created_at)}</div>
+              <div className="text-secondary tabular-num">#{o.order_number} · {formatOrderTime(o.created_at)}</div>
             </div>
-            <div style={{ textAlign: "left" }}>
+            <div style={{ textAlign: "left", flexShrink: 0 }}>
               <div className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</div>
               <span className="badge" style={statusBadgeStyle(o.status)}>{STATUS_LABELS[o.status] || o.status}</span>
             </div>

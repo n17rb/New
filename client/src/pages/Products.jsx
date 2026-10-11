@@ -51,6 +51,11 @@ export default function Products({ user }) {
     load();
   }
 
+  async function toggleReturnable(p) {
+    await api.updateProduct(p.id, { is_returnable: !p.is_returnable });
+    load();
+  }
+
   async function setGrantsCoupons(p) {
     const value = prompt(`كم كوبون يشحن هذا المنتج للعميل عند تسليمه؟ (اتركه فاضي أو 0 لإلغاء الشحن)`, p.grants_coupons || "");
     if (value === null) return;
@@ -113,6 +118,9 @@ export default function Products({ user }) {
                 </button>
                 <button className="btn-danger-text" onClick={() => toggleCouponEligible(p)}>
                   {p.coupon_eligible ? "إلغاء قبول الكوبون" : "🎫 فعّل قبول الكوبون"}
+                </button>
+                <button className="btn-danger-text" onClick={() => toggleReturnable(p)}>
+                  {p.is_returnable ? "♻️ بترجع فاضية ✓" : "♻️ قارورة بترجع فاضية؟"}
                 </button>
                 <button className="btn-danger-text" onClick={() => setGrantsCoupons(p)}>
                   ⚙️ شحن الكوبونات

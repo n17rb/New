@@ -2,8 +2,8 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
 import { isPushSupported, refreshPushIfGranted, disablePushForLogout } from "./push.js";
-import { FiBell } from "react-icons/fi";
-import { UserContext, canUser } from "./auth.jsx";
+import { FiBell, FiMessageCircle } from "react-icons/fi";
+import { UserContext, canUser, canUserAction } from "./auth.jsx";
 import { LogoMark, Wordmark } from "./components/Logo.jsx";
 
 import Setup from "./pages/Setup.jsx";
@@ -31,6 +31,9 @@ const Users = lazy(() => import("./pages/Users.jsx"));
 import BottomNav from "./components/BottomNav.jsx";
 const More = lazy(() => import("./pages/More.jsx"));
 const ShopSettings = lazy(() => import("./pages/ShopSettings.jsx"));
+const Debts = lazy(() => import("./pages/Debts.jsx"));
+const Coupons = lazy(() => import("./pages/Coupons.jsx"));
+const Chat = lazy(() => import("./pages/Chat.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
 function prefetchCommonPages() {
@@ -101,6 +104,7 @@ export default function App() {
   const [connectionError, setConnectionError] = useState("");
 
   const [unreadCount, setUnreadCount] = useState(0);
+  const [chatUnread, setChatUnread] = useState(0);
   const seenIdsRef = useRef(new Set());
   const firstLoadRef = useRef(true);
 
@@ -163,6 +167,8 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     refreshPushIfGranted();
+    const hasChat = canUser(user, "chat") || canUserAction(user, "chat_with_admin");
+    if (hasChat) api.getChatUnread().then((r) => setChatUnread(r.count)).catch(() => {});
     firstLoadRef.current = true;
     seenIdsRef.current = new Set();
 
@@ -186,6 +192,7 @@ export default function App() {
           });
         }
         setUnreadCount(list.filter((n) => !n.is_read).length);
+        if (hasChat) api.getChatUnread().then((r) => setChatUnread(r.count)).catch(() => {});
       } catch {
         // تجاهل صامت — لا نريد إزعاج المستخدم بأخطاء خلفية غير حرجة
       }
@@ -239,12 +246,13 @@ export default function App() {
   const isOwner = user.role === "super_admin";
   const canCustomers = can("customers") || can("orders") || can("delivery", "edit");
   const canTrip = can("delivery", "edit") || can("trips");
+  const canChat = can("chat") || canUserAction(user, "chat_with_admin");
   const home = can("dashboard") ? "/" : canTrip ? "/trip" : canCustomers ? "/customers" : can("orders") ? "/orders" : "/more";
 
   return (
     <UserContext.Provider value={user}>
       <div className="app-shell">
-        <TopBar unreadCount={unreadCount} />
+        <TopBar unreadCount={unreadCount} chatUnread={chatUnread} showChat={canChat} />
 
         <Suspense fallback={<PageLoading />}>
           <Routes>
@@ -269,6 +277,10 @@ export default function App() {
             {can("delivery", "edit") && <Route path="/my-balance" element={<MyBalance user={user} />} />}
             {can("settings") && <Route path="/settings" element={<ShopSettings />} />}
             {isOwner && <Route path="/users" element={<Users />} />}
+            {can("debts") && <Route path="/debts" element={<Debts />} />}
+            {can("coupons") && <Route path="/coupons" element={<Coupons />} />}
+            {canChat && <Route path="/chat" element={<Chat />} />}
+            {canChat && <Route path="/chat/:userId" element={<Chat />} />}
             <Route path="/more" element={<More darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />} />
             <Route path="*" element={<Navigate to={home} replace />} />
           </Routes>
@@ -309,7 +321,7 @@ function PermissionsLoader({ onLoaded }) {
   return <SplashScreen />;
 }
 
-function TopBar({ unreadCount }) {
+function TopBar({ unreadCount, chatUnread, showChat }) {
   const navigate = useNavigate();
 
   return (
@@ -319,6 +331,12 @@ function TopBar({ unreadCount }) {
         <Wordmark light />
       </button>
       <div className="top-actions">
+        {showChat && (
+          <button className="top-icon" onClick={() => navigate("/chat")} aria-label="الرسائل">
+            <FiMessageCircle size={19} />
+            {chatUnread > 0 && <span className="top-badge tabular-num">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+          </button>
+        )}
         <button className="top-icon" onClick={() => navigate("/notifications")} aria-label="الإشعارات والمواعيد">
           <FiBell size={19} />
           {unreadCount > 0 && <span className="top-badge tabular-num">{unreadCount > 99 ? "99+" : unreadCount}</span>}

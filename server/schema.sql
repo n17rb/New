@@ -459,3 +459,9 @@ CREATE TABLE IF NOT EXISTS staff_messages (
   CHECK (body IS NOT NULL OR image_url IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_staff_messages_thread ON staff_messages(thread_user_id, id DESC);
+
+-- أول مرة: منتجات التعبئة (اللي بتقبل كوبون) هي قوارير بترجع فاضية — المدير بيقدر يغيّرها من المنتجات
+UPDATE products SET is_returnable = true
+WHERE coupon_eligible = true
+  AND NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'returnable_init');
+INSERT INTO app_settings (key, value) VALUES ('returnable_init', 'done') ON CONFLICT (key) DO NOTHING;

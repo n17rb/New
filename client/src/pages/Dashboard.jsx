@@ -95,6 +95,16 @@ export default function Dashboard({ user }) {
             <FiChevronLeft className="list-chevron" aria-hidden="true" />
           </Link>
         )}
+        {data?.debts_total > 0 && (
+          <Link to="/debts" className="list-row">
+            <span className="list-icon" style={{ background: "var(--urgent-soft)", color: "var(--urgent)" }}><FiAlertCircle aria-hidden="true" /></span>
+            <span className="list-text">
+              <span className="list-title">ديون العملاء</span>
+              <div className="list-sub tabular-num">{Number(data.debts_total).toFixed(2)} JD على {data.debtors_count} زبون</div>
+            </span>
+            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          </Link>
+        )}
         {myBalance !== null && myBalance !== 0 && (
           <Link to="/my-balance" className="list-row">
             <span className="list-icon"><FiCreditCard aria-hidden="true" /></span>
