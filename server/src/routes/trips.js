@@ -128,6 +128,7 @@ async function buildTripDetailResponse(trip, requestingUser) {
     `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes, o.requested_time,
             o.needs_quantity, o.auto_from_reminder,
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance, c.bottle_type,
+            c.debt_balance, c.bottles_out, o.subtotal,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
             l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url
      FROM trip_stops ts
@@ -145,7 +146,7 @@ async function buildTripDetailResponse(trip, requestingUser) {
   const orderIds = stops.map((s) => s.order_id);
   const itemsResult = orderIds.length
     ? await query(
-        `SELECT oi.order_id, oi.id, oi.product_id, oi.product_name_snapshot, oi.quantity, oi.unit_price_snapshot, oi.coupon_quantity, p.coupon_eligible
+        `SELECT oi.order_id, oi.id, oi.product_id, oi.product_name_snapshot, oi.quantity, oi.unit_price_snapshot, oi.coupon_quantity, p.coupon_eligible, p.is_returnable
          FROM order_items oi
          LEFT JOIN products p ON p.id = oi.product_id
          WHERE oi.order_id = ANY($1::int[]) ORDER BY oi.id ASC`,
@@ -162,6 +163,8 @@ async function buildTripDetailResponse(trip, requestingUser) {
       unit_price_snapshot: row.unit_price_snapshot,
       coupon_quantity: row.coupon_quantity,
       coupon_eligible: row.coupon_eligible,
+      is_returnable: row.is_returnable,
+      product_id: row.product_id,
     });
   }
 
@@ -188,6 +191,33 @@ async function buildTripDetailResponse(trip, requestingUser) {
 
   const lastDelivered = [...stops].filter((s) => s.delivered_at).sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at))[0];
 
+  // حمولة السيارة: المحمّل، اللي نزل، الباقي، واللي لسا مطلوب للطلبات الباقية
+  const loadResult = await query(
+    "SELECT product_id, product_name_snapshot, loaded_quantity FROM trip_inventory WHERE trip_id = $1 ORDER BY id",
+    [trip.id]
+  );
+  const loadMap = new Map();
+  for (const row of loadResult.rows) {
+    loadMap.set(row.product_id, { product_id: row.product_id, name: row.product_name_snapshot, loaded: row.loaded_quantity, delivered: 0, needed: 0 });
+  }
+  for (const st of stops) {
+    const isDone = st.delivered_at || ["FAILED", "CANCELLED"].includes(st.order_status);
+    for (const it of itemsByOrder[st.order_id] || []) {
+      if (!loadMap.has(it.product_id)) {
+        loadMap.set(it.product_id, { product_id: it.product_id, name: it.product_name_snapshot, loaded: null, delivered: 0, needed: 0 });
+      }
+      const entry = loadMap.get(it.product_id);
+      if (st.delivered_at) entry.delivered += Number(it.quantity);
+      else if (!isDone) entry.needed += Number(it.quantity);
+    }
+  }
+  const load = [...loadMap.values()].map((e) => ({
+    ...e,
+    remaining: e.loaded == null ? null : e.loaded - e.delivered,
+    short: e.loaded == null ? 0 : Math.max(0, e.needed - (e.loaded - e.delivered)),
+  }));
+  const emptiesCollected = stops.reduce((sum, st) => sum + Number(st.empties_collected || 0), 0);
+
   // الرجوع للمحل بعد آخر طلب
   const shop = trip.end_latitude != null
     ? { lat: trip.end_latitude, lon: trip.end_longitude }
@@ -202,6 +232,9 @@ async function buildTripDetailResponse(trip, requestingUser) {
     ...trip,
     stops: stopsWithEta,
     shop_location: shop,
+    load,
+    has_load: loadResult.rows.length > 0,
+    empties_collected_total: emptiesCollected,
     return_leg_km: returnLegKm,
     estimated_minutes_remaining: Math.round(cumulativeMinutes),
     total_remaining_distance_km: Number(cumulativeKm.toFixed(1)),
@@ -404,6 +437,19 @@ router.post("/", async (req, res) => {
       [ordered.map((o) => o.id)]
     );
 
+    // حمولة السيارة لو انبعتت مع الرحلة
+    const loadItems = (Array.isArray(req.body.load) ? req.body.load : [])
+      .map((i) => ({ product_id: Number(i.product_id), quantity: Math.floor(Number(i.quantity)) }))
+      .filter((i) => Number.isInteger(i.product_id) && i.product_id > 0 && i.quantity > 0 && i.quantity <= 5000);
+    if (loadItems.length) {
+      await client.query(
+        `INSERT INTO trip_inventory (trip_id, product_id, product_name_snapshot, loaded_quantity)
+         SELECT $1, p.id, p.name, u.qty
+         FROM unnest($2::int[], $3::int[]) AS u(pid, qty) JOIN products p ON p.id = u.pid`,
+        [trip.id, loadItems.map((i) => i.product_id), loadItems.map((i) => i.quantity)]
+      );
+    }
+
     await client.query("COMMIT");
 
     await logActivity({
@@ -436,12 +482,18 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post("/stops/:stopId/deliver", async (req, res) => {
-  const { item_payments } = req.body || {};
+const round2 = (n) => Math.round(Number(n) * 100) / 100;
 
-  // استعلام واحد بيجيب التوقف + الرحلة + السائق + العميل
+// التسليم: كوبونات + كاش + دين (آجل أو جزئي) + تسديد دين قديم + الفوارغ
+// body: { item_payments: [{item_id, coupon_qty}], cash_received?, empties? }
+//  - cash_received أقل من المطلوب ← الباقي بينضاف دين على الزبون (بدها صلاحية البيع بالدين)
+//  - cash_received أكثر من المطلوب ← الزيادة بتسدّد من دينه القديم
+router.post("/stops/:stopId/deliver", async (req, res) => {
+  const { item_payments, cash_received, empties } = req.body || {};
+
   const stopResult = await query(
-    `SELECT ts.*, c.name AS customer_name, c.coupon_balance, o.customer_id, o.status AS order_status,
+    `SELECT ts.*, c.name AS customer_name, c.coupon_balance, c.debt_balance, o.customer_id, o.status AS order_status,
+            o.subtotal, o.final_total,
             t.driver_id, t.status AS trip_status, u.full_name AS driver_name
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
@@ -455,13 +507,12 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
   if (!canOperateTrip(req.user, { driver_id: stop.driver_id })) return res.status(403).json({ error: "غير مصرح." });
 
-  // لو انضغط الزر مرتين — ما نسجّل التسليم مرتين
   if (stop.delivered_at || stop.order_status === "DELIVERED") {
     return res.json({ message: "هذا الطلب متسلّم من قبل.", already_delivered: true });
   }
 
   const itemsResult = await query(
-    `SELECT oi.*, p.coupon_eligible, p.grants_coupons
+    `SELECT oi.*, p.coupon_eligible, p.grants_coupons, p.is_returnable
      FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
      WHERE oi.order_id = $1`,
     [stop.order_id]
@@ -475,34 +526,71 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   (item_payments || []).forEach((p) => { paymentMap[p.item_id] = Number(p.coupon_qty) || 0; });
 
   let totalCouponsUsed = 0;
-  let cashCollected = 0;
+  let cashPart = 0;
   let couponsGranted = 0;
+  let returnableDelivered = 0;
   const couponUpdates = [];
 
   for (const item of items) {
     let couponQty = paymentMap[item.id] || 0;
     if (!item.coupon_eligible) couponQty = 0;
-    couponQty = Math.max(0, Math.min(couponQty, item.quantity));
+    couponQty = Math.max(0, Math.min(Math.floor(couponQty), item.quantity));
 
     totalCouponsUsed += couponQty;
-    cashCollected += (item.quantity - couponQty) * Number(item.unit_price_snapshot);
+    cashPart += (item.quantity - couponQty) * Number(item.unit_price_snapshot);
     if (couponQty !== (item.coupon_quantity || 0)) couponUpdates.push({ id: item.id, qty: couponQty });
     if (item.grants_coupons) couponsGranted += item.grants_coupons * item.quantity;
+    if (item.is_returnable) returnableDelivered += item.quantity;
   }
 
   if (totalCouponsUsed > stop.coupon_balance) {
     return res.status(400).json({ error: `رصيد الكوبونات غير كافي — المتبقي للعميل فقط ${stop.coupon_balance} كوبون.` });
   }
 
+  // الخصم على الطلب بينطبق على الجزء الكاش
+  const subtotal = Number(stop.subtotal) || 0;
+  const finalTotal = Number(stop.final_total) || 0;
+  const discountRatio = subtotal > 0 ? Math.min(1, finalTotal / subtotal) : 1;
+  const amountDue = round2(cashPart * discountRatio);
+
+  let received = cash_received == null || cash_received === "" ? amountDue : round2(cash_received);
+  if (!Number.isFinite(received) || received < 0) {
+    return res.status(400).json({ error: "المبلغ المستلم غير صحيح." });
+  }
+
+  const oldDebt = round2(stop.debt_balance);
+  let debtAdded = 0;
+  let debtPaid = 0;
+  if (received < amountDue) {
+    debtAdded = round2(amountDue - received);
+    if (!canAction(req.user, "give_credit")) {
+      return res.status(403).json({ error: "ما عندك صلاحية البيع بالدين — لازم يدفع المبلغ كامل." });
+    }
+  } else if (received > amountDue) {
+    debtPaid = round2(received - amountDue);
+    if (debtPaid > oldDebt + 0.001) {
+      return res.status(400).json({
+        error: oldDebt > 0
+          ? `المبلغ أكثر من المطلوب. المطلوب ${amountDue.toFixed(2)} ودينه القديم ${oldDebt.toFixed(2)} بس.`
+          : `المبلغ أكثر من المطلوب (${amountDue.toFixed(2)} JD).`,
+      });
+    }
+  }
+
+  let emptiesCollected = empties == null || empties === "" ? returnableDelivered : Math.max(0, Math.floor(Number(empties)) || 0);
+  if (emptiesCollected > 500) emptiesCollected = 500;
+
   let newBalance = stop.coupon_balance;
+  let newDebt = oldDebt;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // نقفل التوقف عشان لو وصل طلبين بنفس اللحظة ما يتسجّل التسليم مرتين
     const lock = await client.query(
-      "UPDATE trip_stops SET delivered_at = now(), cash_collected = $1, coupons_collected = $2 WHERE id = $3 AND delivered_at IS NULL RETURNING id",
-      [cashCollected, totalCouponsUsed, stop.id]
+      `UPDATE trip_stops SET delivered_at = now(), cash_collected = $1, coupons_collected = $2,
+         amount_due = $3, debt_added = $4, debt_paid = $5, returnable_delivered = $6, empties_collected = $7
+       WHERE id = $8 AND delivered_at IS NULL RETURNING id`,
+      [received, totalCouponsUsed, amountDue, debtAdded, debtPaid, returnableDelivered, emptiesCollected, stop.id]
     );
     if (!lock.rows[0]) {
       await client.query("ROLLBACK");
@@ -535,9 +623,30 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
         [stop.customer_id, couponsGranted, stop.order_id, newBalance, req.user.id]
       );
     }
-    if (totalCouponsUsed > 0 || couponsGranted > 0) {
-      await client.query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [newBalance, stop.customer_id]);
+
+    if (debtAdded > 0) {
+      newDebt = round2(newDebt + debtAdded);
+      await client.query(
+        `INSERT INTO customer_debt_ledger (customer_id, change_amount, reason, order_id, trip_id, balance_after, notes, created_by)
+         VALUES ($1, $2, 'order_credit', $3, $4, $5, $6, $7)`,
+        [stop.customer_id, debtAdded, stop.order_id, stop.trip_id, newDebt,
+         received > 0 ? `دفع ${received.toFixed(2)} من ${amountDue.toFixed(2)}` : "آجل", req.user.id]
+      );
     }
+    if (debtPaid > 0) {
+      newDebt = round2(newDebt - debtPaid);
+      await client.query(
+        `INSERT INTO customer_debt_ledger (customer_id, change_amount, reason, order_id, trip_id, balance_after, notes, created_by)
+         VALUES ($1, $2, 'payment', $3, $4, $5, 'دفعة مع التوصيل', $6)`,
+        [stop.customer_id, -debtPaid, stop.order_id, stop.trip_id, newDebt, req.user.id]
+      );
+    }
+
+    await client.query(
+      `UPDATE customers SET coupon_balance = $1, debt_balance = $2, bottles_out = GREATEST(0, bottles_out + $3)
+       WHERE id = $4`,
+      [newBalance, newDebt, returnableDelivered - emptiesCollected, stop.customer_id]
+    );
 
     await client.query("COMMIT");
   } catch (err) {
@@ -547,11 +656,23 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     client.release();
   }
 
-  // نرد على السائق فورًا — السجل والإشعارات بتكمل بالخلفية
-  res.json({ message: "تم تسجيل التسليم.", cash_collected: cashCollected, coupons_used: totalCouponsUsed, coupons_granted: couponsGranted });
+  res.json({
+    message: "تم تسجيل التسليم.",
+    amount_due: amountDue,
+    cash_collected: received,
+    debt_added: debtAdded,
+    debt_paid: debtPaid,
+    debt_balance: newDebt,
+    coupons_used: totalCouponsUsed,
+    coupons_granted: couponsGranted,
+    coupon_balance: newBalance,
+  });
 
   (async () => {
-    await logActivity({ userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
+    await logActivity({
+      userId: req.user.id, action: "DELIVER_ORDER", recordType: "order", recordId: stop.order_id,
+      newValue: { amount_due: amountDue, received, debt_added: debtAdded, debt_paid: debtPaid, coupons: totalCouponsUsed, empties: emptiesCollected },
+    });
 
     const countResult = await query(
       `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE delivered_at IS NOT NULL)::int AS delivered
@@ -564,6 +685,22 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
       customerId: null,
       tripId: stop.trip_id,
     });
+    if (debtAdded > 0) {
+      await insertNotification({
+        type: "DEBT",
+        message: `💳 انضاف دين ${debtAdded.toFixed(2)} JD على ${stop.customer_name} — صار عليه ${newDebt.toFixed(2)} JD`,
+        customerId: stop.customer_id,
+        tripId: stop.trip_id,
+      });
+    }
+    if (debtPaid > 0) {
+      await insertNotification({
+        type: "DEBT",
+        message: `💵 ${stop.customer_name} دفع ${debtPaid.toFixed(2)} JD من دينه — باقي عليه ${newDebt.toFixed(2)} JD`,
+        customerId: stop.customer_id,
+        tripId: stop.trip_id,
+      });
+    }
     if (totalCouponsUsed > 0) {
       await insertNotification({
         type: "COUPON",
@@ -583,10 +720,11 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   })().catch((e) => console.error("after-deliver error:", e.message));
 });
 
+// التراجع عن تسليم: بيرجّع الكوبونات والدين والقوارير زي ما كانوا
 router.post("/stops/:stopId/undo-deliver", async (req, res) => {
   const stopResult = await query(
-    `SELECT ts.*, o.customer_id, c.coupon_balance FROM trip_stops ts
-     JOIN orders o ON o.id = ts.order_id JOIN customers c ON c.id = o.customer_id
+    `SELECT ts.*, o.customer_id FROM trip_stops ts
+     JOIN orders o ON o.id = ts.order_id
      WHERE ts.id = $1`,
     [req.params.stopId]
   );
@@ -597,27 +735,63 @@ router.post("/stops/:stopId/undo-deliver", async (req, res) => {
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
   if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
 
-  const ledgerResult = await query(
-    "SELECT COALESCE(SUM(change_amount), 0) AS net FROM coupon_ledger WHERE order_id = $1",
-    [stop.order_id]
-  );
-  const netChange = Number(ledgerResult.rows[0].net);
-  if (netChange !== 0) {
-    const restoredBalance = stop.coupon_balance - netChange;
-    await query("UPDATE customers SET coupon_balance = $1 WHERE id = $2", [restoredBalance, stop.customer_id]);
-    await query(
-      `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
-       VALUES ($1, $2, 'manual_adjustment', $3, $4, $5)`,
-      [stop.customer_id, -netChange, stop.order_id, restoredBalance, req.user.id]
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const customer = (await client.query(
+      "SELECT coupon_balance, debt_balance FROM customers WHERE id = $1 FOR UPDATE",
+      [stop.customer_id]
+    )).rows[0];
+
+    const ledgerResult = await client.query(
+      "SELECT COALESCE(SUM(change_amount), 0) AS net FROM coupon_ledger WHERE order_id = $1",
+      [stop.order_id]
     );
+    const netCoupons = Number(ledgerResult.rows[0].net);
+    let couponBalance = customer.coupon_balance;
+    if (netCoupons !== 0) {
+      couponBalance -= netCoupons;
+      await client.query(
+        `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by, notes)
+         VALUES ($1, $2, 'delivery_undo', $3, $4, $5, 'تراجع عن تسليم')`,
+        [stop.customer_id, -netCoupons, stop.order_id, couponBalance, req.user.id]
+      );
+    }
+
+    const netDebt = round2(Number(stop.debt_added || 0) - Number(stop.debt_paid || 0));
+    let debtBalance = round2(customer.debt_balance);
+    if (netDebt !== 0) {
+      debtBalance = round2(debtBalance - netDebt);
+      await client.query(
+        `INSERT INTO customer_debt_ledger (customer_id, change_amount, reason, order_id, trip_id, balance_after, notes, created_by)
+         VALUES ($1, $2, 'delivery_undo', $3, $4, $5, 'تراجع عن تسليم', $6)`,
+        [stop.customer_id, -netDebt, stop.order_id, stop.trip_id, debtBalance, req.user.id]
+      );
+    }
+
+    const bottlesChange = Number(stop.returnable_delivered || 0) - Number(stop.empties_collected || 0);
+    await client.query(
+      "UPDATE customers SET coupon_balance = $1, debt_balance = $2, bottles_out = GREATEST(0, bottles_out - $3) WHERE id = $4",
+      [couponBalance, debtBalance, bottlesChange, stop.customer_id]
+    );
+
+    await client.query("UPDATE order_items SET coupon_quantity = 0 WHERE order_id = $1", [stop.order_id]);
+    await client.query(
+      `UPDATE trip_stops SET delivered_at = NULL, cash_collected = NULL, coupons_collected = 0, amount_due = NULL,
+         debt_added = 0, debt_paid = 0, returnable_delivered = 0, empties_collected = 0
+       WHERE id = $1`,
+      [stop.id]
+    );
+    await client.query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [stop.order_id]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 
-  await query("UPDATE order_items SET coupon_quantity = 0 WHERE order_id = $1", [stop.order_id]);
-  await query("UPDATE trip_stops SET delivered_at = NULL, cash_collected = NULL, coupons_collected = 0 WHERE id = $1", [stop.id]);
-  await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [stop.order_id]);
-
   await logActivity({ userId: req.user.id, action: "UNDO_DELIVER_ORDER", recordType: "order", recordId: stop.order_id });
-
   res.json({ message: "تم التراجع عن التسليم." });
 });
 
@@ -717,6 +891,48 @@ async function appendOrderAndReoptimize(trip, orderId) {
   await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = $1", [orderId]);
   await reoptimizeTrip(trip.id);
 }
+
+// تحميل السيارة: كم حمّل من كل منتج (بينحفظ من جديد كل مرة)
+router.post("/:id/load", async (req, res) => {
+  const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
+  const trip = tripResult.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
+  if (trip.status === "COMPLETED") return res.status(400).json({ error: "الرحلة منتهية." });
+
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  const clean = items
+    .map((i) => ({ product_id: Number(i.product_id), quantity: Math.floor(Number(i.quantity)) }))
+    .filter((i) => Number.isInteger(i.product_id) && i.product_id > 0 && Number.isFinite(i.quantity) && i.quantity >= 0 && i.quantity <= 5000);
+
+  const products = clean.length
+    ? (await query("SELECT id, name FROM products WHERE id = ANY($1::int[])", [clean.map((i) => i.product_id)])).rows
+    : [];
+  const names = Object.fromEntries(products.map((p) => [p.id, p.name]));
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM trip_inventory WHERE trip_id = $1", [trip.id]);
+    const rows = clean.filter((i) => names[i.product_id] && i.quantity > 0);
+    if (rows.length) {
+      await client.query(
+        `INSERT INTO trip_inventory (trip_id, product_id, product_name_snapshot, loaded_quantity)
+         SELECT $1, u.pid, u.pname, u.qty FROM unnest($2::int[], $3::text[], $4::int[]) AS u(pid, pname, qty)`,
+        [trip.id, rows.map((r) => r.product_id), rows.map((r) => names[r.product_id]), rows.map((r) => r.quantity)]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  await logActivity({ userId: req.user.id, action: "LOAD_TRIP", recordType: "trip", recordId: trip.id, newValue: { items: clean } });
+  res.json({ message: "تم حفظ حمولة السيارة." });
+});
 
 router.post("/:id/reoptimize", async (req, res) => {
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [req.params.id]);
@@ -823,6 +1039,17 @@ router.post("/:id/complete", async (req, res) => {
 
   const totalCash = delivered.reduce((sum, s) => sum + Number(s.cash_collected || 0), 0);
   const totalCoupons = delivered.reduce((sum, s) => sum + Number(s.coupons_collected || 0), 0);
+  const totalDebtAdded = delivered.reduce((sum, s) => sum + Number(s.debt_added || 0), 0);
+  const totalDebtPaid = delivered.reduce((sum, s) => sum + Number(s.debt_paid || 0), 0);
+  const totalEmpties = delivered.reduce((sum, s) => sum + Number(s.empties_collected || 0), 0);
+
+  const loadSummary = (await query(
+    `SELECT ti.product_name_snapshot AS name, ti.loaded_quantity AS loaded,
+            COALESCE((SELECT SUM(oi.quantity) FROM trip_stops ts2 JOIN order_items oi ON oi.order_id = ts2.order_id
+                      WHERE ts2.trip_id = ti.trip_id AND ts2.delivered_at IS NOT NULL AND oi.product_id = ti.product_id), 0)::int AS delivered
+     FROM trip_inventory ti WHERE ti.trip_id = $1 ORDER BY ti.id`,
+    [trip.id]
+  )).rows.map((r) => ({ ...r, returned: r.loaded - r.delivered }));
 
   if (trip.driver_id && delivered.length > 0) {
     await query(
@@ -843,6 +1070,10 @@ router.post("/:id/complete", async (req, res) => {
     total_delivered_value: totalCash + totalCoupons,
     total_cash_collected: totalCash,
     total_coupons_collected: totalCoupons,
+    total_debt_added: totalDebtAdded,
+    total_debt_paid: totalDebtPaid,
+    total_empties: totalEmpties,
+    load_summary: loadSummary,
     products_summary: itemsSummaryResult.rows,
   });
 });

@@ -38,9 +38,24 @@ function computeFinalTotal(subtotal, discountType, discountValue) {
 }
 
 router.get("/", async (req, res) => {
-  const { status, priority, customer_id, limit } = req.query;
+  const { status, priority, customer_id, limit, from, to, q } = req.query;
   const conditions = [];
   const params = [];
+  const isDate = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
+
+  // فلترة بالتاريخ (بتوقيت الأردن): from/to = YYYY-MM-DD
+  if (isDate(from)) {
+    params.push(from);
+    conditions.push(`(o.created_at AT TIME ZONE 'Asia/Amman')::date >= $${params.length}::date`);
+  }
+  if (isDate(to)) {
+    params.push(to);
+    conditions.push(`(o.created_at AT TIME ZONE 'Asia/Amman')::date <= $${params.length}::date`);
+  }
+  if (q && String(q).trim()) {
+    params.push(String(q).trim());
+    conditions.push(`(c.name ILIKE '%' || $${params.length} || '%' OR o.order_number LIKE '%' || $${params.length} || '%' OR c.phone_display LIKE '%' || $${params.length} || '%')`);
+  }
 
   if (status) {
     params.push(status);
@@ -56,7 +71,7 @@ router.get("/", async (req, res) => {
   }
 
   const whereClause = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-  params.push(Number(limit) || 100);
+  params.push(Math.min(Number(limit) || 100, 1000));
 
   const result = await query(
     `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.bottle_type

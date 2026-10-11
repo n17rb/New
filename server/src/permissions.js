@@ -14,6 +14,9 @@ export const SECTIONS = [
   { key: "products", label: "المنتجات والمناطق", hint: "المنتجات وأسعارها والمناطق" },
   { key: "cash", label: "الحساب اليومي", hint: "مبيعات وصرفيات كل يوم" },
   { key: "driver_balances", label: "ذمم الكباتن", hint: "الكاش والكوبونات اللي مع الكباتن والتسوية" },
+  { key: "debts", label: "ديون العملاء", hint: "مين عليه دين، تسجيل الدفعات وتعديل الدين" },
+  { key: "coupons", label: "الكوبونات والباقات", hint: "بيع باقات الكوبونات للعملاء وإدارة الباقات" },
+  { key: "chat", label: "صندوق رسائل الموظفين", hint: "يقرأ رسائل الموظفين ويرد عليهم باسم الإدارة" },
   { key: "reports", label: "التقارير", hint: "التقارير، أداء الكباتن، نمو العملاء، الخريطة", viewOnly: true },
   { key: "settings", label: "إعدادات المحل", hint: "موقع المحل اللي بتخلص فيه الرحلات" },
   { key: "activity_log", label: "سجل النشاط", hint: "مين عمل شو وإيمتى", viewOnly: true },
@@ -26,6 +29,8 @@ export const ACTIONS = [
   { key: "delete_customer", label: "حذف عميل" },
   { key: "edit_prices", label: "تعديل أسعار المنتجات" },
   { key: "adjust_coupons", label: "تعديل رصيد كوبونات العميل يدويًا" },
+  { key: "give_credit", label: "البيع بالدين (الزبون بيدفع بعدين)" },
+  { key: "chat_with_admin", label: "مراسلة الإدارة بالشات" },
 ];
 
 export const LEVELS = ["none", "view", "edit"];
@@ -38,36 +43,36 @@ export const TEMPLATES = {
     sections: {
       dashboard: "view", customers: "edit", orders: "edit", delivery: "edit", trips: "edit",
       products: "edit", cash: "edit", driver_balances: "edit", reports: "view", settings: "edit",
-      activity_log: "none", backup: "none",
+      debts: "edit", coupons: "edit", chat: "edit", activity_log: "none", backup: "none",
     },
-    actions: { discount: true, cancel_order: true, delete_customer: true, edit_prices: true, adjust_coupons: false },
+    actions: { discount: true, cancel_order: true, delete_customer: true, edit_prices: true, adjust_coupons: false, give_credit: true, chat_with_admin: true },
   },
   driver: {
     label: "كابتن توصيل",
     sections: {
       dashboard: "none", customers: "edit", orders: "edit", delivery: "edit", trips: "none",
       products: "view", cash: "none", driver_balances: "none", reports: "none", settings: "none",
-      activity_log: "none", backup: "none",
+      debts: "none", coupons: "none", chat: "none", activity_log: "none", backup: "none",
     },
-    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false },
+    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: true, chat_with_admin: true },
   },
   data_entry: {
     label: "موظف إدخال",
     sections: {
       dashboard: "none", customers: "edit", orders: "none", delivery: "none", trips: "none",
       products: "view", cash: "none", driver_balances: "none", reports: "none", settings: "none",
-      activity_log: "none", backup: "none",
+      debts: "none", coupons: "none", chat: "none", activity_log: "none", backup: "none",
     },
-    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false },
+    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: false, chat_with_admin: true },
   },
   viewer: {
     label: "متفرج",
     sections: {
       dashboard: "view", customers: "view", orders: "view", delivery: "none", trips: "view",
       products: "view", cash: "view", driver_balances: "view", reports: "view", settings: "view",
-      activity_log: "none", backup: "none",
+      debts: "view", coupons: "view", chat: "none", activity_log: "none", backup: "none",
     },
-    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false },
+    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: false, chat_with_admin: true },
   },
 };
 

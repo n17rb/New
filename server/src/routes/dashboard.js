@@ -26,13 +26,19 @@ router.get("/", async (req, res) => {
           AND (updated_at AT TIME ZONE 'Asia/Amman')::date = $1::date) AS delivered_value_today,
        (SELECT COUNT(*)::int FROM trips WHERE status IN ('PLANNED','STARTED')) AS active_trips,
        (SELECT COUNT(*)::int FROM customer_reminders cr JOIN customers c ON c.id = cr.customer_id
-          WHERE c.status = 'active' AND $2 = ANY(cr.days_of_week)) AS appointments_today`,
+          WHERE c.status = 'active' AND $2 = ANY(cr.days_of_week)) AS appointments_today,
+       (SELECT COALESCE(SUM(debt_balance), 0)::float FROM customers WHERE status = 'active' AND debt_balance > 0) AS debts_total,
+       (SELECT COUNT(*)::int FROM customers WHERE status = 'active' AND debt_balance > 0) AS debtors_count`,
     [today, dow]
   );
   const row = result.rows[0];
 
   // قيمة المبيعات بتظهر بس للي عنده تقارير أو حساب يومي
   if (!can(req.user, "reports", "view") && !can(req.user, "cash", "view")) delete row.delivered_value_today;
+  if (!can(req.user, "debts", "view")) {
+    delete row.debts_total;
+    delete row.debtors_count;
+  }
 
   res.json({ today, ...row });
 });

@@ -27,6 +27,9 @@ import notesRoutes from "./routes/notes.js";
 import pushRoutes from "./routes/push.js";
 import settingsRoutes from "./routes/settings.js";
 import dashboardRoutes from "./routes/dashboard.js";
+import debtRoutes from "./routes/debts.js";
+import couponRoutes from "./routes/coupons.js";
+import chatRoutes from "./routes/chat.js";
 
 dotenv.config();
 
@@ -58,6 +61,9 @@ app.use("/api/notes", notesRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/debts", debtRoutes);
+app.use("/api/coupons", couponRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

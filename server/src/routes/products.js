@@ -18,15 +18,15 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", requirePerm("products", "edit"), async (req, res) => {
-  const { name, type, unit_price, sort_order, coupon_eligible, grants_coupons } = req.body;
+  const { name, type, unit_price, sort_order, coupon_eligible, grants_coupons, is_returnable } = req.body;
   if (!name || unit_price == null) {
     return res.status(400).json({ error: "اسم المنتج والسعر مطلوبان." });
   }
 
   const result = await query(
-    `INSERT INTO products (name, type, unit_price, sort_order, coupon_eligible, grants_coupons, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [name.trim(), type || "standard", unit_price, sort_order || 0, coupon_eligible || false, grants_coupons || null, req.user.id]
+    `INSERT INTO products (name, type, unit_price, sort_order, coupon_eligible, grants_coupons, is_returnable, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [name.trim(), type || "standard", unit_price, sort_order || 0, coupon_eligible || false, grants_coupons || null, !!is_returnable, req.user.id]
   );
 
   await logActivity({
@@ -48,7 +48,9 @@ router.put("/:id", async (req, res) => {
   const before = await query("SELECT * FROM products WHERE id = $1", [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: "المنتج غير موجود." });
 
-  const { name, unit_price, status, sort_order, coupon_eligible, grants_coupons } = req.body;
+  const { name, unit_price, status, sort_order, coupon_eligible, grants_coupons, is_returnable } = req.body;
+  // اللي عنده صلاحية الأسعار بس (مش المنتجات) بيقدر يغيّر السعر وبس
+  const fullEdit = can(req.user, "products", "edit");
   const updated = await query(
     `UPDATE products SET
        name = COALESCE($1, name),
@@ -57,10 +59,13 @@ router.put("/:id", async (req, res) => {
        sort_order = COALESCE($4, sort_order),
        coupon_eligible = COALESCE($5, coupon_eligible),
        grants_coupons = COALESCE($6, grants_coupons),
+       is_returnable = COALESCE($9, is_returnable),
        updated_by = $7,
        updated_at = now()
      WHERE id = $8 RETURNING *`,
-    [name, unit_price, status, sort_order, coupon_eligible, grants_coupons, req.user.id, req.params.id]
+    [fullEdit ? name : null, unit_price, fullEdit ? status : null, fullEdit ? sort_order : null,
+     fullEdit ? coupon_eligible : null, fullEdit ? grants_coupons : null, req.user.id, req.params.id,
+     fullEdit && typeof is_returnable === "boolean" ? is_returnable : null]
   );
 
   await logActivity({

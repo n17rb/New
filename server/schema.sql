@@ -375,3 +375,87 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS needs_quantity BOOLEAN NOT NULL DEFA
 -- صلاحيات مفصّلة لكل مستخدم: {"sections": {"orders": "edit", ...}, "actions": {"discount": true, ...}}
 -- NULL = الحساب قديم، صلاحياته منطلعها من الدور
 ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;
+
+-- ============================================================
+-- ديون العملاء (ذمم): الموجب = الزبون مديون للمحل
+-- ============================================================
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS debt_balance NUMERIC(10,2) NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS customer_debt_ledger (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  change_amount NUMERIC(10,2) NOT NULL,
+  reason VARCHAR(30) NOT NULL CHECK (reason IN ('order_credit','payment','manual','coupon_package','delivery_undo')),
+  order_id INTEGER REFERENCES orders(id),
+  trip_id INTEGER REFERENCES trips(id),
+  balance_after NUMERIC(10,2) NOT NULL,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_debt_ledger_customer ON customer_debt_ledger(customer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_customers_debt ON customers(debt_balance) WHERE debt_balance <> 0;
+
+-- ============================================================
+-- باقات الكوبونات (بصورة وسعر) ومبيعاتها
+-- ============================================================
+ALTER TABLE coupon_ledger DROP CONSTRAINT IF EXISTS coupon_ledger_reason_check;
+ALTER TABLE coupon_ledger ADD CONSTRAINT coupon_ledger_reason_check
+  CHECK (reason IN ('recharge','order_payment','manual_adjustment','package_purchase','delivery_undo'));
+ALTER TABLE coupon_ledger ADD COLUMN IF NOT EXISTS notes TEXT;
+
+CREATE TABLE IF NOT EXISTS coupon_packages (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  coupons INTEGER NOT NULL CHECK (coupons > 0),
+  bonus_coupons INTEGER NOT NULL DEFAULT 0 CHECK (bonus_coupons >= 0),
+  price NUMERIC(10,2) NOT NULL CHECK (price >= 0),
+  image_url TEXT,
+  description TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS coupon_sales (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  package_id INTEGER REFERENCES coupon_packages(id),
+  package_name_snapshot VARCHAR(100) NOT NULL,
+  coupons INTEGER NOT NULL,
+  price NUMERIC(10,2) NOT NULL,
+  paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  sold_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_coupon_sales_created ON coupon_sales(created_at DESC);
+
+-- ============================================================
+-- القوارير اللي عند الزبون (قوارير المحل) + الفوارغ
+-- ============================================================
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_returnable BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS bottles_out INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS amount_due NUMERIC(10,2);
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS debt_added NUMERIC(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS debt_paid NUMERIC(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS returnable_delivered INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS empties_collected INTEGER NOT NULL DEFAULT 0;
+
+-- حمولة السيارة: trip_inventory موجود — منضيف وقت التحميل
+ALTER TABLE trip_inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_inventory_trip_product ON trip_inventory(trip_id, product_id);
+
+-- ============================================================
+-- شات الموظفين مع الإدارة — محادثة وحدة لكل موظف
+-- ============================================================
+CREATE TABLE IF NOT EXISTS staff_messages (
+  id SERIAL PRIMARY KEY,
+  thread_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  sender_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  body TEXT,
+  image_url TEXT,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (body IS NOT NULL OR image_url IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_staff_messages_thread ON staff_messages(thread_user_id, id DESC);
