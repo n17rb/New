@@ -2,9 +2,10 @@ import { Link } from "react-router-dom";
 import {
   FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiDroplet,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
-  FiTag, FiAlertCircle, FiMessageCircle,
+  FiTag, FiAlertCircle, FiMessageCircle, FiClipboard, FiUsers, FiStar, FiHeadphones, FiGrid, FiBriefcase,
 } from "react-icons/fi";
-import { usePerms } from "../auth.jsx";
+import { usePerms, useShop } from "../auth.jsx";
+import { LogoMark } from "../components/Logo.jsx";
 
 export const ROLE_LABELS = {
   super_admin: "المدير العام",
@@ -41,7 +42,10 @@ function Group({ title, children }) {
 
 export default function More({ darkMode, setDarkMode, onLogout }) {
   const { user, can, canAction, isOwner } = usePerms();
+  const shop = useShop();
   const initial = (user.full_name || "?").trim().charAt(0);
+  const isManager = isOwner || can("settings", "edit");
+  const subscriptionSub = shop?.access?.days_left != null ? `فعّال · باقي ${shop.access.days_left} يوم` : "الحالة والتجديد";
 
   return (
     <div className="page">
@@ -53,8 +57,20 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         </div>
       </div>
 
+      {shop?.platform_admin && (
+        <Link to="/platform" className="platform-entry">
+          <LogoMark size={30} color="#fff" strokeWidth={4} />
+          <span style={{ flex: 1 }}>
+            <strong>لوحة إدارة موج</strong>
+            <div style={{ fontSize: "0.78rem", opacity: 0.85 }}>المحلات المشتركة، الاشتراكات، الدفعات والدعم</div>
+          </span>
+          <FiChevronLeft aria-hidden="true" />
+        </Link>
+      )}
+
       <Group title="الشغل اليومي">
         {(can("orders") || can("customers")) && <Row key="forecast" to="/forecast" icon={FiDroplet} title="توقعات الطلبات" sub="مين مفروض يطلب اليوم، ومين متأخر" />}
+        {can("jard") && <Row key="jard" to="/jard" icon={FiClipboard} title="الجرد اليومي" sub="كم دخل وكم طلع، ومين قبض شو" />}
         {can("cash") && <Row key="cash" to="/cash" icon={FiDollarSign} title="الحساب اليومي" sub="مبيعات وصرفيات كل يوم" />}
         {can("debts") && <Row key="debts" to="/debts" icon={FiAlertCircle} title="ديون العملاء" sub="مين عليه، وتذكير على واتساب" />}
         {can("coupons") && <Row key="coupons" to="/coupons" icon={FiTag} title="الكوبونات والباقات" sub="الباقات، المبيعات، واللي قربت تخلص" />}
@@ -73,17 +89,26 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
       </Group>
 
       <Group title="الإدارة">
-        {isOwner && <Row key="users" to="/users" icon={FiShield} title="الموظفين والصلاحيات" sub="مين بيشوف شو، ومين بيعدّل" />}
+        {can("payroll") && <Row key="payroll" to="/payroll" icon={FiBriefcase} title="الدوام والرواتب" sub="مين داوم، الرواتب واليوميات، السحوبات" />}
+        {isOwner && <Row key="users" to="/users" icon={FiShield} title="الحسابات والصلاحيات" sub="مين بيشوف شو، ومين بيعدّل" />}
         {can("settings") && <Row key="set" to="/settings" icon={FiMapPin} title="إعدادات المحل" sub="موقع المحل" />}
         {can("activity_log") && <Row key="log" to="/activity-log" icon={FiList} title="سجل النشاط" />}
         {can("backup") && <Row key="backup" to="/backup" icon={FiDatabase} title="النسخ الاحتياطي" />}
       </Group>
+
+      {!shop?.is_home && isManager && (
+        <Group title="موج">
+          <Row key="sub" to="/subscription" icon={FiStar} title="اشتراك موج" sub={subscriptionSub} />
+          <Row key="support" to="/support" icon={FiHeadphones} title="الدعم الفني" sub="احكي معنا مباشرة" />
+        </Group>
+      )}
 
       <div className="section-title">حسابي</div>
       <div className="list-group">
         {(can("chat") || canAction("chat_with_admin")) && (
           <Row to="/chat" icon={FiMessageCircle} title={can("chat") ? "رسائل الموظفين" : "راسل الإدارة"} />
         )}
+        <Row to="/my-pay" icon={FiUsers} title="دوامي وحسابي" sub="سجّل حضورك وشوف مستحقاتك" />
         <Row to="/notes" icon={FiEdit3} title="ملاحظاتي" />
         <label className="list-row" style={{ cursor: "pointer" }}>
           <span className="list-icon"><FiMoon aria-hidden="true" /></span>

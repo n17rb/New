@@ -16,7 +16,7 @@ async function loadOrCreateVapidKeys() {
     return { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY };
   }
 
-  const existing = await query("SELECT key, value FROM app_settings WHERE key IN ('vapid_public_key','vapid_private_key')");
+  const existing = await query("SELECT key, value FROM public.app_settings WHERE key IN ('vapid_public_key','vapid_private_key')");
   const map = Object.fromEntries(existing.rows.map((r) => [r.key, r.value]));
   if (map.vapid_public_key && map.vapid_private_key) {
     return { publicKey: map.vapid_public_key, privateKey: map.vapid_private_key };
@@ -25,12 +25,12 @@ async function loadOrCreateVapidKeys() {
   // أول مرة: نولّد المفاتيح ونحفظها بقاعدة البيانات (ما بتتغير بعدين)
   const keys = webpush.generateVAPIDKeys();
   await query(
-    `INSERT INTO app_settings (key, value) VALUES ('vapid_public_key', $1), ('vapid_private_key', $2)
+    `INSERT INTO public.app_settings (key, value) VALUES ('vapid_public_key', $1), ('vapid_private_key', $2)
      ON CONFLICT (key) DO NOTHING`,
     [keys.publicKey, keys.privateKey]
   );
   // لو سيرفر ثاني سبقنا بنفس اللحظة، ناخذ المحفوظ
-  const saved = await query("SELECT key, value FROM app_settings WHERE key IN ('vapid_public_key','vapid_private_key')");
+  const saved = await query("SELECT key, value FROM public.app_settings WHERE key IN ('vapid_public_key','vapid_private_key')");
   const savedMap = Object.fromEntries(saved.rows.map((r) => [r.key, r.value]));
   return { publicKey: savedMap.vapid_public_key, privateKey: savedMap.vapid_private_key };
 }
@@ -56,7 +56,7 @@ export function isPushAvailable() {
 }
 
 // يبعث إشعار لكل أجهزة المستخدم. الاشتراكات المنتهية بتنحذف لحالها.
-export async function sendPushToUser(userId, { title = "جوهرة الرابية", body, url = "/notifications", tag } = {}) {
+export async function sendPushToUser(userId, { title = "موج", body, url = "/notifications", tag } = {}) {
   if (!webpush || !userId || !body) return;
   await getVapidPublicKey();
 

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { shopName } from "../shop.js";
 import { useNavigate, useParams } from "react-router-dom";
 import { FiArrowRight, FiSend, FiImage, FiEdit, FiChevronLeft, FiCheck } from "react-icons/fi";
 import { api } from "../api.js";
@@ -237,7 +238,7 @@ function Thread({ threadUserId, me }) {
           <div>
             <div style={{ fontWeight: 700 }}>{title}</div>
             <div className="text-secondary" style={{ fontSize: "0.75rem" }}>
-              {isStaffSide ? "مياه جوهرة الرابية" : ROLE_LABELS[peer?.role] || "موظف"}
+              {isStaffSide ? shopName() : ROLE_LABELS[peer?.role] || "موظف"}
             </div>
           </div>
         </div>

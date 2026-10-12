@@ -1,7 +1,8 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { query } from "../db.js";
-import { signToken, requireAuth } from "../middleware/auth.js";
+import { query, setRequestTenant } from "../db.js";
+import { signToken, requireAuth, isPlatformAdmin } from "../middleware/auth.js";
+import { findTenantIdByUsername, getTenant, tenantAccess, getPlatformSettings } from "../utils/tenants.js";
 import { effectivePermissions, SECTIONS, ACTIONS, TEMPLATES } from "../permissions.js";
 
 const router = Router();
@@ -13,7 +14,13 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ error: "الرجاء إدخال اسم المستخدم وكلمة المرور." });
   }
 
-  const result = await query("SELECT * FROM users WHERE username = $1", [username.trim()]);
+  // موج: منعرف المحل من اسم المستخدم
+  const tenantId = (await findTenantIdByUsername(username)) || 1;
+  const tenant = await getTenant(tenantId);
+  if (!tenant) return res.status(401).json({ error: "اسم المستخدم أو كلمة المرور غير صحيحة." });
+  setRequestTenant(tenant);
+
+  const result = await query("SELECT * FROM users WHERE lower(username) = lower($1)", [username.trim()]);
   const user = result.rows[0];
 
   if (!user) {
@@ -29,12 +36,13 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ error: "اسم المستخدم أو كلمة المرور غير صحيحة." });
   }
 
-  const token = signToken(user);
-  res.json({ token, user: publicUser(user) });
+  const token = signToken(user, tenant.id);
+  res.json({ token, user: publicUser(user), shop: await shopInfo({ tenant, user }) });
 });
 
 function publicUser(user) {
   return {
+    inspecting: !!user.inspecting,
     id: user.id,
     username: user.username,
     full_name: user.full_name,
@@ -43,9 +51,32 @@ function publicUser(user) {
   };
 }
 
-// بيانات المستخدم الحالي وصلاحياته الحالية — التطبيق بيسأل عنها عند الفتح
-router.get("/me", requireAuth, (req, res) => {
-  res.json(publicUser(req.user));
+// معلومات المحل والاشتراك للتطبيق
+async function shopInfo(req) {
+  const t = req.tenant;
+  const access = tenantAccess(t);
+  const info = {
+    id: t.id,
+    name: t.name,
+    is_home: t.is_home,
+    is_demo: t.is_demo,
+    access,
+    platform_admin: isPlatformAdmin({ tenant: t, user: req.user }),
+    inspecting: !!req.user?.inspecting,
+  };
+  if (access.state !== "active") {
+    const s = await getPlatformSettings().catch(() => ({}));
+    info.payment = {
+      cliq_number: s.cliq_number, cliq_name: s.cliq_name, contact_phone: s.contact_phone,
+      monthly_price: Number(t.monthly_price) || Number(s.default_monthly_price) || null,
+    };
+  }
+  return info;
+}
+
+// بيانات المستخدم الحالي وصلاحياته الحالية + المحل والاشتراك — التطبيق بيسأل عنها عند الفتح
+router.get("/me", requireAuth, async (req, res) => {
+  res.json({ ...publicUser(req.user), shop: await shopInfo(req) });
 });
 
 // تعريف الأقسام والإجراءات والقوالب — لشاشة الصلاحيات

@@ -2,9 +2,10 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api.js";
 import { isPushSupported, refreshPushIfGranted, disablePushForLogout } from "./push.js";
-import { FiBell, FiMessageCircle } from "react-icons/fi";
-import { UserContext, canUser, canUserAction } from "./auth.jsx";
+import { FiBell, FiMessageCircle, FiEye, FiX } from "react-icons/fi";
+import { UserContext, ShopContext, canUser, canUserAction } from "./auth.jsx";
 import { LogoMark, Wordmark } from "./components/Logo.jsx";
+import { readShop, saveShop } from "./shop.js";
 
 import Setup from "./pages/Setup.jsx";
 import Login from "./pages/Login.jsx";
@@ -34,6 +35,16 @@ const ShopSettings = lazy(() => import("./pages/ShopSettings.jsx"));
 const Debts = lazy(() => import("./pages/Debts.jsx"));
 const Coupons = lazy(() => import("./pages/Coupons.jsx"));
 const Chat = lazy(() => import("./pages/Chat.jsx"));
+const Subscription = lazy(() => import("./pages/Subscription.jsx"));
+const Support = lazy(() => import("./pages/Support.jsx"));
+const Platform = lazy(() => import("./pages/Platform.jsx"));
+const PlatformTenant = lazy(() => import("./pages/PlatformTenant.jsx"));
+const PlatformSupportThread = lazy(() => import("./pages/PlatformSupportThread.jsx"));
+const Payroll = lazy(() => import("./pages/Payroll.jsx"));
+const PayrollEmployee = lazy(() => import("./pages/PayrollEmployee.jsx"));
+const MyPay = lazy(() => import("./pages/MyPay.jsx"));
+const Jard = lazy(() => import("./pages/Jard.jsx"));
+const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
 function prefetchCommonPages() {
@@ -74,13 +85,13 @@ function showDeviceNotification(message) {
     // لو الجهاز بيدعم إشعارات السيرفر، هي اللي بتطلع التنبيه (حتى والتطبيق مسكّر) — ما نكرره
     if (isPushSupported()) return;
     if (!("Notification" in window) || Notification.permission !== "granted") return;
-    const options = { body: message, icon: "/icon.svg", badge: "/icon.svg", tag: `n-${Date.now()}`, dir: "rtl", lang: "ar" };
+    const options = { body: message, icon: "/icon-192.png", badge: "/icon-192.png", tag: `n-${Date.now()}`, dir: "rtl", lang: "ar" };
     if (navigator.serviceWorker?.ready) {
       navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification("جوهرة الرابية", options))
-        .catch(() => new Notification("جوهرة الرابية", options));
+        .then((reg) => reg.showNotification("موج", options))
+        .catch(() => new Notification("موج", options));
     } else {
-      new Notification("جوهرة الرابية", options);
+      new Notification("موج", options);
     }
   } catch {
     // بعض الأجهزة ما بتدعم إشعارات الجهاز — الإشعار بالتطبيق بيضل موجود
@@ -96,8 +107,23 @@ function readStoredUser() {
   }
 }
 
+const isLockedState = (shop) => !!shop && !shop.is_home && !shop.inspecting && ["expired", "suspended"].includes(shop.access?.state);
+
 export default function App() {
+  // فاتورة عامة: بتفتح للزبون بدون تسجيل دخول
+  if (window.location.pathname.startsWith("/i/")) {
+    return (
+      <Suspense fallback={<SplashScreen />}>
+        <PublicInvoice token={decodeURIComponent(window.location.pathname.slice(3))} />
+      </Suspense>
+    );
+  }
+  return <MainApp />;
+}
+
+function MainApp() {
   const [user, setUser] = useState(readStoredUser);
+  const [shop, setShop] = useState(readShop);
   // المستخدم المسجّل دخوله من قبل بيفوت مباشرة بدون ما يستنى فحص السيرفر
   const [loadingSetup, setLoadingSetup] = useState(() => !readStoredUser());
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -125,11 +151,20 @@ export default function App() {
   }
 
   function saveUser(next) {
-    if (next) localStorage.setItem("user", JSON.stringify(next));
-    setUser(next);
+    if (next) {
+      const { shop: nextShop, ...rest } = next;
+      localStorage.setItem("user", JSON.stringify(rest));
+      setUser(rest);
+      if (nextShop) {
+        saveShop(nextShop);
+        setShop(nextShop);
+      }
+    } else {
+      setUser(null);
+    }
   }
 
-  // تحديث الصلاحيات من السيرفر (لو المدير غيّرها) — بالخلفية
+  // تحديث الصلاحيات وحالة الاشتراك من السيرفر — بالخلفية
   function refreshMe() {
     api.getMe().then(saveUser).catch(() => {});
   }
@@ -146,15 +181,28 @@ export default function App() {
   // أي طلب رجع «الجلسة انتهت» بيرجّعنا لشاشة الدخول
   useEffect(() => {
     function onExpired() {
+      // لو كنا بنعاين محل وخلصت مدة المعاينة: منرجع لحساب إدارة موج
+      if (localStorage.getItem("inspect_backup")) {
+        endInspection();
+        return;
+      }
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      saveShop(null);
       setUser(null);
     }
+    function onLocked() {
+      refreshMe();
+    }
     window.addEventListener("auth:expired", onExpired);
-    return () => window.removeEventListener("auth:expired", onExpired);
+    window.addEventListener("shop:locked", onLocked);
+    return () => {
+      window.removeEventListener("auth:expired", onExpired);
+      window.removeEventListener("shop:locked", onLocked);
+    };
   }, []);
 
-  // كل ما يرجع المستخدم للتطبيق منحدّث صلاحياته
+  // كل ما يرجع المستخدم للتطبيق منحدّث صلاحياته واشتراكه
   useEffect(() => {
     if (!user) return;
     function onVisible() {
@@ -164,8 +212,10 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [user?.id]);
 
+  const locked = isLockedState(shop);
+
   useEffect(() => {
-    if (!user) return;
+    if (!user || locked || user.inspecting) return;
     refreshPushIfGranted();
     const hasChat = canUser(user, "chat") || canUserAction(user, "chat_with_admin");
     if (hasChat) api.getChatUnread().then((r) => setChatUnread(r.count)).catch(() => {});
@@ -201,13 +251,32 @@ export default function App() {
     poll();
     const interval = setInterval(poll, 15000);
     return () => clearInterval(interval);
-  }, [user?.id]);
+  }, [user?.id, locked]);
 
   async function handleLogout() {
     await disablePushForLogout();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("inspect_backup");
+    saveShop(null);
+    setShop(null);
     setUser(null);
+  }
+
+  // إدارة موج: بيرجع من معاينة محل لحسابه الأصلي
+  function endInspection() {
+    try {
+      const backup = JSON.parse(localStorage.getItem("inspect_backup") || "null");
+      localStorage.removeItem("inspect_backup");
+      if (backup) {
+        localStorage.setItem("token", backup.token);
+        localStorage.setItem("user", JSON.stringify(backup.user));
+        saveShop(backup.shop);
+      }
+    } catch {
+      // تجاهل
+    }
+    window.location.href = "/platform";
   }
 
   if (loadingSetup) {
@@ -242,64 +311,128 @@ export default function App() {
     return <PermissionsLoader onLoaded={saveUser} />;
   }
 
+  // الاشتراك خالص أو المحل موقوف: بس صفحة التجديد والدعم الفني
+  if (locked) {
+    return (
+      <ShopContext.Provider value={shop}>
+        <UserContext.Provider value={user}>
+          <div className="app-shell">
+            <TopBar shopName={shop?.name} minimal />
+            <Suspense fallback={<PageLoading />}>
+              <Routes>
+                <Route path="/support" element={<Support />} />
+                <Route path="*" element={<Subscription locked onLogout={handleLogout} onRefresh={refreshMe} />} />
+              </Routes>
+            </Suspense>
+          </div>
+        </UserContext.Provider>
+      </ShopContext.Provider>
+    );
+  }
+
   const can = (section, level = "view") => canUser(user, section, level);
   const isOwner = user.role === "super_admin";
   const canCustomers = can("customers") || can("orders") || can("delivery", "edit");
   const canTrip = can("delivery", "edit") || can("trips");
   const canChat = can("chat") || canUserAction(user, "chat_with_admin");
+  const isManager = isOwner || can("settings", "edit");
+  const platformAdmin = !!shop?.platform_admin;
   const home = can("dashboard") ? "/" : canTrip ? "/trip" : canCustomers ? "/customers" : can("orders") ? "/orders" : "/more";
 
   return (
-    <UserContext.Provider value={user}>
-      <div className="app-shell">
-        <TopBar unreadCount={unreadCount} chatUnread={chatUnread} showChat={canChat} />
+    <ShopContext.Provider value={shop}>
+      <UserContext.Provider value={user}>
+        <div className="app-shell">
+          <TopBar unreadCount={unreadCount} chatUnread={chatUnread} showChat={canChat && !user.inspecting} shopName={shop?.is_home ? null : shop?.name} />
+          {user.inspecting && (
+            <div className="shop-banner inspect" role="status">
+              <FiEye aria-hidden="true" />
+              <span style={{ flex: 1 }}>بتعاين «{shop?.name}» — مشاهدة بس</span>
+              <button onClick={endInspection}>رجوع للوحة موج</button>
+            </div>
+          )}
+          {!user.inspecting && shop?.is_demo && (
+            <div className="shop-banner demo" role="status">🧪 حساب تجريبي — بتقدر تتفرج وتجرّب، بس التعديلات ما بتنحفظ</div>
+          )}
+          {!user.inspecting && !shop?.is_demo && shop?.access?.state === "expiring" && isManager && (
+            <ExpiringBanner days={shop.access.days_left} />
+          )}
 
-        <Suspense fallback={<PageLoading />}>
-          <Routes>
-            <Route path="/" element={can("dashboard") ? <Dashboard user={user} /> : <Navigate to={home} replace />} />
-            {canCustomers && <Route path="/customers" element={<Customers user={user} />} />}
-            {canCustomers && <Route path="/customers/:id" element={<CustomerDetail user={user} />} />}
-            {can("orders") && <Route path="/orders" element={<Orders user={user} />} />}
-            {canTrip && <Route path="/trip" element={<Trip user={user} />} />}
-            <Route path="/notes" element={<Notes />} />
-            {can("products") && <Route path="/products" element={<Products user={user} />} />}
-            {can("driver_balances") && <Route path="/driver-balances" element={<DriverBalances />} />}
-            {can("reports") && <Route path="/reports" element={<Reports />} />}
-            {can("cash") && <Route path="/cash" element={<Cash />} />}
-            {(can("orders") || can("customers")) && <Route path="/forecast" element={<Forecast />} />}
-            <Route path="/overdue-customers" element={<Navigate to="/forecast?tab=late" replace />} />
-            {can("reports") && <Route path="/driver-performance" element={<DriverPerformance />} />}
-            {can("reports") && <Route path="/customers-map" element={<CustomersMap />} />}
-            <Route path="/notifications" element={<Notifications />} />
-            {can("trips") && <Route path="/trip-archive" element={<TripArchive />} />}
-            {can("reports") && <Route path="/customer-growth" element={<CustomerGrowth />} />}
-            {can("activity_log") && <Route path="/activity-log" element={<ActivityLog />} />}
-            {can("backup") && <Route path="/backup" element={<Backup />} />}
-            {can("delivery", "edit") && <Route path="/my-balance" element={<MyBalance user={user} />} />}
-            {can("settings") && <Route path="/settings" element={<ShopSettings />} />}
-            {isOwner && <Route path="/users" element={<Users />} />}
-            {can("debts") && <Route path="/debts" element={<Debts />} />}
-            {can("coupons") && <Route path="/coupons" element={<Coupons />} />}
-            {canChat && <Route path="/chat" element={<Chat />} />}
-            {canChat && <Route path="/chat/:userId" element={<Chat />} />}
-            <Route path="/more" element={<More darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />} />
-            <Route path="*" element={<Navigate to={home} replace />} />
-          </Routes>
-        </Suspense>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={can("dashboard") ? <Dashboard user={user} /> : <Navigate to={home} replace />} />
+              {canCustomers && <Route path="/customers" element={<Customers user={user} />} />}
+              {canCustomers && <Route path="/customers/:id" element={<CustomerDetail user={user} />} />}
+              {can("orders") && <Route path="/orders" element={<Orders user={user} />} />}
+              {canTrip && <Route path="/trip" element={<Trip user={user} />} />}
+              <Route path="/notes" element={<Notes />} />
+              {can("products") && <Route path="/products" element={<Products user={user} />} />}
+              {can("driver_balances") && <Route path="/driver-balances" element={<DriverBalances />} />}
+              {can("reports") && <Route path="/reports" element={<Reports />} />}
+              {can("cash") && <Route path="/cash" element={<Cash />} />}
+              {(can("orders") || can("customers")) && <Route path="/forecast" element={<Forecast />} />}
+              <Route path="/overdue-customers" element={<Navigate to="/forecast?tab=late" replace />} />
+              {can("reports") && <Route path="/driver-performance" element={<DriverPerformance />} />}
+              {can("reports") && <Route path="/customers-map" element={<CustomersMap />} />}
+              <Route path="/notifications" element={<Notifications />} />
+              {can("trips") && <Route path="/trip-archive" element={<TripArchive />} />}
+              {can("reports") && <Route path="/customer-growth" element={<CustomerGrowth />} />}
+              {can("activity_log") && <Route path="/activity-log" element={<ActivityLog />} />}
+              {can("backup") && <Route path="/backup" element={<Backup />} />}
+              {can("delivery", "edit") && <Route path="/my-balance" element={<MyBalance user={user} />} />}
+              {can("settings") && <Route path="/settings" element={<ShopSettings />} />}
+              {isOwner && <Route path="/users" element={<Users />} />}
+              {can("debts") && <Route path="/debts" element={<Debts />} />}
+              {can("coupons") && <Route path="/coupons" element={<Coupons />} />}
+              {canChat && <Route path="/chat" element={<Chat />} />}
+              {canChat && <Route path="/chat/:userId" element={<Chat />} />}
+              {can("payroll") && <Route path="/payroll" element={<Payroll />} />}
+              {can("payroll") && <Route path="/payroll/:id" element={<PayrollEmployee />} />}
+              <Route path="/my-pay" element={<MyPay />} />
+              {can("jard") && <Route path="/jard" element={<Jard />} />}
+              {isManager && !shop?.is_home && <Route path="/subscription" element={<Subscription onRefresh={refreshMe} />} />}
+              {(isManager || user.inspecting) && !shop?.is_home && <Route path="/support" element={<Support />} />}
+              {platformAdmin && <Route path="/platform" element={<Platform />} />}
+              {platformAdmin && <Route path="/platform/tenants/:id" element={<PlatformTenant />} />}
+              {platformAdmin && <Route path="/platform/support/:tenantId" element={<PlatformSupportThread />} />}
+              <Route path="/more" element={<More darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />} />
+              <Route path="*" element={<Navigate to={home} replace />} />
+            </Routes>
+          </Suspense>
 
-        <BottomNav />
-      </div>
-    </UserContext.Provider>
+          <BottomNav />
+        </div>
+      </UserContext.Provider>
+    </ShopContext.Provider>
   );
 }
 
-function SplashScreen() {
+function ExpiringBanner({ days }) {
+  const navigate = useNavigate();
+  const [hidden, setHidden] = useState(() => sessionStorage.getItem("hide_expiring") === "1");
+  if (hidden) return null;
   return (
-    <div className="login-screen">
-      <div className="login-hero" style={{ flex: 1, justifyContent: "center", paddingBottom: 90 }}>
-        <LogoMark size={72} color="#fff" strokeWidth={3} />
-        <div style={{ marginTop: 16 }}><Wordmark light size="lg" /></div>
+    <div className="shop-banner expiring" role="status">
+      <span style={{ flex: 1 }}>
+        ⏰ اشتراك موج بيخلص {days <= 1 ? "بكرة" : `بعد ${days} أيام`}
+      </span>
+      <button onClick={() => navigate("/subscription")}>جدّد</button>
+      <button className="icon" aria-label="إخفاء" onClick={() => { sessionStorage.setItem("hide_expiring", "1"); setHidden(true); }}>
+        <FiX />
+      </button>
+    </div>
+  );
+}
+
+export function SplashScreen() {
+  return (
+    <div className="splash">
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: "-14vh", position: "relative", zIndex: 1 }}>
+        <LogoMark size={108} color="#0A66F5" strokeWidth={3.4} />
+        <div className="splash-name">موج</div>
+        <div className="splash-tagline">إدارة أسهل .. تدفق أكبر</div>
       </div>
+      <div className="splash-waves" aria-hidden="true" />
     </div>
   );
 }
@@ -322,27 +455,29 @@ function PermissionsLoader({ onLoaded }) {
   return <SplashScreen />;
 }
 
-function TopBar({ unreadCount, chatUnread, showChat }) {
+function TopBar({ unreadCount = 0, chatUnread = 0, showChat = false, shopName = null, minimal = false }) {
   const navigate = useNavigate();
 
   return (
     <header className="top-bar">
-      <button className="brand" onClick={() => navigate("/")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="الرئيسية">
-        <LogoMark size={34} color="#fff" />
-        <Wordmark light />
+      <button className="brand" onClick={() => !minimal && navigate("/")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="الرئيسية">
+        <LogoMark size={34} color="#fff" strokeWidth={3.8} />
+        <Wordmark light subtitle={shopName} />
       </button>
-      <div className="top-actions">
-        {showChat && (
-          <button className="top-icon" onClick={() => navigate("/chat")} aria-label="الرسائل">
-            <FiMessageCircle size={19} />
-            {chatUnread > 0 && <span className="top-badge tabular-num">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+      {!minimal && (
+        <div className="top-actions">
+          {showChat && (
+            <button className="top-icon" onClick={() => navigate("/chat")} aria-label="الرسائل">
+              <FiMessageCircle size={19} />
+              {chatUnread > 0 && <span className="top-badge tabular-num">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+            </button>
+          )}
+          <button className="top-icon" onClick={() => navigate("/notifications")} aria-label="الإشعارات والمواعيد">
+            <FiBell size={19} />
+            {unreadCount > 0 && <span className="top-badge tabular-num">{unreadCount > 99 ? "99+" : unreadCount}</span>}
           </button>
-        )}
-        <button className="top-icon" onClick={() => navigate("/notifications")} aria-label="الإشعارات والمواعيد">
-          <FiBell size={19} />
-          {unreadCount > 0 && <span className="top-badge tabular-num">{unreadCount > 99 ? "99+" : unreadCount}</span>}
-        </button>
-      </div>
+        </div>
+      )}
     </header>
   );
 }

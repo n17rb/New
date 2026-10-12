@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query, logActivity } from "../db.js";
 import { requireAuth, invalidateUserCache } from "../middleware/auth.js";
+import { claimUsername, releaseUsername, findTenantIdByUsername } from "../utils/tenants.js";
 import { requireOwner, sanitizePermissions, effectivePermissions, TEMPLATES, ROLES } from "../permissions.js";
 
 const router = Router();
@@ -34,8 +35,12 @@ router.post("/", async (req, res) => {
   if (String(password).length < 6) {
     return res.status(400).json({ error: "كلمة المرور لازم تكون ٦ أحرف على الأقل." });
   }
-  const dup = await query("SELECT id FROM users WHERE username = $1", [username.trim()]);
+  const dup = await query("SELECT id FROM users WHERE lower(username) = lower($1)", [username.trim()]);
   if (dup.rows[0]) return res.status(400).json({ error: "اسم المستخدم هذا مستخدم لحساب ثاني." });
+  // اسم المستخدم لازم يكون فريد بكل محلات موج
+  if (!(await claimUsername(username, req.tenant.id))) {
+    return res.status(400).json({ error: "اسم المستخدم هذا محجوز بمحل ثاني على موج — اختار اسم ثاني." });
+  }
 
   const finalRole = cleanRole(role);
   const finalPermissions = finalRole === "super_admin"
@@ -77,9 +82,14 @@ router.put("/:id", async (req, res) => {
   const before = beforeResult.rows[0];
   if (!before) return res.status(404).json({ error: "المستخدم غير موجود." });
 
-  if (username) {
-    const dup = await query("SELECT id FROM users WHERE username = $1 AND id != $2", [username.trim(), targetId]);
+  const renaming = username && username.trim().toLowerCase() !== String(before.username).toLowerCase();
+  if (renaming) {
+    const dup = await query("SELECT id FROM users WHERE lower(username) = lower($1) AND id != $2", [username.trim(), targetId]);
     if (dup.rows[0]) return res.status(400).json({ error: "اسم المستخدم هذا مستخدم لحساب ثاني." });
+    const owner = await findTenantIdByUsername(username);
+    if (owner && Number(owner) !== Number(req.tenant.id)) {
+      return res.status(400).json({ error: "اسم المستخدم هذا محجوز بمحل ثاني على موج — اختار اسم ثاني." });
+    }
   }
   if (password && String(password).length < 6) {
     return res.status(400).json({ error: "كلمة المرور لازم تكون ٦ أحرف على الأقل." });
@@ -122,6 +132,10 @@ router.put("/:id", async (req, res) => {
   );
 
   invalidateUserCache(targetId);
+  if (renaming) {
+    await claimUsername(username, req.tenant.id);
+    await releaseUsername(before.username, req.tenant.id);
+  }
 
   await logActivity({
     userId: req.user.id,
@@ -141,7 +155,7 @@ router.delete("/:id", async (req, res) => {
     return res.status(400).json({ error: "لا يمكنك حذف حسابك أنت بنفسك." });
   }
 
-  const target = await query("SELECT role FROM users WHERE id = $1", [targetId]);
+  const target = await query("SELECT role, username FROM users WHERE id = $1", [targetId]);
   if (!target.rows[0]) return res.status(404).json({ error: "المستخدم غير موجود." });
 
   if (target.rows[0].role === "super_admin" && (await activeOwnersCount(targetId)) === 0) {
@@ -151,6 +165,7 @@ router.delete("/:id", async (req, res) => {
   try {
     await query("DELETE FROM users WHERE id = $1", [targetId]);
     invalidateUserCache(targetId);
+    await releaseUsername(target.rows[0].username, req.tenant.id);
     await logActivity({ userId: req.user.id, action: "DELETE_USER", recordType: "user", recordId: targetId });
     return res.json({ message: "تم حذف المستخدم نهائيًا.", deleted: true });
   } catch (err) {

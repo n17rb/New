@@ -1,0 +1,76 @@
+import { Router } from "express";
+import crypto from "crypto";
+import { query, setRequestTenant } from "../db.js";
+import { requireAuth } from "../middleware/auth.js";
+import { canAny } from "../permissions.js";
+import { getTenant } from "../utils/tenants.js";
+
+// ============================================================
+// فواتير الطلبات: رابط عام بيفتحه الزبون من واتساب (بدون تسجيل دخول)
+// شكل التوكن: <رقم المحل>-<رمز عشوائي> — عشان نعرف أي محل
+// ============================================================
+const router = Router();
+router.use(requireAuth);
+
+router.post("/order/:id", async (req, res) => {
+  if (!canAny(req.user, [["orders", "view"], ["delivery", "edit"], ["customers", "view"]])) {
+    return res.status(403).json({ error: "ما عندك صلاحية." });
+  }
+  const r = await query("SELECT id, invoice_token FROM orders WHERE id = $1", [req.params.id]);
+  const order = r.rows[0];
+  if (!order) return res.status(404).json({ error: "الطلب غير موجود." });
+  let token = order.invoice_token;
+  if (!token) {
+    if (req.user.inspecting) return res.status(403).json({ error: "وضع المعاينة." });
+    token = `${req.tenant.id}-${crypto.randomBytes(9).toString("base64url")}`;
+    await query("UPDATE orders SET invoice_token = $1 WHERE id = $2 AND invoice_token IS NULL", [token, order.id]);
+    token = (await query("SELECT invoice_token FROM orders WHERE id = $1", [order.id])).rows[0].invoice_token;
+  }
+  res.json({ token, path: `/i/${token}` });
+});
+
+export default router;
+
+// ---------- العام (بدون دخول) ----------
+export const publicInvoiceRouter = Router();
+
+publicInvoiceRouter.get("/invoice/:token", async (req, res) => {
+  const token = String(req.params.token || "");
+  const m = token.match(/^(\d+)-[A-Za-z0-9_-]{8,30}$/);
+  if (!m) return res.status(404).json({ error: "الفاتورة غير موجودة." });
+  const tenant = await getTenant(Number(m[1]));
+  if (!tenant || tenant.status !== "active") return res.status(404).json({ error: "الفاتورة غير موجودة." });
+  setRequestTenant(tenant);
+
+  const r = await query(
+    `SELECT o.id, o.order_number, o.status, o.subtotal, o.final_total, o.discount_type, o.discount_value, o.created_at, o.updated_at,
+            c.name AS customer_name, c.phone_display, c.coupon_balance, c.debt_balance,
+            ts.cash_collected, ts.coupons_collected, ts.debt_added, ts.debt_paid, ts.delivered_at
+     FROM orders o JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (SELECT * FROM trip_stops WHERE order_id = o.id AND delivered_at IS NOT NULL ORDER BY id DESC LIMIT 1) ts ON true
+     WHERE o.invoice_token = $1`,
+    [token]
+  );
+  const o = r.rows[0];
+  if (!o) return res.status(404).json({ error: "الفاتورة غير موجودة." });
+  const items = await query(
+    "SELECT product_name_snapshot AS name, quantity, unit_price_snapshot AS unit_price, line_total, coupon_quantity FROM order_items WHERE order_id = $1 ORDER BY id",
+    [o.id]
+  );
+  const shopName = tenant.name;
+  res.set("Cache-Control", "no-store");
+  res.json({
+    shop: { name: shopName, phone: tenant.phone && !tenant.is_home ? tenant.phone : null },
+    order: {
+      number: o.order_number, status: o.status, created_at: o.created_at, delivered_at: o.delivered_at,
+      subtotal: Number(o.subtotal), total: Number(o.final_total),
+      discount: Math.max(0, Number(o.subtotal) - Number(o.final_total)),
+      cash_paid: o.cash_collected != null ? Number(o.cash_collected) : null,
+      coupons_used: o.coupons_collected || 0,
+      debt_added: Number(o.debt_added || 0),
+      debt_paid: Number(o.debt_paid || 0),
+    },
+    customer: { name: o.customer_name, coupon_balance: o.coupon_balance, debt_balance: Number(o.debt_balance || 0) },
+    items: items.rows.map((i) => ({ ...i, unit_price: Number(i.unit_price), line_total: Number(i.line_total) })),
+  });
+});

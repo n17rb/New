@@ -16,7 +16,7 @@ export default function Login({ onLoggedIn }) {
       const result = await api.login({ username, password });
       localStorage.setItem("token", result.token);
       localStorage.setItem("user", JSON.stringify(result.user));
-      onLoggedIn(result.user);
+      onLoggedIn({ ...result.user, shop: result.shop });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -27,11 +27,11 @@ export default function Login({ onLoggedIn }) {
   return (
     <div className="login-screen">
       <div className="login-hero">
-        <LogoMark size={76} color="#fff" strokeWidth={3} />
-        <div style={{ marginTop: 18 }}>
-          <Wordmark light size="lg" />
+        <LogoMark size={84} color="currentColor" strokeWidth={3.4} />
+        <div style={{ marginTop: 4 }}>
+          <Wordmark size="lg" />
         </div>
-        <div className="login-tagline">نقاء تثق به</div>
+        <div className="login-tagline">إدارة أسهل .. تدفق أكبر</div>
       </div>
 
       <form className="login-form" onSubmit={handleSubmit}>

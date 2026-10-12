@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, API_ORIGIN } from "../api.js";
+import { shopName } from "../shop.js";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -128,7 +129,7 @@ export default function CustomerDetail({ user }) {
       {tab === "orders" && (
         <>
           {forecast && <CustomerForecastCard forecast={forecast} onReload={loadForecast} onOrder={canOrder ? () => setShowOrderForm(true) : null} />}
-          <OrderHistorySection customerId={customer.id} />
+          <OrderHistorySection customerId={customer.id} customer={customer} />
         </>
       )}
       {tab === "address" && <LocationSection customer={customer} canManage={canManage} onChanged={load} />}
@@ -605,7 +606,23 @@ function LocationSection({ customer, canManage, onChanged }) {
   );
 }
 
-function OrderHistorySection({ customerId }) {
+// فاتورة الطلب: رابط بيفتحه الزبون، بينبعت على واتساب
+async function sendInvoice(order, customer) {
+  const w = window.open("", "_blank");
+  try {
+    const r = await api.getInvoiceLink(order.id);
+    const url = `${window.location.origin}/i/${r.token}`;
+    const text = `مرحبا ${customer.name} 🌊\nفاتورة طلبك #${order.order_number} من ${shopName()}:\n${url}`;
+    const wa = `https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(text)}`;
+    if (w) w.location.href = wa;
+    else window.location.href = wa;
+  } catch (err) {
+    if (w) w.close();
+    alert(err.message);
+  }
+}
+
+function OrderHistorySection({ customerId, customer }) {
   const [history, setHistory] = useState(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -662,8 +679,13 @@ function OrderHistorySection({ customerId }) {
                     <span>#{o.order_number} · {new Date(o.created_at).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman" })}</span>
                     <span className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</span>
                   </div>
-                  <div className="text-secondary" style={{ fontSize: "0.85rem" }}>
-                    {o.items.map((it) => `${it.product_name_snapshot} ×${it.quantity}`).join("، ")}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span className="text-secondary" style={{ fontSize: "0.85rem" }}>
+                      {o.items.map((it) => `${it.product_name_snapshot} ×${it.quantity}`).join("، ")}
+                    </span>
+                    {customer?.phone_normalized && o.items.length > 0 && (
+                      <button className="chip" style={{ flexShrink: 0 }} onClick={() => sendInvoice(o, customer)}>🧾 فاتورة</button>
+                    )}
                   </div>
                 </div>
               ))}

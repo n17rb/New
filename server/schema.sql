@@ -493,3 +493,53 @@ SELECT 'forecast_learn_from', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH
 WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'forecast_learn_init')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 INSERT INTO app_settings (key, value) VALUES ('forecast_learn_init', 'done') ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- الموظفين والرواتب والدوام
+-- ============================================================
+CREATE TABLE IF NOT EXISTS employees (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  phone VARCHAR(30),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  job_title VARCHAR(80),
+  pay_type VARCHAR(10) NOT NULL DEFAULT 'daily' CHECK (pay_type IN ('daily','monthly')),
+  pay_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (pay_amount >= 0),
+  deduct_absence BOOLEAN NOT NULL DEFAULT true,
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','left')),
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id) WHERE user_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS attendance (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  work_date DATE NOT NULL,
+  status VARCHAR(10) NOT NULL CHECK (status IN ('present','half','absent','off')),
+  check_in_at TIMESTAMPTZ,
+  note TEXT,
+  recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, work_date);
+
+-- سحب/سلفة، مكافأة، خصم، صرف راتب
+CREATE TABLE IF NOT EXISTS employee_transactions (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  kind VARCHAR(15) NOT NULL CHECK (kind IN ('advance','bonus','deduction','payment')),
+  amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_emp_tx ON employee_transactions(employee_id, entry_date DESC);
+CREATE INDEX IF NOT EXISTS idx_emp_tx_date ON employee_transactions(entry_date);
+
+-- فواتير الطلبات: رابط عام للزبون (بدون تسجيل دخول)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_token VARCHAR(40);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_invoice_token ON orders(invoice_token) WHERE invoice_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_debt_ledger_created ON customer_debt_ledger(created_at);

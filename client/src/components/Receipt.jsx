@@ -1,7 +1,12 @@
+import { useEffect, useState } from "react";
 import { FiX, FiCheckCircle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
+import { api } from "../api.js";
+import { shopName } from "../shop.js";
 
-const SHOP = "مياه جوهرة الرابية";
+export function invoiceUrl(token) {
+  return `${window.location.origin}/i/${token}`;
+}
 
 export function couponsWord(n) {
   if (n === 0) return "ما ضل عندك كوبونات";
@@ -14,8 +19,8 @@ export function couponsWord(n) {
 const money = (n) => `${Number(n || 0).toFixed(2)} دينار`;
 
 // نص إيصال التسليم اللي بينبعت للزبون على واتساب
-export function buildReceiptText({ name, items = [], couponsUsed = 0, couponBalance = 0, cashPaid = 0, debtAdded = 0, debtPaid = 0, debtBalance = 0 }) {
-  const lines = [`مرحبا ${name} 🌊`, `معك ${SHOP} — تم توصيل طلبك ✅`, ""];
+export function buildReceiptText({ name, items = [], couponsUsed = 0, couponBalance = 0, cashPaid = 0, debtAdded = 0, debtPaid = 0, debtBalance = 0, invoiceToken = null }) {
+  const lines = [`مرحبا ${name} 🌊`, `معك ${shopName()} — تم توصيل طلبك ✅`, ""];
   for (const it of items) lines.push(`🧾 ${it.quantity} × ${it.product_name_snapshot}`);
   if (couponsUsed > 0) {
     lines.push(`🎫 تم دفع ${couponsUsed === 1 ? "كوبون" : couponsWord(couponsUsed)} — ${couponBalance > 0 ? `تبقى لديك ${couponsWord(couponBalance)}` : "خلص رصيد كوبوناتك"}`);
@@ -29,6 +34,7 @@ export function buildReceiptText({ name, items = [], couponsUsed = 0, couponBala
   if (couponsUsed > 0 && couponBalance <= 2) {
     lines.push("", couponBalance === 0 ? "حابب نجددلك باقة الكوبونات؟ 🙏" : "رصيد كوبوناتك قرب يخلص — حابب نجددلك الباقة؟ 🙏");
   }
+  if (invoiceToken) lines.push("", `🧾 الفاتورة: ${invoiceUrl(invoiceToken)}`);
   lines.push("", "شكرًا لثقتك فينا 💧");
   return lines.join("\n");
 }
@@ -54,7 +60,12 @@ export function receiptFromStop(stop) {
 // بطاقة بعد التسليم مباشرة: ملخص سريع + زر يبعت الإيصال للزبون
 export function ReceiptBanner({ receipt, onClose }) {
   const { stop, result } = receipt;
+  const [invoiceToken, setInvoiceToken] = useState(null);
+  useEffect(() => {
+    api.getInvoiceLink(stop.order_id).then((r) => setInvoiceToken(r.token)).catch(() => {});
+  }, [stop.order_id]);
   const data = {
+    invoiceToken,
     name: stop.customer_name,
     items: stop.items || [],
     couponsUsed: result.coupons_used || 0,

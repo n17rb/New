@@ -1,4 +1,4 @@
-import { query } from "../db.js";
+import { query, currentSchema } from "../db.js";
 
 // ============================================================
 // توقعات الطلبات
@@ -193,15 +193,16 @@ function analyzeCustomer(events, { minOrders, now, today, resetAt }) {
   };
 }
 
-let cache = { at: 0, data: null };
+const caches = new Map(); // لكل محل كاش لحاله
 
 export function invalidateForecastCache() {
-  cache = { at: 0, data: null };
+  caches.delete(currentSchema());
 }
 
 // بيرجّع توقع كل الزباين النشطين (أو زبون واحد). محفوظ ٢٠ ثانية بالذاكرة.
 export async function computeForecasts({ customerId = null, fresh = false } = {}) {
-  if (!customerId && !fresh && cache.data && Date.now() - cache.at < 20000) return cache.data;
+  const cache = caches.get(currentSchema());
+  if (!customerId && !fresh && cache && Date.now() - cache.at < 20000) return cache.data;
 
   const settings = await getForecastSettings();
   const now = Date.now();
@@ -307,7 +308,7 @@ export async function computeForecasts({ customerId = null, fresh = false } = {}
   }
 
   const data = { today, settings, customers: results };
-  if (!customerId) cache = { at: Date.now(), data };
+  if (!customerId) caches.set(currentSchema(), { at: Date.now(), data });
   return data;
 }
 

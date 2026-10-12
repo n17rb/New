@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { shopName } from "../shop.js";
 import { FiPlus, FiMinus, FiClock, FiCheck, FiX, FiPackage, FiFileText } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { couponsWord } from "./Receipt.jsx";
@@ -100,7 +101,7 @@ function CouponWallet({ customer, onChanged }) {
               className="icon-row"
               style={{ color: "var(--whatsapp)", fontWeight: 700, marginTop: 6, textDecoration: "none" }}
               href={`https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(
-                `مرحبا ${customer.name} 🌊\nمعك مياه جوهرة الرابية.\n🎫 تم شحن رصيدك بـ${couponsWord(sold.added)} (${sold.packageName})\nرصيدك الحالي: ${couponsWord(sold.newBalance)}${sold.unpaid > 0 ? `\n💳 باقي من ثمن الباقة: ${sold.unpaid.toFixed(2)} دينار` : ""}\nكل كوبون = قارورة، وبينخصم لحاله وقت التوصيل 💧\nشكرًا لثقتك فينا`
+                `مرحبا ${customer.name} 🌊\nمعك ${shopName()}.\n🎫 تم شحن رصيدك بـ${couponsWord(sold.added)} (${sold.packageName})\nرصيدك الحالي: ${couponsWord(sold.newBalance)}${sold.unpaid > 0 ? `\n💳 باقي من ثمن الباقة: ${sold.unpaid.toFixed(2)} دينار` : ""}\nكل كوبون = قارورة، وبينخصم لحاله وقت التوصيل 💧\nشكرًا لثقتك فينا`
               )}`}
               target="_blank"
               rel="noreferrer"
@@ -394,7 +395,7 @@ function DebtCard({ customer, onChanged }) {
 
 function buildStatement(customer, orders) {
   const debt = Number(customer.debt_balance || 0);
-  const lines = [`مرحبا ${customer.name} 🌊`, "كشف حسابك من مياه جوهرة الرابية 📄", ""];
+  const lines = [`مرحبا ${customer.name} 🌊`, `كشف حسابك من ${shopName()} 📄`, ""];
   lines.push(`🎫 رصيد الكوبونات: ${customer.coupon_balance > 0 ? couponsWord(customer.coupon_balance) : "ما في"}`);
   lines.push(debt > 0 ? `💳 المستحق عليك: ${debt.toFixed(2)} دينار` : "✔️ ما عليك أي مبلغ");
   if (customer.bottles_out > 0) lines.push(`🧴 قوارير المحل عندك: ${customer.bottles_out}`);

@@ -1,9 +1,9 @@
-const CACHE_NAME = "jawharat-v4";
-const FONT_CACHE = "jawharat-fonts-v1";
+const CACHE_NAME = "moj-v1";
+const FONT_CACHE = "moj-fonts-v1";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(["/", "/manifest.json", "/icon.svg"])).catch(() => {})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(["/", "/manifest.json", "/icon-192.png"])).catch(() => {})
   );
   self.skipWaiting();
 });
@@ -97,12 +97,12 @@ self.addEventListener("push", (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "جوهرة الرابية";
+  const title = data.title || "موج";
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || "عندك إشعار جديد",
-      icon: "/icon.svg",
-      badge: "/icon.svg",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
       tag: data.tag,
       dir: "rtl",
       lang: "ar",

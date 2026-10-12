@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query, logActivity } from "../db.js";
+import { claimUsername } from "../utils/tenants.js";
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.post("/create-first-admin", async (req, res) => {
   );
 
   const newAdmin = result.rows[0];
+  await claimUsername(newAdmin.username, 1).catch(() => {});
   await logActivity({
     userId: newAdmin.id,
     action: "CREATE_FIRST_ADMIN",

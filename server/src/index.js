@@ -5,7 +5,9 @@ import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { pool } from "./db.js";
+import { pool, tenantStore, runInTenant, platformQuery } from "./db.js";
+import { migrateAllTenants, listTenants, tenantAccess } from "./utils/tenants.js";
+import { checkSubscriptionWarnings } from "./utils/platformNotify.js";
 
 import authRoutes from "./routes/auth.js";
 import setupRoutes from "./routes/setup.js";
@@ -31,6 +33,12 @@ import debtRoutes from "./routes/debts.js";
 import couponRoutes from "./routes/coupons.js";
 import chatRoutes from "./routes/chat.js";
 import forecastRoutes, { checkForecastAlerts } from "./routes/forecast.js";
+import platformRoutes from "./routes/platform.js";
+import subscriptionRoutes from "./routes/subscription.js";
+import supportRoutes from "./routes/support.js";
+import payrollRoutes from "./routes/payroll.js";
+import jardRoutes from "./routes/jard.js";
+import invoiceRoutes, { publicInvoiceRouter } from "./routes/invoices.js";
 
 dotenv.config();
 
@@ -39,6 +47,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+
+// موج: كل طلب إله «سياق محل» — بيتعبّى من التوكن (أو من اسم المستخدم وقت الدخول)
+app.use((req, res, next) => tenantStore.run({ schema: "public", tenant: null }, next));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
 
@@ -66,6 +77,13 @@ app.use("/api/debts", debtRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/forecast", forecastRoutes);
+app.use("/api/platform", platformRoutes);
+app.use("/api/subscription", subscriptionRoutes);
+app.use("/api/support", supportRoutes);
+app.use("/api/payroll", payrollRoutes);
+app.use("/api/jard", jardRoutes);
+app.use("/api/invoices", invoiceRoutes);
+app.use("/api/public", publicInvoiceRouter);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -74,13 +92,41 @@ app.use((err, req, res, next) => {
 
 async function initDbIfNeeded() {
   try {
-    const schemaPath = path.join(__dirname, "..", "schema.sql");
-    const sql = fs.readFileSync(schemaPath, "utf-8");
-    await pool.query(sql);
-    console.log("✅ تم التأكد من وجود الجداول والبيانات الابتدائية.");
+    const sql = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf-8");
+    await pool.query(sql); // المحل الأساسي (public)
+    await platformQuery(fs.readFileSync(path.join(__dirname, "..", "platform.sql"), "utf-8"));
+    await migrateAllTenants(); // كل المحلات المشتركة
+    console.log("✅ تم التأكد من جداول موج وكل المحلات.");
   } catch (err) {
     console.error("❌ خطأ أثناء تهيئة قاعدة البيانات:", err.message);
   }
+}
+
+// بيشغّل مهمة على كل محل شغّال (مش موقوف ومش خالص اشتراكه)
+async function forEachTenant(label, fn) {
+  let tenants = [];
+  try {
+    tenants = await listTenants({ includeSuspended: false });
+  } catch (err) {
+    console.error("❌ ما قدرت أجيب المحلات:", err.message);
+    return;
+  }
+  for (const t of tenants) {
+    const a = tenantAccess(t);
+    if (a.state === "expired" || a.state === "suspended") continue;
+    try {
+      await runInTenant(t, fn);
+    } catch (err) {
+      console.error(`❌ ${label} (${t.name}):`, err.message);
+    }
+  }
+}
+
+async function hourlyJobs() {
+  await forEachTenant("التذكيرات", () => checkAndFireReminders());
+  await forEachTenant("التوقعات", () => checkForecastAlerts());
+  await forEachTenant("تنظيف الإشعارات", () => pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'"));
+  await checkSubscriptionWarnings().catch((err) => console.error("❌ تنبيهات الاشتراك:", err.message));
 }
 
 const PORT = process.env.PORT || 4000;
@@ -90,17 +136,9 @@ initDbIfNeeded().then(() => {
     console.log(`✅ السيرفر شغال على المنفذ ${PORT}`);
   });
 
-  createScheduledSnapshot().catch((err) => console.error("❌ فشل النسخة الاحتياطية الأولية:", err.message));
-  setInterval(() => {
-    createScheduledSnapshot().catch((err) => console.error("❌ فشل النسخة الاحتياطية المجدولة:", err.message));
-  }, 24 * 60 * 60 * 1000);
+  forEachTenant("النسخة الاحتياطية", () => createScheduledSnapshot());
+  setInterval(() => forEachTenant("النسخة الاحتياطية", () => createScheduledSnapshot()), 24 * 60 * 60 * 1000);
 
-  checkAndFireReminders().catch((err) => console.error("❌ فشل فحص التذكيرات الأولي:", err.message));
-  setInterval(() => {
-    checkAndFireReminders()
-      .catch((err) => console.error("❌ فشل فحص التذكيرات:", err.message))
-      .then(() => checkForecastAlerts())
-      .catch((err) => console.error("❌ فشل فحص التوقعات:", err.message));
-    pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'").catch(() => {});
-  }, 60 * 60 * 1000);
+  hourlyJobs();
+  setInterval(hourlyJobs, 60 * 60 * 1000);
 });

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { shopName } from "../shop.js";
 import { Link } from "react-router-dom";
 import { FiPlus, FiClock, FiCheck, FiPause, FiPlay } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -25,11 +26,11 @@ export function Bottle({ remaining, full, large = false }) {
 }
 
 function reminderText(f) {
-  return `مرحبا ${f.name} 🌊\nمعك مياه جوهرة الرابية.\nحسب حسابنا المي عندك قربت تخلص 💧\nبدك نجيبلك ${f.qty_label} اليوم؟`;
+  return `مرحبا ${f.name} 🌊\nمعك ${shopName()}.\nحسب حسابنا المي عندك قربت تخلص 💧\nبدك نجيبلك ${f.qty_label} اليوم؟`;
 }
 
 function winBackText(f) {
-  return `مرحبا ${f.name} 🌊\nمعك مياه جوهرة الرابية — اشتقنالك! 💙\nإذا حابب نجيبلك مي، ابعتلنا رسالة ومنوصلك بأسرع وقت 💧`;
+  return `مرحبا ${f.name} 🌊\nمعك ${shopName()} — اشتقنالك! 💙\nإذا حابب نجيبلك مي، ابعتلنا رسالة ومنوصلك بأسرع وقت 💧`;
 }
 
 export function waLink(phone, text) {

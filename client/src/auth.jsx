@@ -3,6 +3,12 @@ import { createContext, useContext } from "react";
 // المستخدم الحالي وصلاحياته — متاحة لكل الشاشات
 export const UserContext = createContext(null);
 
+// المحل الحالي على موج (الاسم، الاشتراك، الديمو، إدارة موج)
+export const ShopContext = createContext(null);
+export function useShop() {
+  return useContext(ShopContext);
+}
+
 const RANK = { none: 0, view: 1, edit: 2 };
 
 export function canUser(user, section, level = "view") {

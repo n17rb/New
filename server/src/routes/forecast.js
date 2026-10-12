@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query, logActivity } from "../db.js";
+import { query, logActivity, currentSchema } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAny } from "../permissions.js";
 import { sendPushToUser } from "../utils/push.js";
@@ -217,11 +217,12 @@ export async function checkForecastAlerts({ force = false } = {}) {
   return { sent: fresh.length };
 }
 
-let lastCheckAt = 0;
+const lastCheckAt = new Map(); // لكل محل لحاله
 export function checkForecastThrottled() {
   const now = Date.now();
-  if (now - lastCheckAt < 15 * 60 * 1000) return;
-  lastCheckAt = now;
+  const key = currentSchema();
+  if (now - (lastCheckAt.get(key) || 0) < 15 * 60 * 1000) return;
+  lastCheckAt.set(key, now);
   checkForecastAlerts().catch((err) => console.error("forecast check error:", err.message));
 }
 

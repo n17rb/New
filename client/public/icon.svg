@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0D47A1"/>
-  <defs>
-    <clipPath id="d"><path d="M256 70C256 70 118 213 118 315a138 138 0 0 0 276 0C394 213 256 70 256 70Z"/></clipPath>
-  </defs>
-  <path d="M256 70C256 70 118 213 118 315a138 138 0 0 0 276 0C394 213 256 70 256 70Z" fill="none" stroke="#fff" stroke-width="30" stroke-linejoin="round"/>
-  <g clip-path="url(#d)" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round">
-    <path d="M90 330c40-34 80-34 120 0s80 34 120 0 80-34 120 0"/>
-    <path d="M90 392c40-34 80-34 120 0s80 34 120 0 80-34 120 0"/>
+  <rect width="512" height="512" rx="112" fill="#ffffff"/>
+  <g fill="none" stroke="#0A66F5" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M136 192 C158 211 189 214 218 196 S278 157 308 173 S356 213 384 202 S408 189 415 184"/>
+    <path d="M136 268 C158 287 189 290 218 272 S278 233 308 249 S356 289 384 278 S408 265 415 260"/>
+    <path d="M136 344 C158 363 189 366 218 348 S278 309 308 325 S356 365 384 354 S408 341 415 336"/>
   </g>
 </svg>

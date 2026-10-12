@@ -1,17 +1,19 @@
 {
-  "name": "مياه جوهرة الرابية",
-  "short_name": "جوهرة الرابية",
-  "description": "نظام إدارة محل مياه وتوزيع",
+  "name": "موج — إدارة محلات المياه",
+  "short_name": "موج",
+  "description": "إدارة أسهل.. تدفق أكبر",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F5F7FA",
-  "theme_color": "#0D47A1",
+  "background_color": "#F3F7FD",
+  "theme_color": "#0A66F5",
   "orientation": "portrait",
   "dir": "rtl",
   "lang": "ar",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }

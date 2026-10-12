@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query, logActivity } from "../db.js";
+import { query, logActivity, currentSchema } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
 import { sendPushToUser } from "../utils/push.js";
@@ -201,11 +201,12 @@ async function createReminderOrder(row) {
 }
 
 // بتنادى من طلبات الإشعارات — بتضمن إن الفحص بيصير حتى لو السيرفر كان نايم وقت الفحص كل ساعة
-let lastCheckAt = 0;
+const lastCheckAt = new Map(); // لكل محل لحاله
 export function checkRemindersThrottled() {
   const now = Date.now();
-  if (now - lastCheckAt < 10 * 60 * 1000) return;
-  lastCheckAt = now;
+  const key = currentSchema();
+  if (now - (lastCheckAt.get(key) || 0) < 10 * 60 * 1000) return;
+  lastCheckAt.set(key, now);
   checkAndFireReminders().catch((err) => console.error("reminder check error:", err.message));
 }
 

@@ -1,4 +1,5 @@
 import multer from "multer";
+import { currentSchema } from "../db.js";
 import sharp from "sharp";
 import { v2 as cloudinary } from "cloudinary";
 
@@ -25,7 +26,7 @@ export async function saveCompressedImage(fileBuffer, prefix = "img") {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: "jawharat-al-rabya",
+        folder: currentSchema() === "public" ? "jawharat-al-rabya" : `moj/${currentSchema()}`,
         public_id: `${prefix}-${Date.now()}`,
         resource_type: "image",
         overwrite: true,

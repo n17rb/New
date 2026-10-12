@@ -15,6 +15,8 @@ export const SECTIONS = [
   { key: "cash", label: "الحساب اليومي", hint: "مبيعات وصرفيات كل يوم" },
   { key: "driver_balances", label: "ذمم الكباتن", hint: "الكاش والكوبونات اللي مع الكباتن والتسوية" },
   { key: "debts", label: "ديون العملاء", hint: "مين عليه دين، تسجيل الدفعات وتعديل الدين" },
+  { key: "jard", label: "الجرد اليومي", hint: "كم دخل وكم طلع كل يوم، ومين قبض شو", viewOnly: true },
+  { key: "payroll", label: "الموظفين والرواتب", hint: "الدوام، الرواتب واليوميات، السحوبات والمستحقات" },
   { key: "coupons", label: "الكوبونات والباقات", hint: "بيع باقات الكوبونات للعملاء وإدارة الباقات" },
   { key: "chat", label: "صندوق رسائل الموظفين", hint: "يقرأ رسائل الموظفين ويرد عليهم باسم الإدارة" },
   { key: "reports", label: "التقارير", hint: "التقارير، أداء الكباتن، نمو العملاء، الخريطة", viewOnly: true },
@@ -43,7 +45,7 @@ export const TEMPLATES = {
     sections: {
       dashboard: "view", customers: "edit", orders: "edit", delivery: "edit", trips: "edit",
       products: "edit", cash: "edit", driver_balances: "edit", reports: "view", settings: "edit",
-      debts: "edit", coupons: "edit", chat: "edit", activity_log: "none", backup: "none",
+      debts: "edit", coupons: "edit", chat: "edit", activity_log: "none", backup: "none", jard: "view", payroll: "edit",
     },
     actions: { discount: true, cancel_order: true, delete_customer: true, edit_prices: true, adjust_coupons: false, give_credit: true, chat_with_admin: true },
   },
@@ -70,7 +72,7 @@ export const TEMPLATES = {
     sections: {
       dashboard: "view", customers: "view", orders: "view", delivery: "none", trips: "view",
       products: "view", cash: "view", driver_balances: "view", reports: "view", settings: "view",
-      debts: "view", coupons: "view", chat: "none", activity_log: "none", backup: "none",
+      debts: "view", coupons: "view", chat: "none", activity_log: "none", backup: "none", jard: "view", payroll: "view",
     },
     actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: false, chat_with_admin: true },
   },

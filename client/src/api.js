@@ -30,6 +30,10 @@ async function request(path, { method = "GET", body, isFormData = false } = {}) 
     if (res.status === 401 && !path.startsWith("/auth/login")) {
       window.dispatchEvent(new CustomEvent("auth:expired", { detail: data?.error }));
     }
+    // اشتراك المحل خلص أو انوقف — التطبيق بيفتح شاشة التجديد
+    if (res.status === 402) {
+      window.dispatchEvent(new CustomEvent("shop:locked", { detail: data }));
+    }
     throw new Error(data?.error || "حدث خطأ غير متوقع.");
   }
   return data;
@@ -216,6 +220,75 @@ export const api = {
 
   getDashboard: () => request("/dashboard"),
   getMe: () => request("/auth/me"),
+
+  // ---------- موج: الاشتراك والدعم الفني ----------
+  getSubscription: () => request("/subscription"),
+  sendSubscriptionPayment: ({ file, months, amount, note }) => {
+    const form = new FormData();
+    form.append("photo", file);
+    form.append("months", String(months || 1));
+    if (amount) form.append("amount", String(amount));
+    if (note) form.append("note", note);
+    return request("/subscription/payment", { method: "POST", body: form, isFormData: true });
+  },
+  getSupportUnread: () => request("/support/unread"),
+  getSupportThread: () => request("/support/thread"),
+  sendSupportMessage: (body) => request("/support/thread", { method: "POST", body: { body } }),
+  sendSupportImage: (file, body = "") => {
+    const form = new FormData();
+    form.append("photo", file);
+    if (body) form.append("body", body);
+    return request("/support/thread/image", { method: "POST", body: form, isFormData: true });
+  },
+  markSupportRead: () => request("/support/read", { method: "POST" }),
+
+  // ---------- لوحة إدارة موج ----------
+  platformOverview: () => request("/platform/overview"),
+  platformTenants: () => request("/platform/tenants"),
+  platformTenant: (id) => request(`/platform/tenants/${id}`),
+  platformCreateTenant: (body) => request("/platform/tenants", { method: "POST", body }),
+  platformUpdateTenant: (id, body) => request(`/platform/tenants/${id}`, { method: "PUT", body }),
+  platformExtendTenant: (id, body) => request(`/platform/tenants/${id}/extend`, { method: "POST", body }),
+  platformInspectTenant: (id) => request(`/platform/tenants/${id}/inspect`, { method: "POST" }),
+  platformResetPassword: (id, body) => request(`/platform/tenants/${id}/reset-password`, { method: "POST", body }),
+  platformPayments: (status) => request(`/platform/payments${status ? `?status=${status}` : ""}`),
+  platformApprovePayment: (id, body = {}) => request(`/platform/payments/${id}/approve`, { method: "POST", body }),
+  platformRejectPayment: (id, note) => request(`/platform/payments/${id}/reject`, { method: "POST", body: { note } }),
+  platformSupportThreads: () => request("/platform/support/threads"),
+  platformSupportThread: (tenantId) => request(`/platform/support/thread/${tenantId}`),
+  platformSupportSend: (tenantId, body) => request(`/platform/support/thread/${tenantId}`, { method: "POST", body: { body } }),
+  platformSupportImage: (tenantId, file, body = "") => {
+    const form = new FormData();
+    form.append("photo", file);
+    if (body) form.append("body", body);
+    return request(`/platform/support/thread/${tenantId}/image`, { method: "POST", body: form, isFormData: true });
+  },
+  platformSupportRead: (tenantId) => request(`/platform/support/thread/${tenantId}/read`, { method: "POST" }),
+  platformSettings: () => request("/platform/settings"),
+  platformSaveSettings: (body) => request("/platform/settings", { method: "PUT", body }),
+  platformSupportPhoto: (file) => {
+    const form = new FormData();
+    form.append("photo", file);
+    return request("/platform/settings/support-photo", { method: "POST", body: form, isFormData: true });
+  },
+  platformUsernameAvailable: (u) => request(`/platform/username-available?u=${encodeURIComponent(u)}`),
+
+  // ---------- الموظفين والرواتب ----------
+  payrollSummary: (date) => request(`/payroll/summary${date ? `?date=${date}` : ""}`),
+  payrollEmployee: (id, month) => request(`/payroll/employees/${id}${month ? `?month=${month}` : ""}`),
+  payrollCreateEmployee: (body) => request("/payroll/employees", { method: "POST", body }),
+  payrollUpdateEmployee: (id, body) => request(`/payroll/employees/${id}`, { method: "PUT", body }),
+  payrollAttendance: (body) => request("/payroll/attendance", { method: "POST", body }),
+  payrollAddTransaction: (id, body) => request(`/payroll/employees/${id}/transactions`, { method: "POST", body }),
+  payrollDeleteTransaction: (txId) => request(`/payroll/transactions/${txId}`, { method: "DELETE" }),
+  payrollUsers: () => request("/payroll/users"),
+  payrollMe: () => request("/payroll/me"),
+  payrollCheckIn: () => request("/payroll/me/check-in", { method: "POST" }),
+
+  // ---------- الجرد والفواتير ----------
+  getJard: (date) => request(`/jard${date ? `?date=${date}` : ""}`),
+  getInvoiceLink: (orderId) => request(`/invoices/order/${orderId}`, { method: "POST" }),
+  getPublicInvoice: (token) => request(`/public/invoice/${encodeURIComponent(token)}`),
   getPermissionsMeta: () => request("/auth/permissions-meta"),
   getShopLocation: () => request("/settings/shop-location"),
   setShopLocation: (body) => request("/settings/shop-location", { method: "PUT", body }),
