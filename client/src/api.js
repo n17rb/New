@@ -250,6 +250,8 @@ export const api = {
   platformUpdateTenant: (id, body) => request(`/platform/tenants/${id}`, { method: "PUT", body }),
   platformExtendTenant: (id, body) => request(`/platform/tenants/${id}/extend`, { method: "POST", body }),
   platformInspectTenant: (id) => request(`/platform/tenants/${id}/inspect`, { method: "POST" }),
+  platformResetTenant: (id, sample) => request(`/platform/tenants/${id}/reset`, { method: "POST", body: { sample } }),
+  clearSampleData: () => request("/subscription/clear-sample", { method: "POST", body: { confirm: "امسح" } }),
   platformResetPassword: (id, body) => request(`/platform/tenants/${id}/reset-password`, { method: "POST", body }),
   platformPayments: (status) => request(`/platform/payments${status ? `?status=${status}` : ""}`),
   platformApprovePayment: (id, body = {}) => request(`/platform/payments/${id}/approve`, { method: "POST", body }),

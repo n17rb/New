@@ -85,6 +85,26 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
     expiring: { title: `الاشتراك بيخلص ${a.days_left <= 1 ? "بكرة" : `بعد ${a.days_left} أيام`}`, text: "جدّد هلّق عشان ما يوقف الشغل.", tone: "warning" },
     active: { title: "الاشتراك فعّال ✓", text: a.ends_at ? `لحد ${longDate(a.ends_at)} (باقي ${a.days_left} يوم)` : "", tone: "success" },
   }[a.state] || { title: "", text: "", tone: "warning" };
+  if (a.trial && (a.state === "active" || a.state === "expiring")) {
+    stateCard.title = `🎁 تجربة مجانية — باقي ${a.days_left <= 1 ? "يوم" : `${a.days_left} أيام`}`;
+    stateCard.text = "اشترك قبل ما تخلص التجربة وبتكمل بنفس داتاك — ما بيضيع إشي.";
+    stateCard.tone = "success";
+  }
+  if (a.trial && a.state === "expired") {
+    stateCard.title = "خلصت التجربة المجانية";
+    stateCard.text = "اشترك عشان ترجع تشتغل — كل داتاك محفوظة زي ما هي.";
+  }
+
+  async function clearSample() {
+    const typed = prompt("هاد بيمسح كل الداتا التجريبية (الزباين، الطلبات، الموظفين) عشان تبلّش بداتاك الحقيقية. حسابك بيضل زي ما هو.\nاكتب «امسح» للتأكيد:");
+    if (typed?.trim() !== "امسح") return;
+    try {
+      await api.clearSampleData();
+      window.location.href = "/";
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   return (
     <div className="page">
@@ -184,6 +204,12 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
             })}
           </div>
         </>
+      )}
+
+      {a.trial && !locked && !data.shop.is_demo && data.can_pay && (
+        <button className="btn-danger-text" style={{ marginTop: 16, fontSize: "0.85rem" }} onClick={clearSample}>
+          امسح الداتا التجريبية وابدأ بداتاي الحقيقية
+        </button>
       )}
 
       {locked && (

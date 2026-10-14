@@ -1487,3 +1487,21 @@ input[type="date"]:focus, textarea:focus {
   margin-top: 12px;
   box-shadow: 0 10px 26px rgba(10, 102, 245, 0.28);
 }
+.shop-banner.trial { background: var(--brand-grad); color: #fff; }
+.shop-banner.trial button { color: var(--blue); }
+.type-cards { display: grid; gap: 8px; margin-bottom: 12px; }
+.type-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: right;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--text);
+}
+.type-card.on { border-color: var(--primary); background: var(--primary-soft); }
+.type-card strong { display: block; font-size: 0.92rem; }
+.type-card span { font-size: 0.78rem; color: var(--text-secondary); }

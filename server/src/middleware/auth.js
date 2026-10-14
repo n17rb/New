@@ -121,9 +121,6 @@ export async function requireAuth(req, res, next) {
       if (req.access.state === "expired") {
         return res.status(402).json({ error: "انتهى اشتراك المحل. جدّد الاشتراك عشان ترجع تشتغل.", code: "EXPIRED" });
       }
-      if (tenant.is_demo && req.method !== "GET" && req.method !== "HEAD") {
-        return res.status(403).json({ error: "هذا حساب تجريبي — بتقدر تتفرج وتجرّب التنقل، بس ما بينحفظ أي تعديل.", code: "DEMO_READ_ONLY" });
-      }
     }
     next();
   } catch (err) {

@@ -98,3 +98,10 @@ SELECT setval('platform.tenants_id_seq', GREATEST((SELECT MAX(id) FROM platform.
 INSERT INTO platform.user_directory (username, tenant_id)
 SELECT lower(username), 1 FROM public.users
 ON CONFLICT (username) DO NOTHING;
+
+-- التجربة المجانية: المحل اللي لسا ما دفع ولا مرة = «تجربة»
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS paid_ever BOOLEAN NOT NULL DEFAULT false;
+UPDATE platform.tenants t SET paid_ever = true
+WHERE NOT t.paid_ever AND EXISTS (SELECT 1 FROM platform.payments p WHERE p.tenant_id = t.id AND p.status = 'approved');
+-- نسخ العرض (ديمو) بترجع لأولها كل يوم
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS demo_reset_on DATE;

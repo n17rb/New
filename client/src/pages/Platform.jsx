@@ -42,8 +42,22 @@ function randomPassword() {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-export function welcomeText(t, username, password) {
-  return `أهلًا ${t.owner_name || ""} 🌊\nحساب «${t.name}» على موج صار جاهز.\n\nالرابط: ${window.location.origin}\nاسم المستخدم: ${username}\nكلمة السر: ${password}\n\nبتقدر تضيف موظفينك من «المزيد ← الموظفين والصلاحيات». لأي سؤال احكينا من «الدعم الفني» جوّا التطبيق.`;
+export function welcomeText(t, username, password, captain = null) {
+  const lines = [
+    `أهلًا ${t.owner_name || ""} 🌊`,
+    t.is_demo ? `هاي نسخة تجريبية من موج — جرّب فيها كل إشي براحتك.` : `حساب «${t.name}» على موج صار جاهز.`,
+    "",
+    `الرابط: ${window.location.origin}`,
+    `حساب المدير: ${username}`,
+    `كلمة السر: ${password}`,
+  ];
+  if (captain) {
+    lines.push("", `وجرّب التوصيل من موبايل ثاني بحساب الكابتن:`, `${captain} (نفس كلمة السر)`);
+  }
+  if (t.access?.trial && !t.is_demo) lines.push("", `التجربة مجانية لمدة ${t.access.days_left} يوم، وبعدها بتكمل بنفس داتاك لما تشترك.`);
+  if (t.is_demo) lines.push("", "الداتا بالنسخة التجريبية بترجع لأولها كل يوم.");
+  lines.push("", "لأي سؤال احكينا من «الدعم الفني» جوّا التطبيق.");
+  return lines.join("\n");
 }
 
 export default function Platform() {
@@ -67,7 +81,7 @@ export default function Platform() {
           <div className="stat-card"><div className="stat-num tabular-num" style={{ color: overview.counts.expired ? "var(--urgent)" : undefined }}>{overview.counts.expired || 0}</div><div className="stat-label">خالص</div></div>
           <div className="stat-card"><div className="stat-num tabular-num">{Math.round(overview.monthly_recurring)}</div><div className="stat-label">دخل شهري متوقع JD</div></div>
           <div className="stat-card"><div className="stat-num tabular-num">{Math.round(overview.revenue_this_month)}</div><div className="stat-label">انقبض هالشهر JD</div></div>
-          <div className="stat-card"><div className="stat-num tabular-num">{overview.counts.demo}</div><div className="stat-label">حساب تجريبي</div></div>
+          <div className="stat-card"><div className="stat-num tabular-num">{overview.counts.trial || 0}</div><div className="stat-label">بالتجربة المجانية</div></div>
         </div>
       )}
 
@@ -95,7 +109,8 @@ const FILTERS = [
   { key: "active", label: "فعّال" },
   { key: "expiring", label: "قرّب يخلص" },
   { key: "expired", label: "خالص" },
-  { key: "demo", label: "تجريبي" },
+  { key: "trial", label: "تجربة" },
+  { key: "demo", label: "نسخة عرض" },
   { key: "suspended", label: "موقوف" },
 ];
 
@@ -119,6 +134,7 @@ function ShopsTab() {
       if (q && !`${t.name} ${t.owner_name || ""} ${t.phone || ""} ${t.city || ""}`.includes(q.trim())) return false;
       if (filter === "all") return true;
       if (filter === "demo") return t.is_demo;
+      if (filter === "trial") return !t.is_demo && !t.is_home && t.access.trial;
       return !t.is_demo && t.access.state === filter;
     });
   }, [list, q, filter]);
@@ -152,7 +168,10 @@ function ShopsTab() {
       {shown.length > 0 && (
         <div className="list-group">
           {shown.map((t) => {
-            const b = t.is_home ? { label: "الأساسي", bg: "var(--primary-soft)", color: "var(--navy)" } : t.is_demo ? { label: "تجريبي", bg: "var(--primary-soft)", color: "var(--navy)" } : ACCESS_BADGE[t.access.state];
+            const b = t.is_home ? { label: "الأساسي", bg: "var(--primary-soft)", color: "var(--navy)" }
+              : t.is_demo ? { label: "نسخة عرض", bg: "var(--primary-soft)", color: "var(--navy)" }
+              : t.access.trial && t.access.state !== "expired" ? { label: "تجربة", bg: "var(--primary-soft)", color: "var(--blue)" }
+              : ACCESS_BADGE[t.access.state];
             return (
               <button key={t.id} className="list-row" onClick={() => navigate(`/platform/tenants/${t.id}`)}>
                 <span className="avatar" style={{ width: 40, height: 40 }}>{t.name.trim().charAt(0)}</span>
@@ -180,7 +199,8 @@ function ShopsTab() {
 
 function CreatedCard({ data, onClose }) {
   const { t, username, password } = data;
-  const text = welcomeText(t, username, password);
+  const captain = t.captain_username;
+  const text = welcomeText(t, username, password, captain);
   const [copied, setCopied] = useState(false);
   return (
     <div className="card receipt-banner">
@@ -191,6 +211,7 @@ function CreatedCard({ data, onClose }) {
       <div className="creds">
         <div><span className="text-secondary">اسم المستخدم</span><strong dir="ltr">{username}</strong></div>
         <div><span className="text-secondary">كلمة السر</span><strong dir="ltr">{password}</strong></div>
+        {captain && <div style={{ gridColumn: "1 / -1" }}><span className="text-secondary">حساب كابتن للتجربة (نفس كلمة السر)</span><strong dir="ltr">{captain}</strong></div>}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         {t.phone && (
@@ -208,7 +229,18 @@ function CreatedCard({ data, onClose }) {
 
 function CreateShop({ onCancel, onCreated }) {
   const [settings, setSettings] = useState(null);
-  const [f, setF] = useState({ name: "", owner_name: "", phone: "", city: "", username: "", password: randomPassword(), monthly_price: "", days: "", is_demo: false, notes: "" });
+  const [f, setF] = useState({ name: "", owner_name: "", phone: "", city: "", username: "", password: randomPassword(), monthly_price: "", days: "", is_demo: false, sample_data: true, notes: "" });
+  const [kind, setKind] = useState("trial"); // trial | paid | demo
+
+  function chooseKind(k) {
+    setKind(k);
+    setF((x) => ({
+      ...x,
+      is_demo: k === "demo",
+      sample_data: k !== "paid",
+      days: k === "demo" ? "365" : k === "paid" ? "30" : settings?.trial_days || "14",
+    }));
+  }
   const [available, setAvailable] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -233,7 +265,7 @@ function CreateShop({ onCancel, onCreated }) {
     setSaving(true);
     setError("");
     try {
-      const t = await api.platformCreateTenant({ ...f, username: f.username.trim().toLowerCase(), monthly_price: Number(f.monthly_price) || 0, days: Number(f.days) || 14 });
+      const t = await api.platformCreateTenant({ ...f, paid: kind === "paid", username: f.username.trim().toLowerCase(), monthly_price: Number(f.monthly_price) || 0, days: Number(f.days) || 14 });
       onCreated(t, { username: f.username.trim().toLowerCase(), password: f.password });
     } catch (err) {
       setError(err.message);
@@ -267,14 +299,27 @@ function CreateShop({ onCancel, onCreated }) {
         </div>
       </div>
 
-      <div className="section-title" style={{ marginTop: 6 }}>الاشتراك</div>
-      <label className="icon-row" style={{ gap: 10, marginBottom: 12, cursor: "pointer" }}>
-        <input type="checkbox" checked={f.is_demo} onChange={set("is_demo")} style={{ width: 20, height: 20 }} />
-        <span>حساب تجريبي (ديمو) — فيه داتا تجريبية وما بيقدر يعدّل إشي</span>
-      </label>
+      <div className="section-title" style={{ marginTop: 6 }}>نوع الحساب</div>
+      <div className="type-cards" role="radiogroup">
+        {[
+          { k: "trial", t: "🎁 تجربة مجانية", d: "محل حقيقي شغّال بالكامل لعدد أيام، وإذا اشترك بيكمل بنفس داتاه. هاد اللي بتعطيه للزبون الجديد." },
+          { k: "paid", t: "💳 اشتراك مدفوع", d: "الزبون دفع — الحساب بيبلّش اشتراك عادي." },
+          { k: "demo", t: "🧪 نسخة عرض", d: "حساب واحد بتعطيه لأي حدا يجرّب: كل إشي شغّال، وبيرجع لأوله كل يوم الساعة ٣ الفجر." },
+        ].map((x) => (
+          <button key={x.k} type="button" role="radio" aria-checked={kind === x.k} className={`type-card${kind === x.k ? " on" : ""}`} onClick={() => chooseKind(x.k)}>
+            <div><strong>{x.t}</strong><span>{x.d}</span></div>
+          </button>
+        ))}
+      </div>
+      {kind === "trial" && (
+        <label className="icon-row" style={{ gap: 10, marginBottom: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.sample_data} onChange={set("sample_data")} style={{ width: 20, height: 20 }} />
+          <span>عبّيله داتا تجريبية (زباين، طلبات، كابتن، موظفين) عشان يجرّب فورًا — وبيقدر يمسحها لما يبلّش جد</span>
+        </label>
+      )}
       <div className="field-row">
         <div className="field"><label htmlFor="ns-price">السعر الشهري (JD)</label><input id="ns-price" type="number" inputMode="decimal" value={f.monthly_price} onChange={set("monthly_price")} /></div>
-        <div className="field"><label htmlFor="ns-days">{f.is_demo ? "مدة التجربة (يوم)" : "فعّال لمدة (يوم)"}</label><input id="ns-days" type="number" inputMode="numeric" value={f.days} onChange={set("days")} /></div>
+        <div className="field"><label htmlFor="ns-days">{kind === "trial" ? "أيام التجربة" : kind === "demo" ? "شغّال لمدة (يوم)" : "فعّال لمدة (يوم)"}</label><input id="ns-days" type="number" inputMode="numeric" value={f.days} onChange={set("days")} /></div>
       </div>
       <div className="field"><label htmlFor="ns-notes">ملاحظات (لإلك بس)</label><input id="ns-notes" value={f.notes} onChange={set("notes")} /></div>
 

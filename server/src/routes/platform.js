@@ -5,7 +5,7 @@ import { requireAuth, requirePlatformAdmin, signInspectToken } from "../middlewa
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 import {
   listTenants, getTenant, tenantAccess, createTenant, extendTenant, invalidateTenant,
-  getPlatformSettings, findTenantIdByUsername, claimUsername,
+  getPlatformSettings, findTenantIdByUsername, claimUsername, resetTenantData,
 } from "../utils/tenants.js";
 import { notifyTenantManagers } from "../utils/platformNotify.js";
 
@@ -39,7 +39,7 @@ async function tenantStats(t) {
 function present(t, stats = null, extra = {}) {
   return {
     id: t.id, name: t.name, owner_name: t.owner_name, phone: t.phone, city: t.city, status: t.status,
-    is_demo: t.is_demo, is_home: t.is_home, monthly_price: Number(t.monthly_price),
+    is_demo: t.is_demo, is_home: t.is_home, paid_ever: t.paid_ever, monthly_price: Number(t.monthly_price),
     subscription_ends_at: t.subscription_ends_at, notes: t.notes, created_at: t.created_at,
     last_active_at: t.last_active_at, access: tenantAccess(t), stats, ...extra,
   };
@@ -48,12 +48,12 @@ function present(t, stats = null, extra = {}) {
 router.get("/overview", async (req, res) => {
   const tenants = await listTenants();
   const paying = tenants.filter((t) => !t.is_home && !t.is_demo);
-  const counts = { total: paying.length, active: 0, expiring: 0, expired: 0, suspended: 0, demo: tenants.filter((t) => t.is_demo).length };
+  const counts = { total: paying.length, active: 0, expiring: 0, expired: 0, suspended: 0, demo: tenants.filter((t) => t.is_demo).length, trial: paying.filter((t) => !t.paid_ever).length };
   let mrr = 0;
   for (const t of paying) {
     const a = tenantAccess(t);
     counts[a.state] = (counts[a.state] || 0) + 1;
-    if (a.state === "active" || a.state === "expiring") mrr += Number(t.monthly_price) || 0;
+    if ((a.state === "active" || a.state === "expiring") && t.paid_ever) mrr += Number(t.monthly_price) || 0;
   }
   const [pending, unread, revenue] = await Promise.all([
     platformQuery("SELECT COUNT(*)::int AS n FROM platform.payments WHERE status = 'pending'"),
@@ -103,10 +103,14 @@ router.post("/tenants", async (req, res) => {
       name: b.name, owner_name: b.owner_name, phone: b.phone, city: b.city,
       username: b.username, password: b.password,
       monthly_price: b.monthly_price ?? s.default_monthly_price,
-      days: b.days ?? (b.is_demo ? 30 : s.trial_days),
-      is_demo: !!b.is_demo, notes: b.notes,
+      days: b.days ?? (b.is_demo ? 365 : s.trial_days),
+      is_demo: !!b.is_demo, sample_data: !!b.sample_data, notes: b.notes,
     });
-    res.status(201).json(present(await getTenant(t.id)));
+    if (b.paid === true && !b.is_demo) {
+      await platformQuery("UPDATE platform.tenants SET paid_ever = true WHERE id = $1", [t.id]);
+      invalidateTenant(t.id);
+    }
+    res.status(201).json(present(await getTenant(t.id), null, { captain_username: t.captain_username || null }));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -146,12 +150,26 @@ router.post("/tenants/:id/extend", async (req, res) => {
   const days = Number(req.body?.days) || (Number(req.body?.months) || 0) * 30;
   if (!days || days < -365 || days > 1100) return res.status(400).json({ error: "عدد الأيام غير صحيح." });
   const ends = await extendTenant(t.id, { days, amount: req.body?.amount ?? null, note: req.body?.note || null, action: days > 0 ? "extend" : "reduce" });
+  if (req.body?.paid === true) {
+    await platformQuery("UPDATE platform.tenants SET paid_ever = true WHERE id = $1", [t.id]);
+    invalidateTenant(t.id);
+  }
   if (days > 0) {
     notifyTenantManagers(t, {
       message: `✅ تم تجديد اشتراك موج — فعّال لحد ${ends.toLocaleDateString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "long", year: "numeric" })}. شكرًا إلك 💙`,
     }).catch(() => {});
   }
   res.json(present(await getTenant(t.id)));
+});
+
+// رجّع داتا المحل لأولها (داتا تجريبية جديدة) أو امسحها كلها وابدأ نظيف
+router.post("/tenants/:id/reset", async (req, res) => {
+  try {
+    const extra = await resetTenantData(req.params.id, { sample: req.body?.sample !== false });
+    res.json({ ok: true, ...extra });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // معاينة المحل: توكن مشاهدة فقط لساعتين
@@ -200,6 +218,8 @@ router.post("/payments/:id/approve", async (req, res) => {
   );
   if (!upd.rows[0]) return res.status(400).json({ error: "هذه الدفعة انراجعت من قبل." });
   const ends = await extendTenant(p.tenant_id, { days: months * 30, amount, note: `دفعة كليك #${p.id}`, action: "payment" });
+  await platformQuery("UPDATE platform.tenants SET paid_ever = true WHERE id = $1", [p.tenant_id]);
+  invalidateTenant(p.tenant_id);
   const t = await getTenant(p.tenant_id);
   notifyTenantManagers(t, {
     message: `✅ استلمنا تحويلك وتجدد الاشتراك ${months === 1 ? "شهر" : `${months} شهور`} — فعّال لحد ${ends.toLocaleDateString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "long", year: "numeric" })}. شكرًا 💙`,

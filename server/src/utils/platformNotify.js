@@ -1,6 +1,6 @@
 import { query, runInTenant, platformQuery } from "../db.js";
 import { sendPushToUser } from "./push.js";
-import { getTenant, listTenants, tenantAccess } from "./tenants.js";
+import { getTenant, listTenants, tenantAccess, resetTenantData } from "./tenants.js";
 import { can } from "../permissions.js";
 
 // مدراء المحل (المدير العام + اللي عنده تعديل إعدادات المحل)
@@ -76,5 +76,29 @@ export async function checkSubscriptionWarnings() {
         ? "⏰ اشتراك موج بيخلص بكرة! جدّد هلّق عشان ما يوقف الشغل."
         : `⏰ اشتراك موج بيخلص بعد ${a.days_left} أيام. جدّد بكبسة من «الاشتراك».`;
     await notifyTenantManagers(t, { message, title: "اشتراك موج" }).catch(() => {});
+  }
+}
+
+// نسخ العرض (ديمو): كل يوم بعد الساعة ٣ الفجر بترجع لأولها بداتا تجريبية جديدة
+export async function resetDemosIfDue() {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Amman", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  if (hour < 3) return;
+  const today = jordanDate();
+  const tenants = await listTenants({ includeSuspended: false });
+  for (const t of tenants) {
+    if (!t.is_demo || t.is_home) continue;
+    if (dateStr(t.demo_reset_on) === today) continue;
+    // أول مرة بعد التحديث: منسجّل اليوم بس (ما منمسح إشي بنص النهار)
+    if (!t.demo_reset_on && hour >= 6) {
+      await platformQuery("UPDATE platform.tenants SET demo_reset_on = $1 WHERE id = $2", [today, t.id]);
+      continue;
+    }
+    try {
+      await platformQuery("UPDATE platform.tenants SET demo_reset_on = $1 WHERE id = $2", [today, t.id]);
+      await resetTenantData(t.id, { sample: true });
+      console.log(`🔄 رجعت نسخة العرض «${t.name}» لأولها`);
+    } catch (err) {
+      console.error(`❌ ما قدرت أرجّع الديمو ${t.name}:`, err.message);
+    }
   }
 }

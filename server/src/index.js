@@ -7,7 +7,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { pool, tenantStore, runInTenant, platformQuery } from "./db.js";
 import { migrateAllTenants, listTenants, tenantAccess } from "./utils/tenants.js";
-import { checkSubscriptionWarnings } from "./utils/platformNotify.js";
+import { checkSubscriptionWarnings, resetDemosIfDue } from "./utils/platformNotify.js";
 
 import authRoutes from "./routes/auth.js";
 import setupRoutes from "./routes/setup.js";
@@ -127,6 +127,7 @@ async function hourlyJobs() {
   await forEachTenant("التوقعات", () => checkForecastAlerts());
   await forEachTenant("تنظيف الإشعارات", () => pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'"));
   await checkSubscriptionWarnings().catch((err) => console.error("❌ تنبيهات الاشتراك:", err.message));
+  await resetDemosIfDue().catch((err) => console.error("❌ ترجيع الديمو:", err.message));
 }
 
 const PORT = process.env.PORT || 4000;

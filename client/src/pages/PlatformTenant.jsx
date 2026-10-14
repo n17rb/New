@@ -7,7 +7,7 @@ import { readShop, saveShop, whatsappNumber } from "../shop.js";
 import { ACCESS_BADGE, accessText } from "./Platform.jsx";
 
 const LOG_LABELS = {
-  create: "إنشاء الحساب", extend: "تمديد", reduce: "تقليل المدة", payment: "دفعة كليك", suspend: "إيقاف", resume: "تشغيل", password_reset: "تغيير كلمة سر",
+  create: "إنشاء الحساب", reset: "ترجيع الداتا", extend: "تمديد", reduce: "تقليل المدة", payment: "دفعة كليك", suspend: "إيقاف", resume: "تشغيل", password_reset: "تغيير كلمة سر",
 };
 
 function longDate(d) {
@@ -23,6 +23,7 @@ export default function PlatformTenant() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [customDays, setCustomDays] = useState("");
+  const [paid, setPaid] = useState(false);
 
   function load() {
     api.platformTenant(id).then(setT).catch((err) => setError(err.message));
@@ -72,7 +73,10 @@ export default function PlatformTenant() {
 
   if (!t) return <div className="page">{error ? <div className="error-box">{error}</div> : <p className="text-secondary">جاري التحميل...</p>}</div>;
 
-  const badge = t.is_home ? null : t.is_demo ? { label: "تجريبي", bg: "var(--primary-soft)", color: "var(--navy)" } : ACCESS_BADGE[t.access.state];
+  const badge = t.is_home ? null
+    : t.is_demo ? { label: "نسخة عرض", bg: "var(--primary-soft)", color: "var(--navy)" }
+    : t.access.trial && t.access.state !== "expired" ? { label: "تجربة مجانية", bg: "var(--primary-soft)", color: "var(--blue)" }
+    : ACCESS_BADGE[t.access.state];
   const s = t.stats || {};
 
   return (
@@ -122,16 +126,47 @@ export default function PlatformTenant() {
           </p>
           <div className="chips" style={{ marginBottom: 10 }}>
             {[{ d: 7, l: "+ أسبوع" }, { d: 30, l: "+ شهر" }, { d: 90, l: "+ ٣ شهور" }, { d: 365, l: "+ سنة" }].map((x) => (
-              <button key={x.d} className="chip" disabled={busy} onClick={() => run(() => api.platformExtendTenant(t.id, { days: x.d, note: "تمديد يدوي" }), `تمدد ${x.l.replace("+ ", "")} ✓`)}>{x.l}</button>
+              <button key={x.d} className="chip" disabled={busy} onClick={() => run(() => api.platformExtendTenant(t.id, { days: x.d, note: paid ? "دفع كاش/يدوي" : "تمديد يدوي", paid, amount: paid ? Math.round((Number(t.monthly_price) * x.d) / 30 * 100) / 100 : null }), `تمدد ${x.l.replace("+ ", "")} ✓`)}>{x.l}</button>
             ))}
           </div>
+          {!t.is_demo && (
+            <label className="icon-row" style={{ gap: 8, marginBottom: 10, fontSize: "0.85rem", cursor: "pointer" }}>
+              <input type="checkbox" checked={paid} onChange={(ev) => setPaid(ev.target.checked)} style={{ width: 18, height: 18 }} />
+              قبضت منه المبلغ (بيطلع من التجربة لاشتراك مدفوع)
+            </label>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <input type="number" inputMode="numeric" placeholder="عدد أيام (ممكن سالب)" value={customDays} onChange={(e) => setCustomDays(e.target.value)} style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid var(--border)", background: "var(--surface)" }} aria-label="عدد أيام" />
             <button className="fc-btn primary" style={{ flex: "0 0 auto" }} disabled={busy || !Number(customDays)} onClick={() => run(() => api.platformExtendTenant(t.id, { days: Number(customDays) }), "تم ✓").then(() => setCustomDays(""))}>تطبيق</button>
           </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: "0.82rem" }}
+              disabled={busy}
+              onClick={() => {
+                if (!confirm(`ترجيع داتا «${t.name}» لأولها؟ كل اللي انضاف بينمسح وبترجع الداتا التجريبية.`)) return;
+                run(() => api.platformResetTenant(t.id, true), "رجعت الداتا التجريبية ✓");
+              }}
+            >
+              رجّع الداتا التجريبية
+            </button>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: "0.82rem", color: "var(--urgent)" }}
+              disabled={busy}
+              onClick={() => {
+                const typed = prompt(`هاد بيمسح كل داتا «${t.name}» (الزباين، الطلبات، الموظفين...) وبيضل حساب المدير بس.\nاكتب «امسح» للتأكيد:`);
+                if (typed?.trim() !== "امسح") return;
+                run(() => api.platformResetTenant(t.id, false), "انمسحت الداتا — المحل صار نظيف ✓");
+              }}
+            >
+              امسح كل الداتا
+            </button>
+          </div>
           <button
             className="btn-secondary icon-row"
-            style={{ justifyContent: "center", marginTop: 12, color: t.status === "active" ? "var(--urgent)" : "var(--success)" }}
+            style={{ justifyContent: "center", marginTop: 8, color: t.status === "active" ? "var(--urgent)" : "var(--success)" }}
             disabled={busy}
             onClick={() => {
               if (t.status === "active" && !confirm(`إيقاف «${t.name}»؟ البرنامج بيوقف عندهم فورًا (الداتا بتضل محفوظة).`)) return;
@@ -224,7 +259,7 @@ function EditTenant({ t, onDone }) {
       </div>
       <div className="field"><label>ملاحظات</label><input value={f.notes} onChange={set("notes")} /></div>
       <label className="icon-row" style={{ gap: 10, marginBottom: 12 }}>
-        <input type="checkbox" checked={f.is_demo} onChange={set("is_demo")} style={{ width: 20, height: 20 }} /> حساب تجريبي (مشاهدة بس)
+        <input type="checkbox" checked={f.is_demo} onChange={set("is_demo")} style={{ width: 20, height: 20 }} /> نسخة عرض (بترجع لأولها كل يوم)
       </label>
       <button className="btn-primary" disabled={saving} onClick={save}>{saving ? "..." : "حفظ"}</button>
     </div>

@@ -352,9 +352,12 @@ function MainApp() {
             </div>
           )}
           {!user.inspecting && shop?.is_demo && (
-            <div className="shop-banner demo" role="status">🧪 حساب تجريبي — بتقدر تتفرج وتجرّب، بس التعديلات ما بتنحفظ</div>
+            <div className="shop-banner demo" role="status">🧪 نسخة تجريبية — جرّب كل إشي براحتك، والداتا بترجع لأولها كل يوم</div>
           )}
-          {!user.inspecting && !shop?.is_demo && shop?.access?.state === "expiring" && isManager && (
+          {!user.inspecting && !shop?.is_demo && shop?.access?.trial && isManager && (
+            <TrialBanner days={shop.access.days_left} />
+          )}
+          {!user.inspecting && !shop?.is_demo && !shop?.access?.trial && shop?.access?.state === "expiring" && isManager && (
             <ExpiringBanner days={shop.access.days_left} />
           )}
 
@@ -404,6 +407,16 @@ function MainApp() {
         </div>
       </UserContext.Provider>
     </ShopContext.Provider>
+  );
+}
+
+function TrialBanner({ days }) {
+  const navigate = useNavigate();
+  return (
+    <div className="shop-banner trial" role="status">
+      <span style={{ flex: 1 }}>🎁 تجربة مجانية — باقي {days <= 1 ? "يوم" : `${days} أيام`}</span>
+      <button onClick={() => navigate("/subscription")}>اشترك</button>
+    </div>
   );
 }
 

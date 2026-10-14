@@ -3,7 +3,7 @@ import { platformQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
-import { tenantAccess, getPlatformSettings } from "../utils/tenants.js";
+import { tenantAccess, getPlatformSettings, resetTenantData } from "../utils/tenants.js";
 import { notifyPlatformAdmins } from "../utils/platformNotify.js";
 
 // اشتراك المحل بموج: الحالة، طريقة الدفع (كليك)، وإرسال إيصال التحويل
@@ -60,6 +60,15 @@ router.post("/payment", uploadSingleImage, async (req, res) => {
     message: `💳 ${req.tenant.name} بعت إيصال تحويل${amount ? ` ${amount} دينار` : ""} لـ${months === 1 ? "شهر" : `${months} شهور`} — راجعه`,
     url: "/platform?tab=payments",
   }).catch(() => {});
+});
+
+// التجربة المجانية: صاحب المحل بيمسح الداتا التجريبية ويبدأ بداتاه الحقيقية (بيضل نفس الحساب)
+router.post("/clear-sample", async (req, res) => {
+  if (req.user.role !== "super_admin") return res.status(403).json({ error: "هذا للمدير العام للمحل بس." });
+  if (req.tenant.is_home || req.tenant.is_demo) return res.status(400).json({ error: "ما بينفع هون." });
+  if (String(req.body?.confirm || "").trim() !== "امسح") return res.status(400).json({ error: "اكتب «امسح» للتأكيد." });
+  await resetTenantData(req.tenant.id, { sample: false });
+  res.json({ ok: true });
 });
 
 export default router;
