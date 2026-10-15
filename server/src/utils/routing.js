@@ -213,12 +213,13 @@ export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, tim
 
   const deadline = Date.now() + timeBudgetMs;
 
-  function improve(orderIn) {
+  // limited=false: تحسين كامل لحد ما يوقف التحسن (للبدايات) — limited=true: ضمن الوقت (للقفزات)
+  function improve(orderIn, limited = false) {
     let order = [...orderIn];
     let bestCost = cost(order);
     let improved = true;
     let rounds = 0;
-    while (improved && rounds < 25 && Date.now() < deadline + 400) {
+    while (improved && rounds < 30 && (!limited || Date.now() < deadline)) {
       improved = false;
       rounds++;
       for (let i = 0; i < order.length - 1; i++) {
@@ -269,7 +270,7 @@ export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, tim
   let iterations = 0;
   while (Date.now() < deadline && iterations < 200) {
     iterations++;
-    const r = improve(doubleBridge(current.order));
+    const r = improve(doubleBridge(current.order), true);
     if (r.cost < current.cost - 1e-6) current = r;
     if (current.cost < best.cost) best = current;
   }
