@@ -44,6 +44,7 @@ const Payroll = lazy(() => import("./pages/Payroll.jsx"));
 const PayrollEmployee = lazy(() => import("./pages/PayrollEmployee.jsx"));
 const MyPay = lazy(() => import("./pages/MyPay.jsx"));
 const Jard = lazy(() => import("./pages/Jard.jsx"));
+const Bottles = lazy(() => import("./pages/Bottles.jsx"));
 const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
@@ -393,6 +394,7 @@ function MainApp() {
               {can("payroll") && <Route path="/payroll/:id" element={<PayrollEmployee />} />}
               <Route path="/my-pay" element={<MyPay />} />
               {can("jard") && <Route path="/jard" element={<Jard />} />}
+              {(can("customers") || can("jard")) && <Route path="/bottles" element={<Bottles />} />}
               {isManager && !shop?.is_home && <Route path="/subscription" element={<Subscription onRefresh={refreshMe} />} />}
               {(isManager || user.inspecting) && !shop?.is_home && <Route path="/support" element={<Support />} />}
               {platformAdmin && <Route path="/platform" element={<Platform />} />}

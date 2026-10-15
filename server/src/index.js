@@ -24,7 +24,7 @@ import cashRoutes from "./routes/cash.js";
 import activityRoutes from "./routes/activity.js";
 import backupRoutes, { createScheduledSnapshot } from "./routes/backup.js";
 import notificationRoutes from "./routes/notifications.js";
-import reminderRoutes, { checkAndFireReminders } from "./routes/reminders.js";
+import reminderRoutes, { checkAndFireReminders, checkScheduledOrders } from "./routes/reminders.js";
 import notesRoutes from "./routes/notes.js";
 import pushRoutes from "./routes/push.js";
 import settingsRoutes from "./routes/settings.js";
@@ -34,6 +34,7 @@ import couponRoutes from "./routes/coupons.js";
 import chatRoutes from "./routes/chat.js";
 import forecastRoutes, { checkForecastAlerts } from "./routes/forecast.js";
 import platformRoutes from "./routes/platform.js";
+import bottleRoutes from "./routes/bottles.js";
 import subscriptionRoutes from "./routes/subscription.js";
 import supportRoutes from "./routes/support.js";
 import payrollRoutes from "./routes/payroll.js";
@@ -78,6 +79,7 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/forecast", forecastRoutes);
 app.use("/api/platform", platformRoutes);
+app.use("/api/bottles", bottleRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/payroll", payrollRoutes);
@@ -124,6 +126,7 @@ async function forEachTenant(label, fn) {
 
 async function hourlyJobs() {
   await forEachTenant("التذكيرات", () => checkAndFireReminders());
+  await forEachTenant("الطلبات بموعد", () => checkScheduledOrders());
   await forEachTenant("التوقعات", () => checkForecastAlerts());
   await forEachTenant("تنظيف الإشعارات", () => pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'"));
   await checkSubscriptionWarnings().catch((err) => console.error("❌ تنبيهات الاشتراك:", err.message));
@@ -142,4 +145,6 @@ initDbIfNeeded().then(() => {
 
   hourlyJobs();
   setInterval(hourlyJobs, 60 * 60 * 1000);
+  // تذكير «قبل الموعد بساعة» بده فحص أكثر من مرة بالساعة
+  setInterval(() => forEachTenant("الطلبات بموعد", () => checkScheduledOrders()), 10 * 60 * 1000);
 });

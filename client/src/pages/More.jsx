@@ -71,6 +71,7 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
       <Group title="الشغل اليومي">
         {(can("orders") || can("customers")) && <Row key="forecast" to="/forecast" icon={FiDroplet} title="توقعات الطلبات" sub="مين مفروض يطلب اليوم، ومين متأخر" />}
         {can("jard") && <Row key="jard" to="/jard" icon={FiClipboard} title="الجرد اليومي" sub="كم دخل وكم طلع، ومين قبض شو" />}
+        {(can("customers") || can("jard")) && <Row key="bottles" to="/bottles" icon={FiDatabase} title="عهدة القوارير" sub="كم قارورة للمحل برا، وعند مين" />}
         {can("cash") && <Row key="cash" to="/cash" icon={FiDollarSign} title="الحساب اليومي" sub="مبيعات وصرفيات كل يوم" />}
         {can("debts") && <Row key="debts" to="/debts" icon={FiAlertCircle} title="ديون العملاء" sub="مين عليه، وتذكير على واتساب" />}
         {can("coupons") && <Row key="coupons" to="/coupons" icon={FiTag} title="الكوبونات والباقات" sub="الباقات، المبيعات، واللي قربت تخلص" />}

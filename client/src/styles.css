@@ -1505,3 +1505,99 @@ input[type="date"]:focus, textarea:focus {
 .type-card.on { border-color: var(--primary); background: var(--primary-soft); }
 .type-card strong { display: block; font-size: 0.92rem; }
 .type-card span { font-size: 0.78rem; color: var(--text-secondary); }
+
+/* ---------- اختيار موعد الطلب ---------- */
+.sched-days {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr) 44px;
+  gap: 6px;
+}
+.sched-days button, .sched-hours button {
+  height: 42px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sched-days button.on, .sched-hours button.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.sched-hours {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.sched-hours button { font-size: 0.8rem; }
+.sched-hours button:disabled { opacity: 0.35; cursor: default; }
+.sched-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 12px 0 8px;
+}
+.sched-label .text-secondary { font-weight: 400; font-size: 0.75rem; }
+.sched-date-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+}
+.sched-summary {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: var(--navy);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+[data-theme="dark"] .sched-summary { color: var(--primary-dark); }
+.sched-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--navy);
+  white-space: nowrap;
+}
+[data-theme="dark"] .sched-badge { color: var(--primary-dark); }
+
+/* ---------- التوزيع على الكباتن ---------- */
+.plan-group {
+  border: 1.5px solid var(--border);
+  border-right-width: 5px;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+.plan-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.plan-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.plan-list { margin: 0; padding: 0 18px 0 0; }
+.plan-list li { padding: 2px 0; }
+.plan-order {
+  all: unset;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+  font-size: 0.86rem;
+  padding: 4px 0;
+}

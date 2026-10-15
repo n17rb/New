@@ -543,3 +543,37 @@ CREATE INDEX IF NOT EXISTS idx_emp_tx_date ON employee_transactions(entry_date);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_token VARCHAR(40);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_invoice_token ON orders(invoice_token) WHERE invoice_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_debt_ledger_created ON customer_debt_ledger(created_at);
+
+-- ============================================================
+-- الطلبات بموعد: يوم محدد (وساعة اختيارية)
+-- ============================================================
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS scheduled_date DATE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS schedule_reminded_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS schedule_morning_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_orders_scheduled ON orders(scheduled_date) WHERE scheduled_date IS NOT NULL;
+-- الطلبات القديمة اللي إلها ساعة محددة: يومها نفس يوم الساعة
+UPDATE orders SET scheduled_date = (requested_time AT TIME ZONE 'Asia/Amman')::date
+WHERE requested_time IS NOT NULL AND scheduled_date IS NULL;
+
+-- وقت السواقة الحقيقي لكل مرحلة (من خرائط الطرق) — لحساب وقت الوصول بدقة
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS leg_minutes NUMERIC(8,2);
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS total_minutes NUMERIC(8,1);
+
+-- ============================================================
+-- عهدة القوارير: قوارير المحل اللي عند كل زبون (رأس مال)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS bottle_ledger (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  change INTEGER NOT NULL,
+  reason VARCHAR(20) NOT NULL CHECK (reason IN ('lend','return','delivery','empties','adjust','undo')),
+  balance_after INTEGER NOT NULL,
+  order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+  trip_id INTEGER REFERENCES trips(id) ON DELETE SET NULL,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_bottle_ledger_customer ON bottle_ledger(customer_id, id DESC);
+-- عهدة متفق عليها (كم قارورة المحل مموّلهم) — للمقارنة مع اللي عندهم فعلًا
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS bottles_agreed INTEGER NOT NULL DEFAULT 0;

@@ -3,6 +3,7 @@ import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { notifyOrdersAddedToTrip } from "../utils/notify.js";
 import { optimizeRoute, getShopLocation } from "../utils/routing.js";
+import { planDistribution } from "../utils/dispatch.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction } from "../permissions.js";
 
@@ -52,8 +53,10 @@ export async function reoptimizeTrip(tripId, { withGeometry = true } = {}) {
 
   const done = all.filter(isDone);
   const pending = all.filter((s) => !isDone(s));
+  // الطلبات اللي موعدها بعيد (أكثر من ١٢ ساعة) بتضل بآخر الرحلة.
+  // اللي موعدها خلال اليوم بتدخل بالترتيب الذكي وبتنحط بمكان بيوصلها الكابتن فيه قريب من موعدها.
   const timeLocked = pending
-    .filter((s) => s.requested_time && new Date(s.requested_time) > now)
+    .filter((s) => s.requested_time && new Date(s.requested_time).getTime() > now.getTime() + 12 * 3600 * 1000)
     .sort((x, y) => new Date(x.requested_time) - new Date(y.requested_time));
   // اللي أجّلهم السائق بيضلوا بالآخر بنفس ترتيب التأجيل
   const postponed = pending
@@ -86,23 +89,29 @@ export async function reoptimizeTrip(tripId, { withGeometry = true } = {}) {
 
   const newOrder = [...done, ...route.ordered, ...locked];
   const legById = new Map();
-  route.ordered.forEach((s, i) => legById.set(s.id, route.legDistancesKm[i]));
+  const minById = new Map();
+  route.ordered.forEach((s, i) => {
+    legById.set(s.id, route.legDistancesKm[i]);
+    minById.set(s.id, route.legMinutes?.[i] ?? null);
+  });
 
   const ids = newOrder.map((s) => s.id);
   const seqs = newOrder.map((_, i) => i + 1);
   const legs = newOrder.map((s) => (legById.has(s.id) ? legById.get(s.id) : locked.includes(s) ? null : s.leg_distance_km));
+  const mins = newOrder.map((s) => (minById.has(s.id) ? minById.get(s.id) : null));
 
   await query(
-    `UPDATE trip_stops ts SET sequence_number = u.seq, leg_distance_km = u.leg
-     FROM unnest($1::int[], $2::int[], $3::numeric[]) AS u(id, seq, leg)
+    `UPDATE trip_stops ts SET sequence_number = u.seq, leg_distance_km = u.leg,
+       leg_minutes = CASE WHEN u.mins IS NULL AND ts.delivered_at IS NOT NULL THEN ts.leg_minutes ELSE u.mins END
+     FROM unnest($1::int[], $2::int[], $3::numeric[], $4::numeric[]) AS u(id, seq, leg, mins)
      WHERE ts.id = u.id`,
-    [ids, seqs, legs]
+    [ids, seqs, legs, mins]
   );
 
   const doneKm = done.reduce((sum, s) => sum + Number(s.leg_distance_km || 0), 0);
   await query(
     `UPDATE trips SET total_distance_km = $1, return_leg_km = $2, end_latitude = $3, end_longitude = $4,
-       route_geometry = COALESCE($5, route_geometry)
+       route_geometry = COALESCE($5, route_geometry), total_minutes = $7
      WHERE id = $6`,
     [
       doneKm + route.totalDistanceKm,
@@ -111,6 +120,7 @@ export async function reoptimizeTrip(tripId, { withGeometry = true } = {}) {
       shop ? shop.lon : null,
       route.geometry ? JSON.stringify(route.geometry) : null,
       tripId,
+      route.totalMinutes,
     ]
   );
 
@@ -174,11 +184,13 @@ async function buildTripDetailResponse(trip, requestingUser) {
   const now = new Date();
   const stopsWithEta = stops.map((s) => {
     const isPending = !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED";
-    const isTimeLocked = isPending && s.requested_time && new Date(s.requested_time) > now;
+    // الطلب اللي إله موعد بينفتح للتسليم قبل موعده بـ٢٠ دقيقة
+    const isTimeLocked = isPending && s.requested_time && new Date(s.requested_time).getTime() > now.getTime() + 20 * 60 * 1000;
     if (isPending) {
       const legKm = s.leg_distance_km != null ? Number(s.leg_distance_km) : 0;
       cumulativeKm += legKm;
-      const drivingMinutes = (legKm / AVERAGE_SPEED_KMH) * 60;
+      // وقت السواقة الحقيقي من الخرائط، وإذا مش موجود منقدّره من المسافة
+      const drivingMinutes = s.leg_minutes != null ? Number(s.leg_minutes) : (legKm / AVERAGE_SPEED_KMH) * 60;
       cumulativeMinutes += drivingMinutes + SERVICE_MINUTES_PER_STOP;
     }
     return {
@@ -382,64 +394,63 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "يوجد رحلة نشطة بالفعل لهذا السائق. أنهِها أولًا قبل ما تبدأ رحلة جديدة." });
   }
 
-  // نحسب المسار قبل ما نفتح العملية بقاعدة البيانات (حساب الطرق ممكن ياخذ كم ثانية)
+  try {
+    const { trip, count, endsAtShop } = await createTripRecord({
+      driverId: finalDriverId,
+      orderIds: order_ids,
+      actorId: req.user.id,
+      start: start_latitude != null && start_longitude != null ? { lat: start_latitude, lon: start_longitude } : null,
+      mode: route_mode,
+      load: req.body.load,
+    });
+    res.status(201).json({ ...trip, stopsCount: count, ends_at_shop: endsAtShop });
+  } catch (err) {
+    res.status(400).json({ error: err.message || "تعذّر إنشاء الرحلة." });
+  }
+});
+
+// إنشاء رحلة لكابتن (من صفحة الرحلة أو من «التوزيع على الكباتن»)
+async function createTripRecord({ driverId, orderIds, actorId, start = null, mode = "nearest", load = [] }) {
   const ordersResult = await query(
-    `SELECT o.id, o.priority, l.latitude, l.longitude
+    `SELECT o.id, o.priority, o.requested_time, l.latitude, l.longitude
      FROM orders o
      JOIN customers c ON c.id = o.customer_id
      LEFT JOIN LATERAL (
        SELECT latitude, longitude FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
      ) l ON true
      WHERE o.id = ANY($1::int[]) AND o.status IN ('NEW','READY','POSTPONED','FAILED')`,
-    [order_ids]
+    [orderIds]
   );
-  if (ordersResult.rows.length === 0) {
-    return res.status(400).json({ error: "لا يوجد طلبات صالحة للإضافة للرحلة." });
-  }
+  if (ordersResult.rows.length === 0) throw new Error("لا يوجد طلبات صالحة للإضافة للرحلة.");
 
-  const mode = route_mode === "urgent_smart" ? "urgent_smart" : "nearest";
-  const startLat = start_latitude ?? null;
-  const startLon = start_longitude ?? null;
+  const routeMode = mode === "urgent_smart" ? "urgent_smart" : "nearest";
   const shop = await getShopLocation();
-
-  const route = await optimizeRoute({
-    start: startLat != null && startLon != null ? { lat: startLat, lon: startLon } : null,
-    end: shop,
-    stops: ordersResult.rows,
-    mode,
-  });
+  const route = await optimizeRoute({ start, end: shop, stops: ordersResult.rows, mode: routeMode });
   const { ordered, legDistancesKm } = route;
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
     const tripResult = await client.query(
       `INSERT INTO trips (status, driver_id, start_latitude, start_longitude, total_distance_km, distance_before_km,
-                          route_geometry, created_by, started_at, return_leg_km, end_latitude, end_longitude, route_mode)
-       VALUES ('STARTED', $1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10, $11) RETURNING *`,
+                          route_geometry, created_by, started_at, return_leg_km, end_latitude, end_longitude, route_mode, total_minutes)
+       VALUES ('STARTED', $1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10, $11, $12) RETURNING *`,
       [
-        finalDriverId, startLat, startLon, route.totalDistanceKm, route.distanceBeforeKm,
-        route.geometry ? JSON.stringify(route.geometry) : null, req.user.id,
-        route.returnLegKm, shop ? shop.lat : null, shop ? shop.lon : null, mode,
+        driverId, start?.lat ?? null, start?.lon ?? null, route.totalDistanceKm, route.distanceBeforeKm,
+        route.geometry ? JSON.stringify(route.geometry) : null, actorId,
+        route.returnLegKm, shop ? shop.lat : null, shop ? shop.lon : null, routeMode, route.totalMinutes,
       ]
     );
     const trip = tripResult.rows[0];
-
-    // سطر واحد لكل الطلبات بدل سطر لكل طلب — أسرع بكثير
     await client.query(
-      `INSERT INTO trip_stops (trip_id, order_id, sequence_number, leg_distance_km)
-       SELECT $1, u.order_id, u.seq, u.leg
-       FROM unnest($2::int[], $3::int[], $4::numeric[]) AS u(order_id, seq, leg)`,
-      [trip.id, ordered.map((o) => o.id), ordered.map((_, i) => i + 1), legDistancesKm]
+      `INSERT INTO trip_stops (trip_id, order_id, sequence_number, leg_distance_km, leg_minutes)
+       SELECT $1, u.order_id, u.seq, u.leg, u.mins
+       FROM unnest($2::int[], $3::int[], $4::numeric[], $5::numeric[]) AS u(order_id, seq, leg, mins)`,
+      [trip.id, ordered.map((o) => o.id), ordered.map((_, i) => i + 1), legDistancesKm, route.legMinutes]
     );
-    await client.query(
-      `UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = ANY($1::int[])`,
-      [ordered.map((o) => o.id)]
-    );
+    await client.query(`UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = ANY($1::int[])`, [ordered.map((o) => o.id)]);
 
-    // حمولة السيارة لو انبعتت مع الرحلة
-    const loadItems = (Array.isArray(req.body.load) ? req.body.load : [])
+    const loadItems = (Array.isArray(load) ? load : [])
       .map((i) => ({ product_id: Number(i.product_id), quantity: Math.floor(Number(i.quantity)) }))
       .filter((i) => Number.isInteger(i.product_id) && i.product_id > 0 && i.quantity > 0 && i.quantity <= 5000);
     if (loadItems.length) {
@@ -450,37 +461,116 @@ router.post("/", async (req, res) => {
         [trip.id, loadItems.map((i) => i.product_id), loadItems.map((i) => i.quantity)]
       );
     }
-
     await client.query("COMMIT");
 
     await logActivity({
-      userId: req.user.id,
-      action: "CREATE_TRIP",
-      recordType: "trip",
-      recordId: trip.id,
-      newValue: {
-        stops: ordered.length,
-        total_distance_km: route.totalDistanceKm,
-        distance_before_km: route.distanceBeforeKm,
-        driver_id: finalDriverId,
-        ends_at_shop: !!shop,
-      },
+      userId: actorId, action: "CREATE_TRIP", recordType: "trip", recordId: trip.id,
+      newValue: { stops: ordered.length, total_distance_km: route.totalDistanceKm, distance_before_km: route.distanceBeforeKm, driver_id: driverId, ends_at_shop: !!shop },
     });
-
-    notifyOrdersAddedToTrip({
-      tripId: trip.id,
-      orderIds: ordered.map((o) => o.id),
-      actorId: req.user.id,
-      isNewTrip: true,
-    }).catch((e) => console.error("notify error:", e.message));
-
-    res.status(201).json({ ...trip, stopsCount: ordered.length, ends_at_shop: !!shop });
+    notifyOrdersAddedToTrip({ tripId: trip.id, orderIds: ordered.map((o) => o.id), actorId, isNewTrip: true })
+      .catch((e) => console.error("notify error:", e.message));
+    return { trip, count: ordered.length, endsAtShop: !!shop };
   } catch (err) {
-    await client.query("ROLLBACK");
-    res.status(400).json({ error: err.message || "تعذّر إنشاء الرحلة." });
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
   } finally {
     client.release();
   }
+}
+
+// ============================================================
+// توزيع الطلبات على كذا كابتن
+// ============================================================
+async function ordersForPlanning(orderIds) {
+  const r = await query(
+    `SELECT o.id, o.order_number, o.priority, o.requested_time, o.scheduled_date, c.name AS customer_name,
+            r.name AS region_name, l.latitude, l.longitude,
+            COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = o.id), 0)::int AS bottles
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (SELECT latitude, longitude, region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id LIMIT 1) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE o.id = ANY($1::int[]) AND o.status IN ('NEW','READY','POSTPONED','FAILED')`,
+    [orderIds]
+  );
+  return r.rows;
+}
+
+router.post("/plan", async (req, res) => {
+  if (!can(req.user, "trips", "edit")) return res.status(403).json({ error: "التوزيع على الكباتن بده صلاحية تعديل الرحلات." });
+  const orderIds = (req.body?.order_ids || []).map(Number).filter(Boolean);
+  const driverIds = [...new Set((req.body?.driver_ids || []).map(Number).filter(Boolean))];
+  if (!orderIds.length) return res.status(400).json({ error: "اختار طلبات." });
+  if (!driverIds.length) return res.status(400).json({ error: "اختار كابتن واحد على الأقل." });
+  const driversR = await query(
+    `SELECT id, full_name, role, permissions, can_discount, can_delete_customer, can_edit_product_price, can_cancel_order
+     FROM users WHERE id = ANY($1::int[]) AND status = 'active'`,
+    [driverIds]
+  );
+  const drivers = driversR.rows.filter((u) => can(u, "delivery", "edit"));
+  if (!drivers.length) return res.status(400).json({ error: "الكباتن اللي اخترتهم ما عندهم صلاحية توصيل." });
+  const orders = await ordersForPlanning(orderIds);
+  if (!orders.length) return res.status(400).json({ error: "ما في طلبات جاهزة للتوزيع." });
+  const active = await query(
+    "SELECT driver_id, id FROM trips WHERE status IN ('PLANNED','STARTED') AND driver_id = ANY($1::int[])",
+    [drivers.map((d) => d.id)]
+  );
+  const activeMap = Object.fromEntries(active.rows.map((r) => [r.driver_id, r.id]));
+  const groups = await planDistribution({ orders, drivers, shop: await getShopLocation() });
+  res.json({
+    groups: groups.map((g) => ({
+      ...g,
+      has_active_trip: !!activeMap[g.driver_id],
+      orders: g.orders.map((o) => ({
+        id: o.id, order_number: o.order_number, customer_name: o.customer_name, region_name: o.region_name,
+        bottles: o.bottles, priority: o.priority, requested_time: o.requested_time, has_location: o.latitude != null,
+        latitude: o.latitude, longitude: o.longitude,
+      })),
+    })),
+  });
+});
+
+// اعتماد التوزيع: رحلة لكل كابتن (أو إضافة على رحلته الشغّالة)
+router.post("/plan/apply", async (req, res) => {
+  if (!can(req.user, "trips", "edit")) return res.status(403).json({ error: "غير مصرح." });
+  const groups = (req.body?.groups || []).filter((g) => g.driver_id && Array.isArray(g.order_ids) && g.order_ids.length);
+  if (!groups.length) return res.status(400).json({ error: "ما في توزيع." });
+  const allIds = groups.flatMap((g) => g.order_ids.map(Number));
+  if (new Set(allIds).size !== allIds.length) return res.status(400).json({ error: "في طلب مكرر بأكثر من كابتن." });
+
+  const results = [];
+  for (const g of groups) {
+    const driverId = Number(g.driver_id);
+    const orderIds = g.order_ids.map(Number);
+    try {
+      const active = (await query("SELECT * FROM trips WHERE status IN ('PLANNED','STARTED') AND driver_id = $1 LIMIT 1", [driverId])).rows[0];
+      if (active) {
+        const ok = (await query(
+          "SELECT id FROM orders WHERE id = ANY($1::int[]) AND status IN ('NEW','READY','POSTPONED','FAILED')",
+          [orderIds]
+        )).rows.map((r) => r.id);
+        for (const oid of ok) {
+          await query(
+            `INSERT INTO trip_stops (trip_id, order_id, sequence_number)
+             SELECT $1, $2, COALESCE(MAX(sequence_number), 0) + 1 FROM trip_stops WHERE trip_id = $1`,
+            [active.id, oid]
+          );
+        }
+        if (ok.length) {
+          await query("UPDATE orders SET status = 'IN_ROUTE', updated_at = now() WHERE id = ANY($1::int[])", [ok]);
+          await reoptimizeTrip(active.id);
+          notifyOrdersAddedToTrip({ tripId: active.id, orderIds: ok, actorId: req.user.id }).catch(() => {});
+        }
+        results.push({ driver_id: driverId, trip_id: active.id, added: ok.length, appended: true });
+      } else {
+        const { trip, count } = await createTripRecord({ driverId, orderIds, actorId: req.user.id });
+        results.push({ driver_id: driverId, trip_id: trip.id, added: count, appended: false });
+      }
+    } catch (err) {
+      results.push({ driver_id: driverId, error: err.message });
+    }
+  }
+  res.json({ results });
 });
 
 const round2 = (n) => Math.round(Number(n) * 100) / 100;
@@ -643,11 +733,20 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
       );
     }
 
-    await client.query(
+    const bottlesR = await client.query(
       `UPDATE customers SET coupon_balance = $1, debt_balance = $2, bottles_out = GREATEST(0, bottles_out + $3)
-       WHERE id = $4`,
+       WHERE id = $4 RETURNING bottles_out`,
       [newBalance, newDebt, returnableDelivered - emptiesCollected, stop.customer_id]
     );
+    // سجل عهدة القوارير: كم نزل وكم فارغ رجع
+    if (returnableDelivered || emptiesCollected) {
+      await client.query(
+        `INSERT INTO bottle_ledger (customer_id, change, reason, balance_after, order_id, trip_id, note, created_by)
+         VALUES ($1, $2, 'delivery', $3, $4, $5, $6, $7)`,
+        [stop.customer_id, returnableDelivered - emptiesCollected, bottlesR.rows[0]?.bottles_out ?? 0, stop.order_id, stop.trip_id,
+         `نزل ${returnableDelivered} مليان · رجع ${emptiesCollected} فارغ`, req.user.id]
+      );
+    }
 
     await client.query("COMMIT");
   } catch (err) {
@@ -772,10 +871,17 @@ router.post("/stops/:stopId/undo-deliver", async (req, res) => {
     }
 
     const bottlesChange = Number(stop.returnable_delivered || 0) - Number(stop.empties_collected || 0);
-    await client.query(
-      "UPDATE customers SET coupon_balance = $1, debt_balance = $2, bottles_out = GREATEST(0, bottles_out - $3) WHERE id = $4",
+    const bottlesR = await client.query(
+      "UPDATE customers SET coupon_balance = $1, debt_balance = $2, bottles_out = GREATEST(0, bottles_out - $3) WHERE id = $4 RETURNING bottles_out",
       [couponBalance, debtBalance, bottlesChange, stop.customer_id]
     );
+    if (bottlesChange) {
+      await client.query(
+        `INSERT INTO bottle_ledger (customer_id, change, reason, balance_after, order_id, trip_id, note, created_by)
+         VALUES ($1, $2, 'undo', $3, $4, $5, 'تراجع عن تسليم', $6)`,
+        [stop.customer_id, -bottlesChange, bottlesR.rows[0]?.bottles_out ?? 0, stop.order_id, stop.trip_id, req.user.id]
+      );
+    }
 
     await client.query("UPDATE order_items SET coupon_quantity = 0 WHERE order_id = $1", [stop.order_id]);
     await client.query(
@@ -988,11 +1094,16 @@ export async function tryAutoAddToActiveTrip(orderId, actorId = null) {
   const trip = activeResult.rows[0];
 
   const orderResult = await query(
-    "SELECT o.id, o.status FROM orders o WHERE o.id = $1",
+    `SELECT o.id, o.status, o.requested_time,
+            (o.scheduled_date > (now() AT TIME ZONE 'Asia/Amman')::date) AS future_day
+     FROM orders o WHERE o.id = $1`,
     [orderId]
   );
   const order = orderResult.rows[0];
   if (!order || order.status !== "NEW") return false;
+  // الطلب المجدول ليوم جاي أو لساعة بعيدة بيستنى — ما بينضاف للرحلة الشغالة هلّق
+  if (order.future_day) return false;
+  if (order.requested_time && new Date(order.requested_time).getTime() > Date.now() + 2 * 3600 * 1000) return false;
 
   await appendOrderAndReoptimize(trip, order.id);
   await logActivity({ userId: null, action: "AUTO_ADD_ORDER_TO_TRIP", recordType: "trip", recordId: trip.id, newValue: { order_id: orderId } });

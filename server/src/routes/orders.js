@@ -62,6 +62,12 @@ router.get("/", async (req, res) => {
     params.push(status);
     conditions.push(`o.status = $${params.length}`);
   }
+  // scheduled=future: طلبات لأيام جاية — scheduled=now: الطلبات الجاهزة لليوم (بدون اللي موعدها بأيام جاية)
+  if (req.query.scheduled === "future") {
+    conditions.push(`o.scheduled_date > (now() AT TIME ZONE 'Asia/Amman')::date`);
+  } else if (req.query.scheduled === "now") {
+    conditions.push(`(o.scheduled_date IS NULL OR o.scheduled_date <= (now() AT TIME ZONE 'Asia/Amman')::date)`);
+  }
   if (priority) {
     params.push(priority);
     conditions.push(`o.priority = $${params.length}`);
@@ -109,11 +115,42 @@ router.get("/:id", async (req, res) => {
   res.json({ ...orderResult.rows[0], items: itemsResult.rows });
 });
 
+// ---------- مواعيد الطلبات ----------
+function jordanToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+function jordanDateOf(d) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+// بيرجّع {scheduled_date, requested_time} نظيفين أو بيرمي خطأ مفهوم
+export function cleanSchedule({ scheduled_date, requested_time }) {
+  let time = null;
+  if (requested_time) {
+    time = new Date(requested_time);
+    if (Number.isNaN(time.getTime())) throw new Error("الموعد غير صحيح.");
+    if (time.getTime() < Date.now() - 10 * 60 * 1000) throw new Error("الموعد اللي اخترته صار ماضي.");
+    if (time.getTime() > Date.now() + 90 * 86400000) throw new Error("الموعد بعيد كثير (أكثر من ٣ شهور).");
+  }
+  let date = scheduled_date || null;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("التاريخ غير صحيح.");
+  if (time) date = jordanDateOf(time);
+  if (date && date < jordanToday()) throw new Error("التاريخ اللي اخترته صار ماضي.");
+  // «اليوم بأي وقت» = طلب عادي
+  if (date === jordanToday() && !time) date = null;
+  return { scheduled_date: date, requested_time: time ? time.toISOString() : null };
+}
+
 router.post("/", async (req, res) => {
-  const { customer_id, items, priority, notes, requested_time } = req.body;
+  const { customer_id, items, priority, notes } = req.body;
 
   if (!customer_id || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "العميل والمنتجات مطلوبة (منتج واحد على الأقل)." });
+  }
+  let schedule;
+  try {
+    schedule = cleanSchedule(req.body);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 
   const client = await pool.connect();
@@ -156,9 +193,10 @@ router.post("/", async (req, res) => {
     const finalTotal = subtotal;
 
     const orderResult = await client.query(
-      `INSERT INTO orders (order_number, customer_id, priority, subtotal, final_total, notes, requested_time, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [orderNumber, customer_id, priority === "urgent" ? "urgent" : "normal", subtotal, finalTotal, notes || null, requested_time || null, req.user.id]
+      `INSERT INTO orders (order_number, customer_id, priority, subtotal, final_total, notes, requested_time, scheduled_date, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [orderNumber, customer_id, priority === "urgent" ? "urgent" : "normal", subtotal, finalTotal, notes || null,
+       schedule.requested_time, schedule.scheduled_date, req.user.id]
     );
     const order = orderResult.rows[0];
 
@@ -286,6 +324,24 @@ router.put("/:id/items", async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// تغيير موعد الطلب (أو إلغاء الموعد)
+router.put("/:id/schedule", async (req, res) => {
+  let schedule;
+  try {
+    schedule = cleanSchedule(req.body || {});
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const r = await query(
+    `UPDATE orders SET scheduled_date = $1, requested_time = $2, schedule_reminded_at = NULL, schedule_morning_at = NULL, updated_at = now()
+     WHERE id = $3 AND status IN ('NEW','READY','POSTPONED','IN_ROUTE') RETURNING *`,
+    [schedule.scheduled_date, schedule.requested_time, req.params.id]
+  );
+  if (!r.rows[0]) return res.status(400).json({ error: "ما بينفع تغيّر موعد هذا الطلب." });
+  await logActivity({ userId: req.user.id, action: "SCHEDULE_ORDER", recordType: "order", recordId: Number(req.params.id), newValue: schedule });
+  res.json(r.rows[0]);
 });
 
 router.put("/:id/priority", async (req, res) => {

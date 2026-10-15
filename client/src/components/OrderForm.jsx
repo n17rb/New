@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
+import SchedulePicker from "./SchedulePicker.jsx";
+import { scheduleLabel } from "../schedule.js";
 
 export default function OrderForm({ customer, user, onClose, onCreated }) {
   const perms = usePerms();
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [priority, setPriority] = useState("normal");
-  const [requestedTime, setRequestedTime] = useState("");
+  const [schedule, setSchedule] = useState({ scheduled_date: null, requested_time: null });
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(null);
@@ -57,7 +59,8 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
         items,
         priority,
         notes: notes || undefined,
-        requested_time: requestedTime || undefined,
+        scheduled_date: schedule.scheduled_date || undefined,
+        requested_time: schedule.requested_time || undefined,
       });
       setSuccess(order);
     } catch (err) {
@@ -70,11 +73,14 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
   if (success) {
     return (
       <div className="card">
-        <div className="success-box">تم إرسال الطلب بنجاح — رقم الطلب #{success.order_number}</div>
+        <div className="success-box">
+          تم إرسال الطلب بنجاح — رقم الطلب #{success.order_number}
+          {scheduleLabel(success) && <div style={{ marginTop: 4, fontWeight: 700 }}>📅 موعده {scheduleLabel(success)}</div>}
+        </div>
         <p className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>
           الإجمالي: {Number(success.final_total).toFixed(2)} JD
         </p>
-        {perms.canEdit("delivery") && (
+        {perms.canEdit("delivery") && !scheduleLabel(success) && (
           <AddToActiveTripButton orderId={success.id} onDone={onCreated} />
         )}
         <button className="btn-primary" onClick={onCreated}>تم</button>
@@ -160,13 +166,8 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
       </div>
 
       <div className="field">
-        <label>موعد تسليم محدد (اختياري — مثلًا الزبون بده الساعة ٢)</label>
-        <input type="datetime-local" value={requestedTime} onChange={(e) => setRequestedTime(e.target.value)} />
-        {requestedTime && (
-          <p className="text-secondary" style={{ marginTop: 4, fontSize: "0.8rem" }}>
-            ⏰ السائق ما رح يقدر يسلّمه قبل هذا الوقت حتى لو كان قريب منه بالمسار.
-          </p>
-        )}
+        <label>متى بده الطلب؟</label>
+        <SchedulePicker value={schedule} onChange={setSchedule} />
       </div>
 
       <div className="field">

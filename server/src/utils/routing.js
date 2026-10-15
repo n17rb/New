@@ -31,20 +31,41 @@ async function fetchJsonWithTimeout(url, ms) {
   }
 }
 
-// مسافات الطرق الحقيقية بين كل النقاط (بالمتر) — لو فشلت بنرجع للمسافة المباشرة
-async function getRoadDistanceMatrix(points) {
-  if (points.length < 2 || points.length > 80) return null;
-  const coords = points.map((p) => `${p.lon},${p.lat}`).join(";");
-  const data = await fetchJsonWithTimeout(
-    `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance`,
-    7000
-  );
-  if (!data || data.code !== "Ok" || !data.distances) return null;
-  // لو في خانة فاضية (نقطة ما إلها طريق) نعتبر الجدول غير صالح
-  for (const row of data.distances) {
-    for (const v of row) if (v == null) return null;
+// مسافات وأوقات السواقة الحقيقية بين كل النقاط (متر وثانية).
+// لو خدمة الخرائط ما ردّت: مسافة مباشرة × ١.٣ (لف الشوارع) وسرعة ٢٨ كم/س.
+const FALLBACK_ROAD_FACTOR = 1.3;
+const FALLBACK_SPEED_MS = 28 / 3.6;
+
+export async function buildMatrix(points) {
+  const n = points.length;
+  let distances = null;
+  let durations = null;
+  if (n >= 2 && n <= 90) {
+    const coords = points.map((p) => `${p.lon},${p.lat}`).join(";");
+    const data = await fetchJsonWithTimeout(
+      `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=distance,duration`,
+      8000
+    );
+    if (data && data.code === "Ok" && data.distances && data.durations) {
+      const ok = data.distances.every((row) => row.every((v) => v != null)) && data.durations.every((row) => row.every((v) => v != null));
+      if (ok) {
+        distances = data.distances;
+        durations = data.durations;
+      }
+    }
   }
-  return data.distances;
+  const road = !!distances;
+  const dist = (i, j) => {
+    if (i === j) return 0;
+    if (distances) return distances[i][j];
+    return distanceKm(points[i].lat, points[i].lon, points[j].lat, points[j].lon) * 1000 * FALLBACK_ROAD_FACTOR;
+  };
+  const dur = (i, j) => {
+    if (i === j) return 0;
+    if (durations) return durations[i][j];
+    return dist(i, j) / FALLBACK_SPEED_MS;
+  };
+  return { dist, dur, road };
 }
 
 export async function getRouteGeometry(orderedPoints) {
@@ -59,27 +80,74 @@ export async function getRouteGeometry(orderedPoints) {
 }
 
 // ------------------------------------------------------------
-// حل مسار: من نقطة بداية، على كل النقاط، لنقطة نهاية ثابتة (أو نهاية حرة)
-// dist(i, j) بترجع المسافة بالمتر. الحسابات كلها على كامل المسار
-// عشان تشتغل صح حتى مع الشوارع اللي باتجاه واحد.
+// حل المسار (الأذكى):
+// - الكلفة = وقت السواقة الحقيقي (+ شوية للمسافة) — مش بس الكيلومترات
+// - الطلبات اللي إلها ساعة محددة: بتنحط بالمكان اللي بيوصل فيه الكابتن قريب من موعدها
+// - حل دقيق ١٠٠٪ للرحلات الصغيرة، وبحث محلي متقدم (2-opt + or-opt + قفزات عشوائية) للكبيرة
 // ------------------------------------------------------------
-function solvePath(startIdx, nodes, endIdx, dist) {
-  if (nodes.length <= 1) return [...nodes];
+export const SERVICE_SECONDS = 4 * 60;
+const EARLY_SLACK = 15 * 60; // مقبول نوصل قبل الموعد بربع ساعة
+const LATE_SLACK = 30 * 60; // ومقبول نتأخر نص ساعة
+const LATE_PENALTY = 6; // كل ثانية تأخير بعد هيك بتنحسب ٦ ثواني
+const WAIT_PENALTY = 0.4; // الانتظار أرخص من السواقة بس مش مجاني
+const METER_WEIGHT = 0.04; // ١ كم = ٤٠ ثانية — بيفضّل الطريق الأقصر لما الوقت متقارب
 
-  const d = (a, b) => (b === "END_FREE" || a === "END_FREE" ? 0 : dist(a, b));
-  const end = endIdx == null ? "END_FREE" : endIdx;
+export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, timeBudgetMs = 700 } = {}) {
+  if (nodes.length <= 1) return [...nodes];
+  const { dist, dur } = matrix;
+  const END_FREE = endIdx == null;
+  const edge = (a, b) => dur(a, b) + METER_WEIGHT * dist(a, b);
 
   function cost(order) {
     let total = 0;
+    let t = 0;
     let prev = startIdx;
     for (const n of order) {
-      total += d(prev, n);
+      const e = edge(prev, n);
+      total += e;
+      t += dur(prev, n);
+      const target = windows && windows.get(n);
+      if (target != null) {
+        const early = target - EARLY_SLACK;
+        if (t < early) {
+          total += (early - t) * WAIT_PENALTY;
+          t = early;
+        }
+        const late = t - (target + LATE_SLACK);
+        if (late > 0) total += late * LATE_PENALTY;
+      }
+      t += SERVICE_SECONDS;
       prev = n;
     }
-    return total + d(prev, end);
+    if (!END_FREE) total += edge(prev, endIdx);
+    return total;
   }
 
-  // بناء أولي ١: الأقرب فالأقرب
+  // رحلة صغيرة (٨ طلبات أو أقل): منجرّب كل الاحتمالات ومنختار الأحسن
+  if (nodes.length <= 8) {
+    let best = null;
+    let bestCost = Infinity;
+    const arr = [...nodes];
+    const used = new Array(arr.length).fill(false);
+    const cur = [];
+    (function permute() {
+      if (cur.length === arr.length) {
+        const c = cost(cur);
+        if (c < bestCost) { bestCost = c; best = [...cur]; }
+        return;
+      }
+      for (let i = 0; i < arr.length; i++) {
+        if (used[i]) continue;
+        used[i] = true;
+        cur.push(arr[i]);
+        permute();
+        cur.pop();
+        used[i] = false;
+      }
+    })();
+    return best;
+  }
+
   function nearestNeighbor() {
     const left = [...nodes];
     const order = [];
@@ -88,7 +156,7 @@ function solvePath(startIdx, nodes, endIdx, dist) {
       let bestPos = 0;
       let best = Infinity;
       left.forEach((n, pos) => {
-        const v = d(current, n);
+        const v = edge(current, n);
         if (v < best) { best = v; bestPos = pos; }
       });
       current = left.splice(bestPos, 1)[0];
@@ -97,14 +165,12 @@ function solvePath(startIdx, nodes, endIdx, dist) {
     return order;
   }
 
-  // بناء أولي ٢: الإدخال الأرخص (بيعطي حلقات أنظف لما البداية والنهاية نفس المكان)
   function cheapestInsertion() {
     const left = [...nodes];
-    // نبدأ بأبعد نقطة عن البداية
     let farPos = 0;
     let far = -1;
     left.forEach((n, pos) => {
-      const v = d(startIdx, n);
+      const v = edge(startIdx, n);
       if (v > far) { far = v; farPos = pos; }
     });
     const order = [left.splice(farPos, 1)[0]];
@@ -115,8 +181,8 @@ function solvePath(startIdx, nodes, endIdx, dist) {
       left.forEach((n, pos) => {
         for (let k = 0; k <= order.length; k++) {
           const prev = k === 0 ? startIdx : order[k - 1];
-          const next = k === order.length ? end : order[k];
-          const delta = d(prev, n) + d(n, next) - d(prev, next);
+          const next = k === order.length ? (END_FREE ? null : endIdx) : order[k];
+          const delta = edge(prev, n) + (next == null ? 0 : edge(n, next) - edge(prev, next));
           if (delta < bestDelta) { bestDelta = delta; bestNodePos = pos; bestInsertAt = k; }
         }
       });
@@ -126,16 +192,35 @@ function solvePath(startIdx, nodes, endIdx, dist) {
     return order;
   }
 
+  // الطلبات اللي إلها موعد مرتبة حسب الموعد كبداية ثالثة
+  function byWindows() {
+    if (!windows || windows.size === 0) return null;
+    const timed = nodes.filter((n) => windows.has(n)).sort((a, b) => windows.get(a) - windows.get(b));
+    const free = nodes.filter((n) => !windows.has(n));
+    const order = [...timed];
+    for (const n of free) {
+      let bestAt = 0;
+      let bestC = Infinity;
+      for (let k = 0; k <= order.length; k++) {
+        const cand = [...order.slice(0, k), n, ...order.slice(k)];
+        const c = cost(cand);
+        if (c < bestC) { bestC = c; bestAt = k; }
+      }
+      order.splice(bestAt, 0, n);
+    }
+    return order;
+  }
+
+  const deadline = Date.now() + timeBudgetMs;
+
   function improve(orderIn) {
     let order = [...orderIn];
     let bestCost = cost(order);
     let improved = true;
     let rounds = 0;
-    while (improved && rounds < 30) {
+    while (improved && rounds < 25 && Date.now() < deadline + 400) {
       improved = false;
       rounds++;
-
-      // 2-opt: قلب مقطع من المسار
       for (let i = 0; i < order.length - 1; i++) {
         for (let j = i + 1; j < order.length; j++) {
           const candidate = [...order.slice(0, i), ...order.slice(i, j + 1).reverse(), ...order.slice(j + 1)];
@@ -143,8 +228,6 @@ function solvePath(startIdx, nodes, endIdx, dist) {
           if (c < bestCost - 1e-6) { order = candidate; bestCost = c; improved = true; }
         }
       }
-
-      // or-opt: نقل مقطع (١ إلى ٣ نقاط) لمكان أفضل
       for (let segLen = 1; segLen <= 3; segLen++) {
         for (let i = 0; i + segLen <= order.length; i++) {
           const segment = order.slice(i, i + segLen);
@@ -163,35 +246,52 @@ function solvePath(startIdx, nodes, endIdx, dist) {
     return { order, cost: bestCost };
   }
 
-  const a = improve(nearestNeighbor());
-  const b = improve(cheapestInsertion());
-  let best = a.cost <= b.cost ? a : b;
-
-  // لما الرحلة بتبدأ وبتخلص بالمحل: نفس الحلقة ممكن تنمشى بالاتجاهين.
-  // بنختار الاتجاه الأقصر، ولو متقاربين بنبدأ بالأقرب للمحل.
-  if (endIdx != null && endIdx === startIdx) {
-    const reversed = [...best.order].reverse();
-    const reversedCost = cost(reversed);
-    const firstLeg = d(startIdx, best.order[0]);
-    const reversedFirstLeg = d(startIdx, reversed[0]);
-    const nearlyEqual = Math.abs(reversedCost - best.cost) <= best.cost * 0.03;
-    if (reversedCost < best.cost - 1e-6 && !nearlyEqual) {
-      best = { order: reversed, cost: reversedCost };
-    } else if (nearlyEqual && reversedFirstLeg < firstLeg) {
-      best = { order: reversed, cost: reversedCost };
-    }
+  // «القفزة»: بنكسر المسار لأربع قطع ومنرتبهم من جديد — بيطلعنا من الحلول المحلية
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  function doubleBridge(order) {
+    const n = order.length;
+    if (n < 8) return [...order].reverse();
+    const cuts = [1 + Math.floor(rnd() * (n / 4)), 0, 0];
+    cuts[1] = cuts[0] + 1 + Math.floor(rnd() * (n / 4));
+    cuts[2] = cuts[1] + 1 + Math.floor(rnd() * (n / 4));
+    const [a, b, c] = cuts.map((x) => Math.min(x, n - 1));
+    return [...order.slice(0, a), ...order.slice(b, c), ...order.slice(a, b), ...order.slice(c)];
   }
 
+  const starts = [nearestNeighbor(), cheapestInsertion(), byWindows()].filter(Boolean);
+  let best = null;
+  for (const s of starts) {
+    const r = improve(s);
+    if (!best || r.cost < best.cost) best = r;
+  }
+  let current = best;
+  let iterations = 0;
+  while (Date.now() < deadline && iterations < 200) {
+    iterations++;
+    const r = improve(doubleBridge(current.order));
+    if (r.cost < current.cost - 1e-6) current = r;
+    if (current.cost < best.cost) best = current;
+  }
+
+  // الحلقة (من المحل وللمحل) ممكن تنمشى بالاتجاهين — منختار الأقصر، ولو متقاربين بنبدأ بالأقرب
+  if (!END_FREE && endIdx === startIdx && (!windows || windows.size === 0)) {
+    const reversed = [...best.order].reverse();
+    const reversedCost = cost(reversed);
+    const nearlyEqual = Math.abs(reversedCost - best.cost) <= best.cost * 0.03;
+    if (reversedCost < best.cost - 1e-6 && !nearlyEqual) best = { order: reversed, cost: reversedCost };
+    else if (nearlyEqual && edge(startIdx, reversed[0]) < edge(startIdx, best.order[0])) best = { order: reversed, cost: reversedCost };
+  }
   return best.order;
 }
 
 // ------------------------------------------------------------
 // optimizeRoute
 // start: {lat, lon} أو null — end: {lat, lon} أو null (المحل)
-// stops: [{ ...anything, latitude, longitude, priority }]
-// mode: "nearest" (أقصر طريق) أو "urgent_smart" (المستعجل أولًا)
+// stops: [{ ...anything, latitude, longitude, priority, requested_time? }]
+// mode: "nearest" (أقصر وقت) أو "urgent_smart" (المستعجل أولًا)
 // ------------------------------------------------------------
-export async function optimizeRoute({ start, end, stops, mode = "nearest", withGeometry = true }) {
+export async function optimizeRoute({ start, end, stops, mode = "nearest", withGeometry = true, startTime = new Date() }) {
   const withLocation = stops.filter((s) => s.latitude != null && s.longitude != null);
   const withoutLocation = stops.filter((s) => s.latitude == null || s.longitude == null);
 
@@ -199,14 +299,17 @@ export async function optimizeRoute({ start, end, stops, mode = "nearest", withG
     return {
       ordered: [...stops],
       legDistancesKm: stops.map(() => null),
+      legMinutes: stops.map(() => null),
       returnLegKm: null,
+      returnLegMinutes: null,
       totalDistanceKm: 0,
+      totalMinutes: 0,
       distanceBeforeKm: 0,
       geometry: null,
+      roadData: false,
     };
   }
 
-  // لو ما في نقطة بداية: نبدأ من المحل، ولو ما في محل: من أول طلب
   let startPoint = start && start.lat != null && start.lon != null ? start : null;
   let anchorStop = null;
   let locatedStops = withLocation;
@@ -217,52 +320,62 @@ export async function optimizeRoute({ start, end, stops, mode = "nearest", withG
     locatedStops = withLocation.slice(1);
   }
 
-  // النقاط: 0 = البداية، 1..n = الطلبات، n+1 = المحل (لو موجود)
   const points = [startPoint, ...locatedStops.map((s) => ({ lat: s.latitude, lon: s.longitude }))];
   const endIdx = end ? points.length : null;
   if (end) points.push(end);
 
-  const matrix = await getRoadDistanceMatrix(points);
-  const dist = (i, j) => {
-    if (i === j) return 0;
-    if (matrix) return matrix[i][j];
-    return distanceKm(points[i].lat, points[i].lon, points[j].lat, points[j].lon) * 1000;
-  };
+  const matrix = await buildMatrix(points);
+  const { dist, dur } = matrix;
+
+  // نوافذ الوقت: الطلبات اللي إلها ساعة خلال الـ١٢ ساعة الجاية
+  const t0 = new Date(startTime).getTime();
+  const windows = new Map();
+  locatedStops.forEach((s, i) => {
+    if (!s.requested_time) return;
+    const target = (new Date(s.requested_time).getTime() - t0) / 1000;
+    if (target < 12 * 3600) windows.set(i + 1, target);
+  });
 
   const stopIdxs = locatedStops.map((_, i) => i + 1);
+  const budget = stopIdxs.length > 40 ? 500 : 800;
   let orderIdxs;
 
   if (mode === "urgent_smart") {
     const urgent = stopIdxs.filter((i) => locatedStops[i - 1].priority === "urgent");
     const normal = stopIdxs.filter((i) => locatedStops[i - 1].priority !== "urgent");
     if (urgent.length && normal.length) {
-      const urgentOrder = solvePath(0, urgent, null, dist);
-      const normalOrder = solvePath(urgentOrder[urgentOrder.length - 1], normal, endIdx, dist);
+      const urgentOrder = solvePath(0, urgent, null, matrix, { windows, timeBudgetMs: budget / 2 });
+      const normalOrder = solvePath(urgentOrder[urgentOrder.length - 1], normal, endIdx, matrix, { windows: null, timeBudgetMs: budget / 2 });
       orderIdxs = [...urgentOrder, ...normalOrder];
     } else {
-      orderIdxs = solvePath(0, stopIdxs, endIdx, dist);
+      orderIdxs = solvePath(0, stopIdxs, endIdx, matrix, { windows, timeBudgetMs: budget });
     }
   } else {
-    orderIdxs = solvePath(0, stopIdxs, endIdx, dist);
+    orderIdxs = solvePath(0, stopIdxs, endIdx, matrix, { windows, timeBudgetMs: budget });
   }
 
   const legDistances = [];
+  const legMinutes = [];
   let prev = 0;
   let total = 0;
+  let totalSec = 0;
   for (const idx of orderIdxs) {
     const leg = dist(prev, idx);
     legDistances.push(leg / 1000);
+    legMinutes.push(dur(prev, idx) / 60);
     total += leg;
+    totalSec += dur(prev, idx);
     prev = idx;
   }
   let returnLegKm = null;
+  let returnLegMinutes = null;
   if (endIdx != null && orderIdxs.length) {
-    const back = dist(prev, endIdx);
-    returnLegKm = back / 1000;
-    total += back;
+    returnLegKm = dist(prev, endIdx) / 1000;
+    returnLegMinutes = dur(prev, endIdx) / 60;
+    total += dist(prev, endIdx);
+    totalSec += dur(prev, endIdx);
   }
 
-  // المسافة لو مشينا بالترتيب الأصلي بدون تحسين (للمقارنة)
   let before = 0;
   let p = 0;
   for (const idx of stopIdxs) { before += dist(p, idx); p = idx; }
@@ -279,14 +392,19 @@ export async function optimizeRoute({ start, end, stops, mode = "nearest", withG
 
   const ordered = anchorStop ? [anchorStop, ...orderedLocated] : orderedLocated;
   const legs = anchorStop ? [0, ...legDistances] : legDistances;
+  const legMins = anchorStop ? [0, ...legMinutes] : legMinutes;
 
   return {
     ordered: [...ordered, ...withoutLocation],
     legDistancesKm: [...legs, ...withoutLocation.map(() => null)],
+    legMinutes: [...legMins, ...withoutLocation.map(() => null)],
     returnLegKm,
+    returnLegMinutes,
     totalDistanceKm: total / 1000,
+    totalMinutes: totalSec / 60,
     distanceBeforeKm: before / 1000,
     geometry,
+    roadData: matrix.road,
   };
 }
 

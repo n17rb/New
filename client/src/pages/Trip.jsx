@@ -9,6 +9,8 @@ import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.js
 import ShopLocationCard from "../components/ShopLocationCard.jsx";
 import { LoadInputs, TripLoadCard } from "../components/TripLoad.jsx";
 import { usePerms } from "../auth.jsx";
+import { scheduleLabel } from "../schedule.js";
+import DistributePlanner from "../components/DistributePlanner.jsx";
 
 function formatMinutes(mins) {
   if (mins <= 0) return "أقل من دقيقة";
@@ -209,12 +211,16 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   const [products, setProducts] = useState([]);
   const [loadValues, setLoadValues] = useState({});
   const [showLoad, setShowLoad] = useState(false);
+  const [futureCount, setFutureCount] = useState(0);
+  const [planMode, setPlanMode] = useState("single"); // single | distribute
 
   async function loadOrders() {
     setFetching(true);
     setError("");
     try {
-      const list = await api.getOrders({ status: "NEW", limit: 200, with_items: "true" });
+      // طلبات اليوم بس — المجدولة لأيام جاية بتستنى يومها
+      const list = await api.getOrders({ status: "NEW", limit: 300, with_items: "true", scheduled: "now" });
+      api.getOrders({ status: "NEW", limit: 300, scheduled: "future" }).then((f) => setFutureCount(f.length)).catch(() => {});
       setOrders(list);
       const all = {};
       list.forEach((o) => { all[o.id] = true; });
@@ -314,6 +320,27 @@ function CreateTripForm({ isPrivileged, onCreated }) {
 
       {perms.can("settings") ? <ShopLocationCard /> : null}
 
+      {futureCount > 0 && (
+        <p className="text-secondary" style={{ fontSize: "0.82rem", marginTop: 0 }}>
+          📅 في {futureCount} طلب بموعد لأيام جاية — بيطلعوا هون بيومهم.
+        </p>
+      )}
+
+      {isPrivileged && perms.canEdit("trips") && drivers.length > 1 && (
+        <div className="seg" style={{ marginBottom: 14 }}>
+          <button type="button" className={planMode === "single" ? "on" : ""} onClick={() => setPlanMode("single")}>رحلة وحدة</button>
+          <button type="button" className={planMode === "distribute" ? "on" : ""} onClick={() => setPlanMode("distribute")}>وزّع على الكباتن</button>
+        </div>
+      )}
+
+      {planMode === "distribute" ? (
+        <DistributePlanner
+          orders={orders.filter((o) => selected[o.id])}
+          drivers={drivers}
+          onDone={onCreated}
+        />
+      ) : (
+      <>
       {isPrivileged && (
         <div className="field">
           <label>مين اللي رح يوصّل هذه الرحلة؟</label>
@@ -364,7 +391,10 @@ function CreateTripForm({ isPrivileged, onCreated }) {
                   {" "}<BottleTypeBadge type={o.bottle_type} />
                   {" "}<NeedsQuantityBadge order={o} />
                 </div>
-                <div className="text-secondary tabular-num">{Number(o.final_total).toFixed(2)} JD</div>
+                <div className="text-secondary tabular-num">
+                  {Number(o.final_total).toFixed(2)} JD
+                  {scheduleLabel(o) && <span className="sched-badge" style={{ marginRight: 6 }}>📅 {scheduleLabel(o)}</span>}
+                </div>
               </div>
             </div>
           </label>
@@ -396,6 +426,8 @@ function CreateTripForm({ isPrivileged, onCreated }) {
       <button className="btn-primary" disabled={loading} onClick={handleCreate}>
         {loading ? "جاري البدء..." : "🚀 بدء الرحلة"}
       </button>
+      </>
+      )}
     </div>
   );
 }

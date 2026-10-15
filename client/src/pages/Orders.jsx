@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
+import SchedulePicker from "../components/SchedulePicker.jsx";
+import { scheduleLabel } from "../schedule.js";
 
 const STATUS_LABELS = {
   NEW: "جديد",
@@ -61,6 +63,7 @@ const PERIODS = [
   },
   { key: "month", label: "هالشهر", range: (t) => [`${t.slice(0, 8)}01`, t] },
   { key: "all", label: "الكل", range: () => [null, null] },
+  { key: "scheduled", label: "📅 بموعد", range: () => [null, null] },
 ];
 
 const STATUS_CHIPS = [
@@ -91,6 +94,7 @@ export default function Orders({ user }) {
       if (statusFilter) params.status = statusFilter;
       if (priorityFilter) params.priority = priorityFilter;
       const [from, to] = PERIODS.find((p) => p.key === period).range(jordanToday());
+      if (period === "scheduled") params.scheduled = "future";
       if (from) params.from = from;
       if (to) params.to = to;
       if (search.trim()) params.q = search.trim();
@@ -185,6 +189,9 @@ export default function Orders({ user }) {
                 {" "}<NeedsQuantityBadge order={o} />
               </div>
               <div className="text-secondary tabular-num">#{o.order_number} · {formatOrderTime(o.created_at)}</div>
+              {scheduleLabel(o) && !["DELIVERED", "CANCELLED"].includes(o.status) && (
+                <span className="sched-badge" style={{ marginTop: 4 }}>📅 {scheduleLabel(o)}</span>
+              )}
             </div>
             <div style={{ textAlign: "left", flexShrink: 0 }}>
               <div className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</div>
@@ -202,6 +209,8 @@ function OrderDetail({ orderId, user, onBack }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [editingItems, setEditingItems] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [scheduleDraft, setScheduleDraft] = useState(null);
 
   const perms = usePerms();
   const canEditOrders = perms.canEdit("orders");
@@ -293,6 +302,28 @@ function OrderDetail({ orderId, user, onBack }) {
       <BottleTypeBadge type={order.bottle_type} large />
       <p className="text-secondary tabular-num" style={{ marginTop: -6 }}>🕐 {formatOrderTime(order.created_at)}</p>
       <span className="badge" style={{ marginBottom: 12, display: "inline-block", ...statusBadgeStyle(order.status) }}>{STATUS_LABELS[order.status] || order.status}</span>
+
+      {!isFinal && (
+        <div className="card" style={{ background: "var(--surface-2)", border: "none", padding: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontWeight: 700 }}>{scheduleLabel(order) ? `📅 موعده ${scheduleLabel(order)}` : "بدون موعد — بأقرب وقت"}</span>
+            {canEditOrders && !editingSchedule && (
+              <button className="chip" onClick={() => { setScheduleDraft({ scheduled_date: order.scheduled_date ? String(order.scheduled_date).slice(0, 10) : null, requested_time: order.requested_time }); setEditingSchedule(true); }}>
+                {scheduleLabel(order) ? "غيّر الموعد" : "حدّد موعد"}
+              </button>
+            )}
+          </div>
+          {editingSchedule && (
+            <div style={{ marginTop: 10 }}>
+              <SchedulePicker value={scheduleDraft} onChange={setScheduleDraft} />
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button className="btn-primary" disabled={busy} onClick={() => withBusy(async () => { await api.setOrderSchedule(order.id, scheduleDraft); setEditingSchedule(false); })}>حفظ الموعد</button>
+                <button className="btn-secondary" style={{ width: "auto", padding: "0 16px" }} onClick={() => setEditingSchedule(false)}>إلغاء</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <div className="error-box">{error}</div>}
 

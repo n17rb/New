@@ -3,6 +3,7 @@ import { query, logActivity, currentSchema } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
 import { sendPushToUser } from "../utils/push.js";
+import { scheduleLabel, hourLabel } from "../utils/schedule.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -208,6 +209,74 @@ export function checkRemindersThrottled() {
   if (now - (lastCheckAt.get(key) || 0) < 10 * 60 * 1000) return;
   lastCheckAt.set(key, now);
   checkAndFireReminders().catch((err) => console.error("reminder check error:", err.message));
+  checkScheduledOrders().catch((err) => console.error("scheduled check error:", err.message));
 }
 
 export default router;
+
+// ============================================================
+// الطلبات بموعد: تذكير الصبح بطلبات اليوم المجدولة، وتذكير قبل الموعد بساعة
+// ============================================================
+async function usersForOrders(extraDriverId = null) {
+  const r = await query(
+    `SELECT id, role, permissions, can_discount, can_delete_customer, can_edit_product_price, can_cancel_order
+     FROM users WHERE status = 'active'`
+  );
+  const ids = new Set(r.rows.filter((u) => can(u, "orders", "view") || can(u, "trips", "view")).map((u) => u.id));
+  if (extraDriverId) ids.add(extraDriverId);
+  return [...ids];
+}
+
+export async function checkScheduledOrders() {
+  const { date, hour } = getJordanNowParts();
+
+  // ١) الصبح (من ٧): ملخص طلبات اليوم المجدولة
+  if (hour >= REMINDER_HOUR) {
+    const morning = await query(
+      `UPDATE orders o SET schedule_morning_at = now()
+       FROM customers c
+       WHERE c.id = o.customer_id AND o.scheduled_date = $1::date AND o.schedule_morning_at IS NULL
+         AND (o.created_at AT TIME ZONE 'Asia/Amman')::date < $1::date
+         AND o.status IN ('NEW','READY','POSTPONED','IN_ROUTE')
+       RETURNING o.id, o.requested_time, o.scheduled_date, c.id AS customer_id, c.name AS customer_name`,
+      [date]
+    );
+    if (morning.rows.length) {
+      const rows = morning.rows.sort((a, b) => new Date(a.requested_time || 0) - new Date(b.requested_time || 0));
+      const parts = rows.map((r) => {
+        if (!r.requested_time) return `${r.customer_name} (بأي وقت)`;
+        const hh = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Amman", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(r.requested_time)).split(":").map(Number);
+        return `${r.customer_name} ${hourLabel(hh[0], hh[1])}`;
+      });
+      const body = rows.length === 1
+        ? `📅 اليوم في طلب بموعد: ${parts[0]}`
+        : `📅 اليوم في ${rows.length} طلبات بموعد: ${listNames(parts)}`;
+      for (const uid of await usersForOrders()) {
+        await query(`INSERT INTO notifications (type, message, target_user_id) VALUES ('SCHEDULED', $1, $2)`, [body, uid]);
+        sendPushToUser(uid, { title: "📅 طلبات اليوم بموعد", body, url: "/orders", tag: `scheduled-${date}` }).catch(() => {});
+      }
+    }
+  }
+
+  // ٢) قبل الموعد بساعة تقريبًا
+  const soon = await query(
+    `UPDATE orders o SET schedule_reminded_at = now()
+     FROM customers c
+     WHERE c.id = o.customer_id AND o.requested_time IS NOT NULL AND o.schedule_reminded_at IS NULL
+       AND o.requested_time BETWEEN now() - interval '10 minutes' AND now() + interval '75 minutes'
+       AND o.status IN ('NEW','READY','POSTPONED','IN_ROUTE')
+     RETURNING o.id, o.requested_time, o.scheduled_date, c.id AS customer_id, c.name AS customer_name,
+       (SELECT t.driver_id FROM trip_stops ts JOIN trips t ON t.id = ts.trip_id WHERE ts.order_id = o.id AND t.status <> 'COMPLETED' LIMIT 1) AS driver_id`
+  );
+  for (const r of soon.rows) {
+    const when = scheduleLabel(r);
+    const body = `⏰ ${r.customer_name} موعده ${when} — جهّزوا الطلب`;
+    for (const uid of await usersForOrders(r.driver_id)) {
+      await query(
+        `INSERT INTO notifications (type, message, related_customer_id, target_user_id) VALUES ('SCHEDULED', $1, $2, $3)`,
+        [body, r.customer_id, uid]
+      );
+      sendPushToUser(uid, { title: "⏰ طلب موعده قرّب", body, url: "/orders", tag: `sched-${r.id}` }).catch(() => {});
+    }
+  }
+}

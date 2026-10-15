@@ -3,6 +3,7 @@ import { shopName } from "../shop.js";
 import { FiPlus, FiMinus, FiClock, FiCheck, FiX, FiPackage, FiFileText } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { couponsWord } from "./Receipt.jsx";
+import BottleCustody from "./BottleCustody.jsx";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
 
@@ -436,12 +437,7 @@ export default function CustomerAccount({ customer, onChanged }) {
     <>
       <CouponWallet customer={customer} onChanged={onChanged} />
       <DebtCard customer={customer} onChanged={onChanged} />
-      {customer.bottles_out > 0 && (
-        <div className="card icon-row" style={{ justifyContent: "space-between" }}>
-          <span>قوارير المحل اللي عنده</span>
-          <strong className="tabular-num">{customer.bottles_out}</strong>
-        </div>
-      )}
+<BottleCustody customer={customer} onChanged={onChanged} />
       <StatementCard customer={customer} />
     </>
   );
