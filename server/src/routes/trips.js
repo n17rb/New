@@ -316,21 +316,89 @@ router.get("/available-drivers", async (req, res) => {
 
 router.get("/archive", async (req, res) => {
   if (!isPrivileged(req.user)) return res.status(403).json({ error: "غير مصرح." });
-
+  const params = [];
+  let where = "t.status = 'COMPLETED'";
+  if (req.query.driver_id) { params.push(Number(req.query.driver_id)); where += ` AND t.driver_id = $${params.length}`; }
   const result = await query(
-    `SELECT t.id, t.completed_at, t.started_at, t.total_distance_km, u.full_name AS driver_name,
+    `SELECT t.id, t.completed_at, t.started_at, t.total_distance_km, t.distance_before_km, t.driver_id, u.full_name AS driver_name,
             COUNT(ts.id)::int AS total_stops,
-            COUNT(ts.id) FILTER (WHERE o.status = 'DELIVERED')::int AS delivered_count
+            COUNT(ts.id) FILTER (WHERE o.status = 'DELIVERED')::int AS delivered_count,
+            COALESCE(SUM(ts.returnable_delivered), 0)::int AS bottles,
+            COALESCE(SUM(ts.cash_collected), 0)::float AS cash,
+            (SELECT COUNT(*)::int FROM trip_track tt WHERE tt.trip_id = t.id) AS track_points,
+            ARRAY_AGG(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL) AS regions,
+            json_agg(json_build_array(l.latitude, l.longitude) ORDER BY ts.sequence_number) FILTER (WHERE l.latitude IS NOT NULL) AS points
      FROM trips t
      LEFT JOIN users u ON u.id = t.driver_id
      LEFT JOIN trip_stops ts ON ts.trip_id = t.id
      LEFT JOIN orders o ON o.id = ts.order_id
-     WHERE t.status = 'COMPLETED'
-     GROUP BY t.id, t.completed_at, t.started_at, t.total_distance_km, u.full_name
+     LEFT JOIN LATERAL (SELECT region_id, latitude, longitude FROM customer_locations WHERE customer_id = o.customer_id ORDER BY id LIMIT 1) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE ${where}
+     GROUP BY t.id, u.full_name
      ORDER BY t.completed_at DESC
-     LIMIT 200`
+     LIMIT 200`,
+    params
   );
   res.json(result.rows);
+});
+
+// إعادة عرض رحلة من الأرشيف: الخريطة، ترتيب التوقفات، وين راح الكابتن فعليًا، ومتى سلّم كل زبون
+router.get("/:id/replay", async (req, res) => {
+  const t = await query(
+    `SELECT t.*, u.full_name AS driver_name FROM trips t LEFT JOIN users u ON u.id = t.driver_id WHERE t.id = $1`,
+    [req.params.id]
+  );
+  const trip = t.rows[0];
+  if (!trip) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!isPrivileged(req.user) && trip.driver_id !== req.user.id) return res.status(403).json({ error: "غير مصرح." });
+
+  const stops = await query(
+    `SELECT ts.id, ts.sequence_number, ts.delivered_at, ts.cash_collected, ts.coupons_collected, ts.debt_added, ts.debt_paid,
+            ts.returnable_delivered, ts.empties_collected, ts.leg_distance_km, ts.leg_minutes, ts.postponed_at,
+            o.order_number, o.status AS order_status, o.final_total, o.requested_time,
+            c.id AS customer_id, c.name AS customer_name, r.name AS region_name, l.latitude, l.longitude,
+            (SELECT COALESCE(SUM(quantity), 0)::int FROM order_items WHERE order_id = o.id) AS qty
+     FROM trip_stops ts
+     JOIN orders o ON o.id = ts.order_id
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN LATERAL (SELECT * FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE ts.trip_id = $1
+     ORDER BY ts.sequence_number ASC`,
+    [trip.id]
+  );
+  const track = await query(
+    "SELECT latitude, longitude, recorded_at FROM trip_track WHERE trip_id = $1 ORDER BY id ASC LIMIT 5000",
+    [trip.id]
+  );
+  // ترتيب التسليم الفعلي
+  const deliveredOrder = stops.rows.filter((s) => s.delivered_at).sort((a, b) => new Date(a.delivered_at) - new Date(b.delivered_at));
+  const actualRank = new Map(deliveredOrder.map((s, i) => [s.id, i + 1]));
+  const shop = await getShopLocation();
+  const minutes = trip.started_at && trip.completed_at ? Math.round((new Date(trip.completed_at) - new Date(trip.started_at)) / 60000) : null;
+
+  res.json({
+    id: trip.id, status: trip.status, driver_name: trip.driver_name,
+    created_at: trip.created_at, started_at: trip.started_at, completed_at: trip.completed_at, duration_minutes: minutes,
+    total_distance_km: trip.total_distance_km != null ? Number(trip.total_distance_km) : null,
+    distance_before_km: trip.distance_before_km != null ? Number(trip.distance_before_km) : null,
+    planned_minutes: trip.total_minutes != null ? Number(trip.total_minutes) : null,
+    route_mode: trip.route_mode,
+    shop: shop ? { lat: shop.lat, lon: shop.lon } : null,
+    start: trip.start_latitude != null ? { lat: trip.start_latitude, lon: trip.start_longitude } : null,
+    stops: stops.rows.map((s) => ({ ...s, actual_rank: actualRank.get(s.id) || null })),
+    track: track.rows.map((p) => [p.latitude, p.longitude, p.recorded_at]),
+    totals: {
+      delivered: stops.rows.filter((s) => s.order_status === "DELIVERED").length,
+      failed: stops.rows.filter((s) => s.order_status === "FAILED").length,
+      bottles: stops.rows.reduce((a, s) => a + (s.returnable_delivered || 0), 0),
+      empties: stops.rows.reduce((a, s) => a + (s.empties_collected || 0), 0),
+      cash: stops.rows.reduce((a, s) => a + Number(s.cash_collected || 0), 0),
+      coupons: stops.rows.reduce((a, s) => a + (s.coupons_collected || 0), 0),
+      debt_added: stops.rows.reduce((a, s) => a + Number(s.debt_added || 0), 0),
+    },
+  });
 });
 
 router.get("/:id", async (req, res) => {
@@ -367,6 +435,19 @@ router.post("/:id/location", async (req, res) => {
     `UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now() WHERE id = $3`,
     [latitude, longitude, req.params.id]
   );
+  // مسار الكابتن الفعلي للأرشيف: نقطة جديدة إذا تحرك ٢٠ متر أو مرّت دقيقتين
+  if (trip.status === "STARTED") {
+    const lat = Number(latitude), lon = Number(longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      const last = await query("SELECT latitude, longitude, recorded_at FROM trip_track WHERE trip_id = $1 ORDER BY id DESC LIMIT 1", [trip.id]);
+      const p = last.rows[0];
+      const moved = p ? Math.hypot((lat - p.latitude) * 111000, (lon - p.longitude) * 94000) : Infinity;
+      const age = p ? Date.now() - new Date(p.recorded_at).getTime() : Infinity;
+      if (moved >= 20 || age >= 120000) {
+        await query("INSERT INTO trip_track (trip_id, latitude, longitude) VALUES ($1, $2, $3)", [trip.id, lat, lon]);
+      }
+    }
+  }
   res.json({ ok: true });
 });
 

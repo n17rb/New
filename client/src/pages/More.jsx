@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import {
   FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiDroplet,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
-  FiTag, FiAlertCircle, FiMessageCircle, FiClipboard, FiUsers, FiStar, FiHeadphones, FiGrid, FiBriefcase,
+  FiTag, FiAlertCircle, FiMessageCircle, FiClipboard, FiUsers, FiStar, FiHeadphones, FiGrid, FiBriefcase, FiMessageSquare, FiTarget,
 } from "react-icons/fi";
 import { usePerms, useShop } from "../auth.jsx";
 import { LogoMark } from "../components/Logo.jsx";
@@ -72,17 +72,18 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         {(can("orders") || can("customers")) && <Row key="forecast" to="/forecast" icon={FiDroplet} title="توقعات الطلبات" sub="مين مفروض يطلب اليوم، ومين متأخر" />}
         {can("jard") && <Row key="jard" to="/jard" icon={FiClipboard} title="الجرد اليومي" sub="كم دخل وكم طلع، ومين قبض شو" />}
         {(can("customers") || can("jard")) && <Row key="bottles" to="/bottles" icon={FiDatabase} title="عهدة القوارير" sub="كم قارورة للمحل برا، وعند مين" />}
-        {can("cash") && <Row key="cash" to="/cash" icon={FiDollarSign} title="الحساب اليومي" sub="مبيعات وصرفيات كل يوم" />}
+        {can("cash") && <Row key="cash" to="/cash" icon={FiDollarSign} title="الحساب اليومي" sub="مبيعات، صرفيات، قوارير، وكيف ماشي الشغل" />}
         {can("debts") && <Row key="debts" to="/debts" icon={FiAlertCircle} title="ديون العملاء" sub="مين عليه، وتذكير على واتساب" />}
         {can("coupons") && <Row key="coupons" to="/coupons" icon={FiTag} title="الكوبونات والباقات" sub="الباقات، المبيعات، واللي قربت تخلص" />}
         <Row key="schedule" to="/notifications?tab=schedule" icon={FiCalendar} title="المواعيد" sub="زباين أيام التسليم الثابتة" />
         {can("delivery", "edit") && <Row key="mybal" to="/my-balance" icon={FiCreditCard} title="رصيدي" sub="الكاش والكوبونات اللي معي" />}
         {can("driver_balances") && <Row key="bal" to="/driver-balances" icon={FiCreditCard} title="ذمم الكباتن" />}
         {can("products") && <Row key="prod" to="/products" icon={FiBox} title="المنتجات والأسعار" />}
-        {can("trips") && <Row key="arch" to="/trip-archive" icon={FiArchive} title="أرشيف الرحلات" />}
+        {can("trips") && <Row key="arch" to="/trip-archive" icon={FiArchive} title="أرشيف الرحلات" sub="كل رحلة على الخريطة: وين راح الكابتن وكيف ترتّبت" />}
       </Group>
 
       <Group title="التقارير">
+        {(can("reports") || can("cash")) && <Row key="swot" to="/swot" icon={FiTarget} title="تحليل SWOT" sub="نقاط القوة والضعف والفرص والمخاطر — من أرقام محلك" />}
         {can("reports") && <Row key="rep" to="/reports" icon={FiBarChart2} title="التقارير" />}
         {can("reports") && <Row key="perf" to="/driver-performance" icon={FiTrendingUp} title="أداء الكباتن" />}
         {can("reports") && <Row key="growth" to="/customer-growth" icon={FiUserPlus} title="نمو العملاء" />}
@@ -93,6 +94,7 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         {can("payroll") && <Row key="payroll" to="/payroll" icon={FiBriefcase} title="الدوام والرواتب" sub="مين داوم، الرواتب واليوميات، السحوبات" />}
         {isOwner && <Row key="users" to="/users" icon={FiShield} title="الحسابات والصلاحيات" sub="مين بيشوف شو، ومين بيعدّل" />}
         {can("settings") && <Row key="set" to="/settings" icon={FiMapPin} title="إعدادات المحل" sub="موقع المحل" />}
+        {isManager && <Row key="msgs" to="/settings/messages" icon={FiMessageSquare} title="نصوص الرسائل" sub="رسائل الواتساب للزباين: الفاتورة، الدين، «أنا جاي»…" />}
         {can("activity_log") && <Row key="log" to="/activity-log" icon={FiList} title="سجل النشاط" />}
         {can("backup") && <Row key="backup" to="/backup" icon={FiDatabase} title="النسخ الاحتياطي" />}
       </Group>

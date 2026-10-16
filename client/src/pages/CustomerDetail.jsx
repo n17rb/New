@@ -1,7 +1,7 @@
+import { renderMessage } from "../messages.js";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, API_ORIGIN } from "../api.js";
-import { shopName } from "../shop.js";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -612,7 +612,7 @@ async function sendInvoice(order, customer) {
   try {
     const r = await api.getInvoiceLink(order.id);
     const url = `${window.location.origin}/i/${r.token}`;
-    const text = `مرحبا ${customer.name} 🌊\nفاتورة طلبك #${order.order_number} من ${shopName()}:\n${url}`;
+    const text = renderMessage("invoice", { "الاسم": customer.name, "رقم_الطلب": order.order_number, "الرابط": url });
     const wa = `https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(text)}`;
     if (w) w.location.href = wa;
     else window.location.href = wa;

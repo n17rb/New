@@ -1,5 +1,5 @@
+import { renderMessage } from "../messages.js";
 import { useState } from "react";
-import { shopName } from "../shop.js";
 import { Link } from "react-router-dom";
 import { FiPlus, FiClock, FiCheck, FiPause, FiPlay } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -26,11 +26,11 @@ export function Bottle({ remaining, full, large = false }) {
 }
 
 function reminderText(f) {
-  return `مرحبا ${f.name} 🌊\nمعك ${shopName()}.\nحسب حسابنا المي عندك قربت تخلص 💧\nبدك نجيبلك ${f.qty_label} اليوم؟`;
+  return renderMessage("forecast_reminder", { "الاسم": f.name, "الكمية": f.qty_label });
 }
 
 function winBackText(f) {
-  return `مرحبا ${f.name} 🌊\nمعك ${shopName()} — اشتقنالك! 💙\nإذا حابب نجيبلك مي، ابعتلنا رسالة ومنوصلك بأسرع وقت 💧`;
+  return renderMessage("win_back", { "الاسم": f.name });
 }
 
 export function waLink(phone, text) {

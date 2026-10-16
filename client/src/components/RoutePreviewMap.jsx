@@ -1,13 +1,14 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import { MapContainer, Marker, Popup, Polyline } from "react-leaflet";
+import MapTiles, { MAP_COLORS, pinHtml } from "./MapTiles.jsx";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 function numberIcon(label, color) {
   return L.divIcon({
     className: "",
-    html: `<div style="background:${color};color:#fff;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4)">${label}</div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    html: pinHtml(label, color, 28),
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
@@ -31,7 +32,7 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
     : null;
 
   return (
-    <div style={{ height: 280, borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+    <div style={{ height: 280, borderRadius: 16, overflow: "hidden", marginBottom: 12 }} className="map-frame">
       <MapContainer
         key={driverLocation ? `${driverLocation.lat.toFixed(4)}-${driverLocation.lng.toFixed(4)}` : "static"}
         center={center}
@@ -39,14 +40,14 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
         style={{ height: "100%", width: "100%" }}
         scrollWheelZoom={false}
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
+        <MapTiles />
 
         {polylinePoints && (
-          <Polyline positions={polylinePoints} pathOptions={{ color: "#0094FF", weight: 4, opacity: 0.7 }} />
+          <Polyline positions={polylinePoints} pathOptions={{ color: MAP_COLORS.blue, weight: 5, opacity: 0.85, lineJoin: "round" }} />
         )}
 
         {visibleStops.map((s) => {
-          const color = s.order_status === "FAILED" ? "#C1443C" : s.order_status === "CANCELLED" ? "#6B7B80" : "#0094FF";
+          const color = s.order_status === "FAILED" ? MAP_COLORS.fail : s.order_status === "CANCELLED" ? MAP_COLORS.muted : MAP_COLORS.blue;
           return (
             <Marker key={s.id} position={[s.latitude, s.longitude]} icon={numberIcon(s.originalIndex, color)}>
               <Popup>{s.originalIndex}. {s.customer_name}</Popup>
@@ -54,12 +55,12 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
           );
         })}
         {shop && (
-          <Marker position={shop} icon={numberIcon("🏪", "#B8862E")}>
+          <Marker position={shop} icon={numberIcon("💧", MAP_COLORS.navy)}>
             <Popup>المحل — نهاية الرحلة</Popup>
           </Marker>
         )}
         {showDriverMarker && driverLocation && (
-          <Marker position={[driverLocation.lat, driverLocation.lng]} icon={numberIcon("🚚", "#B8862E")}>
+          <Marker position={[driverLocation.lat, driverLocation.lng]} icon={numberIcon("🚚", "#FF8A00")}>
             <Popup>موقع السائق الحالي</Popup>
           </Marker>
         )}

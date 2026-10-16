@@ -54,9 +54,22 @@ function requireCanDeleteCustomer(req, res, next) {
   next();
 }
 
+// الرقم التسلسلي الجاي: أكبر رقم مستخدم + ١ (المحل الأصلي بيبلش من ١٨٢، وباقي المحلات من ١)
 async function nextAutoSequentialNumber() {
-  const result = await query("SELECT nextval('customer_seq') AS n");
-  return String(result.rows[0].n).padStart(6, "0");
+  const r = await query(
+    `SELECT COALESCE(MAX(sequential_number::bigint), 0) AS mx FROM customers WHERE sequential_number ~ '^[0-9]{1,15}$'`
+  );
+  const s = await query("SELECT value FROM app_settings WHERE key = 'seq_start'");
+  const start = Math.max(1, Number(s.rows[0]?.value) || 1);
+  return String(Math.max(Number(r.rows[0].mx) + 1, start));
+}
+
+// الاسم مع الرقم جنبه: «محمد» ← «محمد 182» (إذا مش مكتوب أصلًا)
+function nameWithSeq(name, seq) {
+  const clean = name.trim().replace(/\s+/g, " ");
+  const tokens = clean.split(" ");
+  if (tokens.includes(String(seq))) return clean;
+  return `${clean} ${seq}`;
 }
 
 // قائمة العملاء — بترجع كل العملاء النشطين بدون حد أقصى،
@@ -137,6 +150,10 @@ router.get("/search", async (req, res) => {
 router.get("/count", async (req, res) => {
   const result = await query("SELECT COUNT(*)::int AS count FROM customers WHERE status = 'active'");
   res.json({ count: result.rows[0].count });
+});
+
+router.get("/next-seq", async (req, res) => {
+  res.json({ next: await nextAutoSequentialNumber() });
 });
 
 router.post("/renumber", async (req, res) => {
@@ -347,7 +364,7 @@ router.post("/fix-locations", requireCanManageCustomers, async (req, res) => {
 });
 
 router.post("/", requireCanManageCustomers, async (req, res) => {
-  const { name, phone, phone_alt, notes, sequential_number, bottle_type } = req.body;
+  const { name, phone, phone_alt, notes, sequential_number, bottle_type, seq_in_name } = req.body;
 
   if (!name || !phone) {
     return res.status(400).json({ error: "الاسم ورقم الهاتف مطلوبان." });
@@ -366,7 +383,16 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
     });
   }
 
-  let seqNumber = (sequential_number || "").trim();
+  let seqNumber = String(sequential_number || "").trim();
+  let auto = false;
+  // لو كتب الرقم جنب الاسم وترك خانة الرقم فاضية: منستعمل نفس الرقم
+  if (!seqNumber) {
+    const m = String(name).trim().match(/\s(\d{1,9})$/);
+    if (m) {
+      const taken = await query("SELECT id FROM customers WHERE sequential_number = $1", [m[1]]);
+      if (!taken.rows[0]) seqNumber = m[1];
+    }
+  }
   if (seqNumber) {
     const existingSeq = await query("SELECT id FROM customers WHERE sequential_number = $1", [seqNumber]);
     if (existingSeq.rows[0]) {
@@ -374,15 +400,30 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
     }
   } else {
     seqNumber = await nextAutoSequentialNumber();
+    auto = true;
   }
 
-  const inserted = await query(
-    `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, phone_alt, notes, bottle_type, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING *`,
-    [seqNumber, name.trim(), normalized, formatPhoneForDisplay(normalized), phone_alt || null, notes || null, bottle_type, req.user.id]
-  );
-  const customer = inserted.rows[0];
+  let customer = null;
+  for (let attempt = 0; attempt < 4 && !customer; attempt++) {
+    const finalName = seq_in_name === false ? name.trim() : nameWithSeq(name, seqNumber);
+    try {
+      const inserted = await query(
+        `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, phone_alt, notes, bottle_type, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [seqNumber, finalName, normalized, formatPhoneForDisplay(normalized), phone_alt || null, notes || null, bottle_type, req.user.id]
+      );
+      customer = inserted.rows[0];
+    } catch (err) {
+      // اثنين ضافوا بنفس اللحظة وأخذوا نفس الرقم: منجرّب الرقم اللي بعده
+      if (err.code === "23505" && auto && /sequential/.test(err.constraint || err.detail || err.message)) {
+        seqNumber = await nextAutoSequentialNumber();
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (!customer) return res.status(409).json({ error: "صار تعارض بالرقم التسلسلي — جرّب كمان مرة." });
 
   await query(`INSERT INTO customer_locations (customer_id) VALUES ($1)`, [customer.id]);
 

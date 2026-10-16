@@ -112,20 +112,18 @@ export default function Products({ user }) {
             </div>
 
             {perms.canEdit("products") && p.status !== "archived" && (
-              <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                <button className="btn-danger-text" onClick={() => toggleStatus(p)}>
-                  {p.status === "active" ? "إيقاف" : "تفعيل"}
+              <div className="prod-actions">
+                <button className={`prod-toggle${p.status === "active" ? " on" : ""}`} onClick={() => toggleStatus(p)}>
+                  <span className="dot" /> {p.status === "active" ? "فعّال" : "موقوف"}
                 </button>
-                <button className="btn-danger-text" onClick={() => toggleCouponEligible(p)}>
-                  {p.coupon_eligible ? "إلغاء قبول الكوبون" : "🎫 فعّل قبول الكوبون"}
+                <button className={`prod-toggle${p.coupon_eligible ? " on" : ""}`} onClick={() => toggleCouponEligible(p)}>
+                  <span className="dot" /> 🎫 يقبل كوبون
                 </button>
-                <button className="btn-danger-text" onClick={() => toggleReturnable(p)}>
-                  {p.is_returnable ? "♻️ بترجع فاضية ✓" : "♻️ قارورة بترجع فاضية؟"}
+                <button className={`prod-toggle${p.is_returnable ? " on" : ""}`} onClick={() => toggleReturnable(p)}>
+                  <span className="dot" /> ♻️ بترجع فاضية
                 </button>
-                <button className="btn-danger-text" onClick={() => setGrantsCoupons(p)}>
-                  ⚙️ شحن الكوبونات
-                </button>
-                <button className="btn-danger-text" onClick={() => archive(p)}>أرشفة</button>
+                <button className="prod-toggle plain" onClick={() => setGrantsCoupons(p)}>⚙️ شحن كوبونات{p.grants_coupons > 0 ? ` (${p.grants_coupons})` : ""}</button>
+                <button className="prod-toggle danger" onClick={() => archive(p)}>أرشفة</button>
               </div>
             )}
           </div>

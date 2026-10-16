@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
-import { logActivity } from "../db.js";
+import { logActivity, query } from "../db.js";
 import { getShopLocation, setShopLocation, resolveCoordsFromMapsLink, isValidLatLon } from "../utils/routing.js";
 
 const router = Router();
@@ -10,6 +10,44 @@ router.use(requireAuth);
 function isPrivileged(user) {
   return can(user, "settings", "edit");
 }
+
+// ============================================================
+// نصوص رسائل الزباين (واتساب): المدير بيعدّلها وبتنحفظ للمحل كله
+// ============================================================
+const MESSAGE_KEYS = ["receipt", "on_my_way", "invoice", "debt_reminder", "statement", "coupons_added", "coupons_low", "forecast_reminder", "win_back", "bottles_collect"];
+
+async function readTemplates() {
+  const r = await query("SELECT value FROM app_settings WHERE key = 'message_templates'");
+  try {
+    const obj = JSON.parse(r.rows[0]?.value || "{}");
+    return Object.fromEntries(Object.entries(obj).filter(([k, v]) => MESSAGE_KEYS.includes(k) && typeof v === "string" && v.trim()));
+  } catch {
+    return {};
+  }
+}
+
+router.get("/messages", async (req, res) => {
+  res.json({ templates: await readTemplates() });
+});
+
+router.put("/messages", async (req, res) => {
+  if (!isPrivileged(req.user) && req.user.role !== "super_admin") return res.status(403).json({ error: "تعديل نصوص الرسائل للإدارة بس." });
+  const incoming = req.body?.templates;
+  if (!incoming || typeof incoming !== "object") return res.status(400).json({ error: "بيانات غير صحيحة." });
+  const current = await readTemplates();
+  for (const [k, v] of Object.entries(incoming)) {
+    if (!MESSAGE_KEYS.includes(k)) continue;
+    if (v == null || String(v).trim() === "") delete current[k]; // رجوع للنص الأصلي
+    else current[k] = String(v).slice(0, 2000);
+  }
+  await query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('message_templates', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+    [JSON.stringify(current)]
+  );
+  await logActivity({ userId: req.user.id, action: "UPDATE_MESSAGE_TEMPLATES", recordType: "settings", recordId: null, newValue: Object.keys(incoming) });
+  res.json({ templates: current });
+});
 
 router.get("/shop-location", async (req, res) => {
   const shop = await getShopLocation();

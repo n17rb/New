@@ -1,5 +1,5 @@
+import { renderMessage } from "../messages.js";
 import { useEffect, useMemo, useState } from "react";
-import { shopName } from "../shop.js";
 import { useNavigate } from "react-router-dom";
 import { FiSearch, FiChevronLeft } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -13,7 +13,7 @@ function daysSince(date) {
 
 function reminderLink(c) {
   const amount = Number(c.debt_balance).toFixed(2);
-  const text = `مرحبا ${c.name} 🌊\nمعك ${shopName()}.\nبحب أذكّرك بلطف إنه عليك رصيد ${amount} دينار.\nشكراً لثقتك فينا 💧`;
+  const text = renderMessage("debt_reminder", { "الاسم": c.name, "المبلغ": amount });
   return `https://wa.me/${c.phone_normalized}?text=${encodeURIComponent(text)}`;
 }
 

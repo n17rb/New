@@ -1,5 +1,5 @@
+import { renderMessage } from "../messages.js";
 import { useEffect, useState } from "react";
-import { shopName } from "../shop.js";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiImage, FiEdit2, FiArchive, FiRotateCcw } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
@@ -9,7 +9,7 @@ import { usePerms, ViewOnlyNote } from "../auth.jsx";
 const money = (n) => `${Number(n || 0).toFixed(2)} JD`;
 
 function lowBalanceLink(c) {
-  const text = `مرحبا ${c.name} 🌊\nمعك ${shopName()}.\nرصيد كوبوناتك صار ${c.coupon_balance}. حابب نجددلك الباقة؟ 💧`;
+  const text = renderMessage("coupons_low", { "الاسم": c.name, "الرصيد": c.coupon_balance });
   return `https://wa.me/${c.phone_normalized}?text=${encodeURIComponent(text)}`;
 }
 

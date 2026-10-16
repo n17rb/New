@@ -5,18 +5,71 @@ function getToken() {
   return localStorage.getItem("token");
 }
 
-async function request(path, { method = "GET", body, isFormData = false } = {}) {
+// نسخة محفوظة من آخر رد لكل صفحة مهمة — بتظهر فورًا وبعدين بتتحدّث (التطبيق بيفتح أسرع)
+const CACHEABLE = [/^\/dashboard$/, /^\/cash\/current$/, /^\/cash\/insights$/, /^\/forecast$/, /^\/customers(\?|$)/, /^\/orders(\?|$)/, /^\/trips\/mine$/, /^\/swot$/];
+const memCache = new Map();
+function cacheKey(path) {
+  try {
+    const u = JSON.parse(localStorage.getItem("user") || "null");
+    const s = JSON.parse(localStorage.getItem("shop") || "null");
+    return `c:${s?.id ?? 0}:${u?.id ?? 0}:${path}`;
+  } catch {
+    return `c:0:0:${path}`;
+  }
+}
+export function peek(path) {
+  const k = cacheKey(path);
+  if (memCache.has(k)) return memCache.get(k);
+  try {
+    const raw = localStorage.getItem(k);
+    if (raw) { const v = JSON.parse(raw); memCache.set(k, v); return v; }
+  } catch { /* تجاهل */ }
+  return undefined;
+}
+function remember(path, data) {
+  if (!CACHEABLE.some((re) => re.test(path))) return;
+  const k = cacheKey(path);
+  memCache.set(k, data);
+  try {
+    const raw = JSON.stringify(data);
+    if (raw.length < 350000) localStorage.setItem(k, raw);
+  } catch { /* المساحة خلصت — بنكتفي بالذاكرة */ }
+}
+export function clearApiCache() {
+  memCache.clear();
+  try { Object.keys(localStorage).filter((k) => k.startsWith("c:")).forEach((k) => localStorage.removeItem(k)); } catch { /* تجاهل */ }
+}
+
+async function request(path, { method = "GET", body, isFormData = false, timeout } = {}, attempt = 0) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   if (!isFormData) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(BASE + path, {
-    method,
-    headers,
-    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
+  // ما بنعلق للأبد: لو السيرفر ما رد بوقت معقول منطلع رسالة واضحة
+  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const limit = timeout ?? (isFormData ? 90000 : method === "GET" ? 25000 : 40000);
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), limit) : null;
+  let res;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      headers,
+      body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+      signal: ctrl?.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    // طلبات القراءة بنعيدها مرة وحدة (السيرفر ممكن يكون عم يصحى)
+    if (method === "GET" && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 1200));
+      return request(path, { method, body, isFormData, timeout }, 1);
+    }
+    if (err?.name === "AbortError") throw new Error("السيرفر بطيء هلّأ — جرّب كمان شوي.");
+    throw new Error("ما في اتصال بالسيرفر — تأكد من الإنترنت وجرّب كمان مرة.");
+  }
+  clearTimeout(timer);
 
   let data = null;
   try {
@@ -36,6 +89,7 @@ async function request(path, { method = "GET", body, isFormData = false } = {}) 
     }
     throw new Error(data?.error || "حدث خطأ غير متوقع.");
   }
+  if (method === "GET") remember(path, data);
   return data;
 }
 
@@ -87,6 +141,9 @@ export const api = {
   getRegions: () => request("/regions"),
   createRegion: (body) => request("/regions", { method: "POST", body }),
   getAllCustomerLocations: () => request("/customers/all-locations"),
+  getNextCustomerSeq: () => request("/customers/next-seq"),
+  getMessageTemplates: () => request("/settings/messages"),
+  saveMessageTemplates: (templates) => request("/settings/messages", { method: "PUT", body: { templates } }),
   getOverdueCustomers: () => request("/customers/overdue"),
   getCustomerPrices: (id) => request(`/customers/${id}/prices`),
   setCustomerPrice: (id, body) => request(`/customers/${id}/prices`, { method: "POST", body }),
@@ -123,6 +180,9 @@ export const api = {
   getActiveTripsList: () => request("/trips/active-list"),
   getAvailableDrivers: () => request("/trips/available-drivers"),
   getTripArchive: () => request("/trips/archive"),
+  getTripReplay: (id) => request(`/trips/${id}/replay`),
+  getSwot: () => request("/swot"),
+  saveSwotNotes: (notes) => request("/swot/notes", { method: "PUT", body: notes }),
   getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
   deliverStop: (stopId, itemPayments, extra = {}) => request(`/trips/stops/${stopId}/deliver`, { method: "POST", body: { item_payments: itemPayments, ...extra } }),
@@ -159,6 +219,9 @@ export const api = {
   saveCashEntry: (body) => request("/cash/entries", { method: "POST", body }),
   resetCashPeriod: () => request("/cash/reset", { method: "POST" }),
   getCashHistory: () => request("/cash/history"),
+  getCashHistoryPeriod: (id) => request(`/cash/history/${id}`),
+  getCashInsights: () => request("/cash/insights"),
+  saveCashSettings: (body) => request("/cash/settings", { method: "PUT", body }),
   getCashTrend: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/cash/trend${qs ? `?${qs}` : ""}`);

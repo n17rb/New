@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import { api } from "./api.js";
+import { api, clearApiCache } from "./api.js";
 import { isPushSupported, refreshPushIfGranted, disablePushForLogout } from "./push.js";
 import { FiBell, FiMessageCircle, FiEye, FiX } from "react-icons/fi";
 import { UserContext, ShopContext, canUser, canUserAction } from "./auth.jsx";
 import { LogoMark, Wordmark } from "./components/Logo.jsx";
 import { readShop, saveShop } from "./shop.js";
+import { setTemplates } from "./messages.js";
 
 import Setup from "./pages/Setup.jsx";
 import Login from "./pages/Login.jsx";
@@ -46,6 +47,9 @@ const MyPay = lazy(() => import("./pages/MyPay.jsx"));
 const Jard = lazy(() => import("./pages/Jard.jsx"));
 const Bottles = lazy(() => import("./pages/Bottles.jsx"));
 const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
+const MessageTemplates = lazy(() => import("./pages/MessageTemplates.jsx"));
+const Swot = lazy(() => import("./pages/Swot.jsx"));
+const TripReplay = lazy(() => import("./pages/TripReplay.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
 function prefetchCommonPages() {
@@ -168,6 +172,7 @@ function MainApp() {
   // تحديث الصلاحيات وحالة الاشتراك من السيرفر — بالخلفية
   function refreshMe() {
     api.getMe().then(saveUser).catch(() => {});
+    api.getMessageTemplates().then((r) => setTemplates(r.templates)).catch(() => {});
   }
 
   useEffect(() => {
@@ -256,6 +261,7 @@ function MainApp() {
 
   async function handleLogout() {
     await disablePushForLogout();
+    clearApiCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem("inspect_backup");
@@ -380,11 +386,14 @@ function MainApp() {
               {can("reports") && <Route path="/customers-map" element={<CustomersMap />} />}
               <Route path="/notifications" element={<Notifications />} />
               {can("trips") && <Route path="/trip-archive" element={<TripArchive />} />}
+              {can("trips") && <Route path="/trip-archive/:id" element={<TripReplay />} />}
               {can("reports") && <Route path="/customer-growth" element={<CustomerGrowth />} />}
               {can("activity_log") && <Route path="/activity-log" element={<ActivityLog />} />}
               {can("backup") && <Route path="/backup" element={<Backup />} />}
               {can("delivery", "edit") && <Route path="/my-balance" element={<MyBalance user={user} />} />}
               {can("settings") && <Route path="/settings" element={<ShopSettings />} />}
+              {(isOwner || can("settings", "edit")) && <Route path="/settings/messages" element={<MessageTemplates />} />}
+              {(can("reports") || can("cash")) && <Route path="/swot" element={<Swot />} />}
               {isOwner && <Route path="/users" element={<Users />} />}
               {can("debts") && <Route path="/debts" element={<Debts />} />}
               {can("coupons") && <Route path="/coupons" element={<Coupons />} />}

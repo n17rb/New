@@ -577,3 +577,33 @@ CREATE TABLE IF NOT EXISTS bottle_ledger (
 CREATE INDEX IF NOT EXISTS idx_bottle_ledger_customer ON bottle_ledger(customer_id, id DESC);
 -- عهدة متفق عليها (كم قارورة المحل مموّلهم) — للمقارنة مع اللي عندهم فعلًا
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS bottles_agreed INTEGER NOT NULL DEFAULT 0;
+
+-- ============================================================
+-- الحساب اليومي: عدد القوارير المباعة (بالمحل + توصيل) وقراءة عداد المي
+-- ============================================================
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS meter_reading NUMERIC(14,3);
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS bottles_total INTEGER;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS bottles_delivery INTEGER;
+CREATE INDEX IF NOT EXISTS idx_cash_entries_date ON cash_entries(entry_date);
+
+-- ============================================================
+-- أرشيف الرحلات: مسار الكابتن الفعلي (نقطة كل ما يبعت موقعه)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS trip_track (
+  id BIGSERIAL PRIMARY KEY,
+  trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_trip_track_trip ON trip_track(trip_id, id);
+
+-- ============================================================
+-- الأرقام التسلسلية للزباين: المحل الأصلي بيكمل من ١٨٢، وباقي المحلات من ١
+-- ============================================================
+DO $$
+BEGIN
+  IF current_schema() = 'public' THEN
+    INSERT INTO app_settings (key, value) VALUES ('seq_start', '182') ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { shopName } from "../shop.js";
+import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
@@ -960,7 +960,7 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
     ? `خلال حوالي ${Math.max(5, Math.round(stop.estimated_eta_minutes / 5) * 5)} دقيقة`
     : "خلال دقائق";
   const onMyWayLink = `https://wa.me/${stop.phone_normalized}?text=${encodeURIComponent(
-    `مرحبا ${stop.customer_name} 🌊\nمعك ${shopName()} — طلبك بالطريق وبيوصلك ${etaText} 💧`
+    renderMessage("on_my_way", { "الاسم": stop.customer_name, "الوقت": etaText })
   )}`;
 
   function handlePostponeSubmit() {

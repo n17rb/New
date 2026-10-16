@@ -1,6 +1,7 @@
 import express from "express";
 import "express-async-errors";
 import cors from "cors";
+import zlib from "zlib";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
@@ -21,6 +22,7 @@ import driverRoutes from "./routes/drivers.js";
 import geocodeRoutes from "./routes/geocode.js";
 import reportRoutes from "./routes/reports.js";
 import cashRoutes from "./routes/cash.js";
+import swotRoutes from "./routes/swot.js";
 import activityRoutes from "./routes/activity.js";
 import backupRoutes, { createScheduledSnapshot } from "./routes/backup.js";
 import notificationRoutes from "./routes/notifications.js";
@@ -49,6 +51,27 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
+// ضغط الردود الكبيرة (قوائم الزباين والطلبات) — أسرع بكثير على النت الضعيف
+app.use((req, res, next) => {
+  if (!/\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) return next();
+  const original = res.json.bind(res);
+  res.json = (obj) => {
+    let body;
+    try { body = JSON.stringify(obj); } catch { return original(obj); }
+    if (body === undefined || body.length < 2048 || res.headersSent) return original(obj);
+    zlib.gzip(body, { level: 6 }, (err, buf) => {
+      if (err || res.headersSent) return original(obj);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Vary", "Accept-Encoding");
+      res.setHeader("Content-Length", buf.length);
+      res.end(buf);
+    });
+    return res;
+  };
+  next();
+});
+
 // موج: كل طلب إله «سياق محل» — بيتعبّى من التوكن (أو من اسم المستخدم وقت الدخول)
 app.use((req, res, next) => tenantStore.run({ schema: "public", tenant: null }, next));
 
@@ -66,6 +89,7 @@ app.use("/api/drivers", driverRoutes);
 app.use("/api/geocode", geocodeRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/cash", cashRoutes);
+app.use("/api/swot", swotRoutes);
 app.use("/api/activity-log", activityRoutes);
 app.use("/api/backup", backupRoutes);
 app.use("/api/notifications", notificationRoutes);

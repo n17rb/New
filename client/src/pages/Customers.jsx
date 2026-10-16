@@ -265,10 +265,26 @@ function AddCustomerForm({ onCancel, onSaved }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [sequentialNumber, setSequentialNumber] = useState("");
+  const [seqTouched, setSeqTouched] = useState(false);
+  const [seqInName, setSeqInName] = useState(() => localStorage.getItem("seq_in_name") !== "false");
   const [bottleType, setBottleType] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // الرقم الجاي بيتعبّى لحاله
+  useEffect(() => {
+    api.getNextCustomerSeq().then((r) => { if (!seqTouched) setSequentialNumber(r.next); }).catch(() => {});
+  }, []);
+
+  function toggleSeqInName(v) {
+    setSeqInName(v);
+    localStorage.setItem("seq_in_name", v ? "true" : "false");
+  }
+
+  const cleanName = name.trim().replace(/\s+/g, " ");
+  const seq = sequentialNumber.trim();
+  const previewName = seqInName && seq && cleanName && !cleanName.split(" ").includes(seq) ? `${cleanName} ${seq}` : cleanName;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -283,7 +299,8 @@ function AddCustomerForm({ onCancel, onSaved }) {
       const result = await api.createCustomer({
         name,
         phone,
-        sequential_number: sequentialNumber || undefined,
+        sequential_number: seq || undefined,
+        seq_in_name: seqInName,
         bottle_type: bottleType,
       });
       if (result.alreadyExists) {
@@ -303,17 +320,29 @@ function AddCustomerForm({ onCancel, onSaved }) {
       {error && <div className="error-box">{error}</div>}
       {info && <div className="success-box">{info}</div>}
       <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label>اسم العميل</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        <div className="field-row" style={{ alignItems: "flex-end" }}>
+          <div className="field" style={{ flex: 2.2 }}>
+            <label>اسم العميل</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus placeholder="مثلاً: محمد" />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label>الرقم التسلسلي</label>
+            <input className="tabular-num" value={sequentialNumber} inputMode="numeric"
+              onChange={(e) => { setSeqTouched(true); setSequentialNumber(e.target.value); }} placeholder="تلقائي" style={{ textAlign: "center", fontWeight: 700 }} />
+          </div>
         </div>
+        <label className="check-row">
+          <input type="checkbox" checked={seqInName} onChange={(e) => toggleSeqInName(e.target.checked)} />
+          <span>اكتب الرقم جنب الاسم تلقائيًا</span>
+        </label>
+        {cleanName && (
+          <div className="seq-preview">
+            رح ينحفظ باسم: <b>{previewName}</b>{seq && <> · رقم <b className="tabular-num"><bdi dir="ltr">#{seq}</bdi></b></>}
+          </div>
+        )}
         <div className="field">
           <label>رقم الهاتف</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} required inputMode="tel" placeholder="07xxxxxxxx" />
-        </div>
-        <div className="field">
-          <label>الرقم التسلسلي (اختياري — اتركه فارغ ليُولَّد تلقائيًا)</label>
-          <input value={sequentialNumber} onChange={(e) => setSequentialNumber(e.target.value)} placeholder="مثال: 5 أو 000005" />
         </div>
         <BottleTypePicker value={bottleType} onChange={setBottleType} required />
         <button className="btn-primary" disabled={loading} style={{ marginBottom: 10 }}>

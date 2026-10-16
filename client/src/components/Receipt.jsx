@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { FiX, FiCheckCircle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { api } from "../api.js";
-import { shopName } from "../shop.js";
+import { renderMessage } from "../messages.js";
 
 export function invoiceUrl(token) {
   return `${window.location.origin}/i/${token}`;
@@ -20,7 +20,7 @@ const money = (n) => `${Number(n || 0).toFixed(2)} دينار`;
 
 // نص إيصال التسليم اللي بينبعت للزبون على واتساب
 export function buildReceiptText({ name, items = [], couponsUsed = 0, couponBalance = 0, cashPaid = 0, debtAdded = 0, debtPaid = 0, debtBalance = 0, invoiceToken = null }) {
-  const lines = [`مرحبا ${name} 🌊`, `معك ${shopName()} — تم توصيل طلبك ✅`, ""];
+  const lines = [];
   for (const it of items) lines.push(`🧾 ${it.quantity} × ${it.product_name_snapshot}`);
   if (couponsUsed > 0) {
     lines.push(`🎫 تم دفع ${couponsUsed === 1 ? "كوبون" : couponsWord(couponsUsed)} — ${couponBalance > 0 ? `تبقى لديك ${couponsWord(couponBalance)}` : "خلص رصيد كوبوناتك"}`);
@@ -35,8 +35,7 @@ export function buildReceiptText({ name, items = [], couponsUsed = 0, couponBala
     lines.push("", couponBalance === 0 ? "حابب نجددلك باقة الكوبونات؟ 🙏" : "رصيد كوبوناتك قرب يخلص — حابب نجددلك الباقة؟ 🙏");
   }
   if (invoiceToken) lines.push("", `🧾 الفاتورة: ${invoiceUrl(invoiceToken)}`);
-  lines.push("", "شكرًا لثقتك فينا 💧");
-  return lines.join("\n");
+  return renderMessage("receipt", { "الاسم": name, "التفاصيل": lines.join("\n").trim() });
 }
 
 export function receiptLink(phone, data) {

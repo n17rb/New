@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet } from "react-icons/fi";
 import { qtyWord } from "../components/Forecast.jsx";
-import { api } from "../api.js";
+import { api, peek } from "../api.js";
 import { usePerms } from "../auth.jsx";
 
 function greetingWord() {
@@ -19,18 +19,20 @@ function todayLabel() {
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
   const { can } = usePerms();
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => peek("/dashboard") || null);
   const [error, setError] = useState("");
   const [myBalance, setMyBalance] = useState(null);
 
   useEffect(() => {
-    api.getDashboard().then(setData).catch((err) => setError(err.message));
+    api.getDashboard().then((d) => { setData(d); setError(""); }).catch((err) => { if (!peek("/dashboard")) setError(err.message); });
     if (can("delivery", "edit")) {
       api.getDriverBalance(user.id).then((d) => setMyBalance(d.balance)).catch(() => {});
     }
   }, [user.id]);
 
-  const firstName = (user.full_name || "").split(" ")[0];
+  // «أبو محمد» و«أم علي» بينادوا بالكنية كاملة
+  const parts = (user.full_name || "").trim().split(/\s+/);
+  const firstName = ["أبو", "ابو", "أم", "ام"].includes(parts[0]) && parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
 
   return (
     <div className="page">

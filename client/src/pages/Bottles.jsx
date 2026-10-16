@@ -1,13 +1,13 @@
+import { renderMessage } from "../messages.js";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiChevronLeft } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
-import { shopName } from "../shop.js";
 
 function collectText(c) {
-  return `مرحبا ${c.name} 🌊\nمعك ${shopName()}.\nحسب سجلاتنا في عندك ${c.bottles_out} قارورة للمحل (عهدة).\nإذا ما عدت محتاجها، بنمرّ نستلمها بالوقت اللي بيناسبك 🙏`;
+  return renderMessage("bottles_collect", { "الاسم": c.name, "القوارير": c.bottles_out });
 }
 
 // عهدة القوارير: كم قارورة للمحل برا، عند مين، وقيمتها — ومين لازم نسترجع منه
