@@ -1,21 +1,10 @@
 import { TileLayer } from "react-leaflet";
 
-// خريطة بألوان هادية بتمشي مع ثيم موج (فاتح/ليلي)
+// خريطة OpenStreetMap العادية (زي ما كانت من الأول)
 export const MAP_COLORS = { blue: "#0A66F5", navy: "#0846B8", done: "#1F9D55", fail: "#D64545", muted: "#8A9BB0" };
 
 export default function MapTiles() {
-  const dark = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "dark";
-  return (
-    <TileLayer
-      key={dark ? "dark" : "light"}
-      url={dark
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"}
-      subdomains="abcd"
-      maxZoom={20}
-      attribution='&copy; OpenStreetMap &copy; CARTO'
-    />
-  );
+  return <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />;
 }
 
 // دبوس مرقّم بشكل موج
