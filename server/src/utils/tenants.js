@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
-import { platformQuery, runSqlInSchema, runInTenant, query, quoteSchema } from "../db.js";
+import { platformQuery, runSqlInSchema, runInTenant, query, quoteSchema, pool } from "../db.js";
+import { invalidateForecastCache } from "./forecast.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_SQL_PATH = path.join(__dirname, "..", "..", "schema.sql");
@@ -255,8 +256,8 @@ async function seedDemoData({ captainId = null } = {}) {
     const phone = `96279${String(1000000 + i * 7919).slice(0, 7)}`;
     const debt = i % 5 === 0 ? 4.5 : 0;
     const c = (await query(
-      `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, bottle_type, coupon_balance, debt_balance)
-       VALUES (lpad(nextval('customer_seq')::text, 6, '0'), $1, $2, $3, $4, $5, $6) RETURNING id`,
+      `INSERT INTO customers (sequential_number, name, phone_normalized, phone_display, bottle_type, coupon_balance, debt_balance, is_sample)
+       VALUES (lpad(nextval('customer_seq')::text, 6, '0'), $1, $2, $3, $4, $5, $6, true) RETURNING id`,
       [DEMO_NAMES[i], phone, `0${phone.slice(3)}`, i % 3 ? "used" : "new", i % 4 === 0 ? 7 : 0, debt]
     )).rows[0];
     customerIds.push(c.id);
@@ -318,7 +319,7 @@ async function seedDemoData({ captainId = null } = {}) {
   ];
   for (const e of emps) {
     const r = await query(
-      `INSERT INTO employees (name, job_title, pay_type, pay_amount, user_id, start_date) VALUES ($1,$2,$3,$4,$5, CURRENT_DATE - 10) RETURNING id`,
+      `INSERT INTO employees (name, job_title, pay_type, pay_amount, user_id, start_date, is_sample) VALUES ($1,$2,$3,$4,$5, CURRENT_DATE - 10, true) RETURNING id`,
       [e.name, e.job, e.type, e.amount, e.user]
     ).catch(() => ({ rows: [] }));
     const eid = r.rows[0]?.id;
@@ -336,4 +337,82 @@ async function seedDemoData({ captainId = null } = {}) {
   }
 
   await query("DELETE FROM app_settings WHERE key IN ('forecast_learn_from','forecast_reset_at')");
+}
+
+
+// ============================================================
+// حذف الداتا التجريبية بس (الزباين والموظفين الوهميين وطلباتهم)
+// الزباين والطلبات الحقيقية اللي ضافها المحل ما بتنلمس أبدًا
+// لازم تنادى جوّا سياق المحل (runInTenant أو طلب API للمحل)
+// ============================================================
+const DEMO_REGIONS = ["الحي الشرقي", "وسط البلد", "الحي الغربي"];
+const DEMO_CENTER = { lat: "31.9539", lon: "35.9106" };
+
+export async function sampleDataCount() {
+  const r = await query(
+    `SELECT (SELECT COUNT(*)::int FROM customers WHERE is_sample) AS customers,
+            (SELECT COUNT(*)::int FROM employees WHERE is_sample) AS employees`
+  );
+  return r.rows[0];
+}
+
+export async function removeSampleData() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const ids = (await client.query("SELECT id FROM customers WHERE is_sample")).rows.map((r) => r.id);
+    let orders = [], trips = [], deletedTrips = 0;
+    if (ids.length) {
+      orders = (await client.query("SELECT id FROM orders WHERE customer_id = ANY($1::int[])", [ids])).rows.map((r) => r.id);
+      if (orders.length) {
+        trips = (await client.query("SELECT DISTINCT trip_id FROM trip_stops WHERE order_id = ANY($1::int[])", [orders])).rows.map((r) => r.trip_id);
+        await client.query("DELETE FROM trip_stops WHERE order_id = ANY($1::int[])", [orders]);
+      }
+      await client.query("DELETE FROM coupon_ledger WHERE customer_id = ANY($1::int[]) OR order_id = ANY($2::int[])", [ids, orders]);
+      await client.query("DELETE FROM customer_debt_ledger WHERE customer_id = ANY($1::int[]) OR order_id = ANY($2::int[])", [ids, orders]);
+      await client.query("DELETE FROM notifications WHERE related_customer_id = ANY($1::int[])", [ids]);
+      if (orders.length) await client.query("DELETE FROM orders WHERE id = ANY($1::int[])", [orders]);
+      await client.query("DELETE FROM customers WHERE id = ANY($1::int[])", [ids]);
+      // رحلات صارت فاضية (كانت كلها طلبات تجريبية)
+      if (trips.length) {
+        const empty = (await client.query(
+          "SELECT t.id FROM trips t WHERE t.id = ANY($1::int[]) AND NOT EXISTS (SELECT 1 FROM trip_stops s WHERE s.trip_id = t.id)",
+          [trips]
+        )).rows.map((r) => r.id);
+        if (empty.length) {
+          await client.query("DELETE FROM driver_ledger WHERE trip_id = ANY($1::int[])", [empty]);
+          await client.query("UPDATE notifications SET related_trip_id = NULL WHERE related_trip_id = ANY($1::int[])", [empty]);
+          await client.query("UPDATE customer_debt_ledger SET trip_id = NULL WHERE trip_id = ANY($1::int[])", [empty]);
+          await client.query("DELETE FROM trips WHERE id = ANY($1::int[])", [empty]);
+          deletedTrips = empty.length;
+        }
+      }
+    }
+    // الموظفين التجريبيين (والكابتن التجريبي بينطفى حسابه)
+    const emps = (await client.query("DELETE FROM employees WHERE is_sample RETURNING user_id")).rows;
+    const capIds = emps.map((e) => e.user_id).filter(Boolean);
+    if (capIds.length) {
+      await client.query("UPDATE users SET status = 'disabled' WHERE id = ANY($1::int[]) AND role = 'driver' AND full_name = 'كابتن تجريبي'", [capIds]);
+    }
+    // المناطق التجريبية إذا ما ضل عليها ولا زبون
+    await client.query(
+      `DELETE FROM regions r WHERE r.name = ANY($1::text[])
+         AND NOT EXISTS (SELECT 1 FROM customer_locations l WHERE l.region_id = r.id)`,
+      [DEMO_REGIONS]
+    ).catch(() => {});
+    // موقع المحل الافتراضي التجريبي — عشان يحدد موقعه الحقيقي
+    const loc = (await client.query("SELECT key, value FROM app_settings WHERE key IN ('shop_latitude','shop_longitude')")).rows;
+    const m = Object.fromEntries(loc.map((x) => [x.key, x.value]));
+    if (m.shop_latitude === DEMO_CENTER.lat && m.shop_longitude === DEMO_CENTER.lon) {
+      await client.query("DELETE FROM app_settings WHERE key IN ('shop_latitude','shop_longitude')");
+    }
+    await client.query("COMMIT");
+    try { invalidateForecastCache(); } catch { /* تجاهل */ }
+    return { customers: ids.length, orders: orders.length, trips: deletedTrips, employees: emps.length };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }

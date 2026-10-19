@@ -153,6 +153,17 @@ export default function PlatformTenant() {
             </button>
             <button
               className="btn-secondary"
+              style={{ fontSize: "0.82rem" }}
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm(`حذف الزباين والموظفين التجريبيين بس من «${t.name}»؟\nالزباين الحقيقيين اللي ضافهم المحل ما بينلمسوا.`)) return;
+                run(() => api.platformClearSample(t.id), "انحذفت الداتا التجريبية بس ✓");
+              }}
+            >
+              احذف التجريبي بس
+            </button>
+            <button
+              className="btn-secondary"
               style={{ fontSize: "0.82rem", color: "var(--urgent)" }}
               disabled={busy}
               onClick={() => {

@@ -3,7 +3,7 @@ import { platformQuery } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
-import { tenantAccess, getPlatformSettings, resetTenantData } from "../utils/tenants.js";
+import { tenantAccess, getPlatformSettings, removeSampleData, sampleDataCount } from "../utils/tenants.js";
 import { notifyPlatformAdmins } from "../utils/platformNotify.js";
 
 // اشتراك المحل بموج: الحالة، طريقة الدفع (كليك)، وإرسال إيصال التحويل
@@ -62,13 +62,17 @@ router.post("/payment", uploadSingleImage, async (req, res) => {
   }).catch(() => {});
 });
 
-// التجربة المجانية: صاحب المحل بيمسح الداتا التجريبية ويبدأ بداتاه الحقيقية (بيضل نفس الحساب)
+// الداتا التجريبية: كم زبون وموظف وهمي لسا موجود
+router.get("/sample", async (req, res) => {
+  res.json(await sampleDataCount());
+});
+
+// حذف الداتا التجريبية بس — الزباين والطلبات الحقيقية ما بتنلمس
 router.post("/clear-sample", async (req, res) => {
   if (req.user.role !== "super_admin") return res.status(403).json({ error: "هذا للمدير العام للمحل بس." });
-  if (req.tenant.is_home || req.tenant.is_demo) return res.status(400).json({ error: "ما بينفع هون." });
-  if (String(req.body?.confirm || "").trim() !== "امسح") return res.status(400).json({ error: "اكتب «امسح» للتأكيد." });
-  await resetTenantData(req.tenant.id, { sample: false });
-  res.json({ ok: true });
+  if (req.tenant?.is_demo) return res.status(400).json({ error: "نسخة العرض بترجع لأولها لحالها." });
+  const result = await removeSampleData();
+  res.json({ ok: true, ...result });
 });
 
 export default router;

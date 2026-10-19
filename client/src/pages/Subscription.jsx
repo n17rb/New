@@ -27,6 +27,8 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sampleCount, setSampleCount] = useState(0);
+  useEffect(() => { api.getSampleCount().then((r) => setSampleCount(r.customers)).catch(() => {}); }, []);
 
   function load() {
     api.getSubscription().then(setData).catch((err) => setError(err.message));
@@ -96,10 +98,10 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
   }
 
   async function clearSample() {
-    const typed = prompt("هاد بيمسح كل الداتا التجريبية (الزباين، الطلبات، الموظفين) عشان تبلّش بداتاك الحقيقية. حسابك بيضل زي ما هو.\nاكتب «امسح» للتأكيد:");
-    if (typed?.trim() !== "امسح") return;
+    if (!window.confirm("رح تنحذف الزباين والموظفين التجريبيين بس مع طلباتهم.\nالزباين والطلبات اللي ضفتهم إنت ما رح ينلمسوا.\n\nمتأكد؟")) return;
     try {
-      await api.clearSampleData();
+      const r = await api.clearSampleData();
+      alert(`انحذف ${r.customers} زبون تجريبي ✓`);
       window.location.href = "/";
     } catch (err) {
       setError(err.message);
@@ -206,9 +208,9 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
         </>
       )}
 
-      {a.trial && !locked && !data.shop.is_demo && data.can_pay && (
+      {!locked && !data.shop.is_demo && data.can_pay && sampleCount > 0 && (
         <button className="btn-danger-text" style={{ marginTop: 16, fontSize: "0.85rem" }} onClick={clearSample}>
-          امسح الداتا التجريبية وابدأ بداتاي الحقيقية
+          احذف الزباين التجريبيين ({sampleCount}) — زباينك الحقيقيين بيضلوا
         </button>
       )}
 

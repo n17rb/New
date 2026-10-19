@@ -1815,3 +1815,11 @@ input[type="date"]:focus, textarea:focus {
 [data-theme="dark"] .pay-choice-btn.coupon .pc-t, [data-theme="dark"] .pay-choice-btn.coupon .pc-v { color: var(--primary-dark); }
 .trip-money { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 2px; font-size: 0.88rem; }
 .trip-money b { font-size: 1rem; }
+
+/* الداتا التجريبية */
+.sample-banner { display: flex; gap: 12px; align-items: center; background: var(--warning-soft); border: 1px solid rgba(199, 124, 2, 0.25); border-radius: var(--radius-lg); padding: 12px 14px; margin-bottom: 12px; }
+.sample-banner-t { font-weight: 800; color: var(--warning); }
+.sample-banner-s { font-size: 0.78rem; color: var(--text); opacity: .85; line-height: 1.5; margin-top: 2px; }
+.sample-banner-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; border: none; background: var(--urgent); color: #fff; border-radius: 12px; padding: 9px 12px; font: inherit; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
+.sample-banner-btn:disabled { opacity: .6; }
+.sample-badge { background: var(--warning-soft); color: var(--warning); font-size: 0.68rem; margin-right: 6px; vertical-align: middle; }

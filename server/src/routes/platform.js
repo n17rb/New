@@ -5,7 +5,7 @@ import { requireAuth, requirePlatformAdmin, signInspectToken } from "../middlewa
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 import {
   listTenants, getTenant, tenantAccess, createTenant, extendTenant, invalidateTenant,
-  getPlatformSettings, findTenantIdByUsername, claimUsername, resetTenantData,
+  getPlatformSettings, findTenantIdByUsername, claimUsername, resetTenantData, removeSampleData, sampleDataCount,
 } from "../utils/tenants.js";
 import { notifyTenantManagers } from "../utils/platformNotify.js";
 
@@ -170,6 +170,19 @@ router.post("/tenants/:id/reset", async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// حذف الزباين والموظفين التجريبيين بس (الحقيقيين بيضلوا)
+router.get("/tenants/:id/sample", async (req, res) => {
+  const t = await getTenant(req.params.id);
+  if (!t) return res.status(404).json({ error: "المحل غير موجود." });
+  res.json(await runInTenant(t, () => sampleDataCount()));
+});
+router.post("/tenants/:id/clear-sample", async (req, res) => {
+  const t = await getTenant(req.params.id);
+  if (!t) return res.status(404).json({ error: "المحل غير موجود." });
+  if (t.is_demo) return res.status(400).json({ error: "نسخة العرض بترجع لأولها لحالها." });
+  res.json({ ok: true, ...(await runInTenant(t, () => removeSampleData())) });
 });
 
 // معاينة المحل: توكن مشاهدة فقط لساعتين

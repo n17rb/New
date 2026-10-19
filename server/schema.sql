@@ -607,3 +607,17 @@ BEGIN
     INSERT INTO app_settings (key, value) VALUES ('seq_start', '182') ON CONFLICT (key) DO NOTHING;
   END IF;
 END $$;
+
+-- ============================================================
+-- الداتا التجريبية: علامة على الزباين والموظفين التجريبيين عشان ينحذفوا لحالهم بدون ما يلمسوا الحقيقيين
+-- ============================================================
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_sample BOOLEAN NOT NULL DEFAULT false;
+-- المحلات اللي انعملت قبل العلامة: الزباين التجريبيين بنعرفهم من اسمهم ورقمهم الوهمي
+UPDATE customers SET is_sample = true
+WHERE is_sample = false
+  AND name IN ('أبو أحمد','أم عمر','مكتب النور','عيادة الشفاء','سارة خالد','أبو محمد','مطعم السنابل','أم يزن','شركة الأفق','أبو فادي','روضة الأطفال','صالون الريم','أم ليث','أبو سامي','مخبز الخير','د. رامي','أم ريم','أبو خليل','محل الأمانة','أبو زيد')
+  AND phone_normalized IN ('962791000000','962791007919','962791015838','962791023757','962791031676','962791039595','962791047514','962791055433','962791063352','962791071271','962791079190','962791087109','962791095028','962791102947','962791110866','962791118785','962791126704','962791134623','962791142542','962791150461');
+UPDATE employees SET is_sample = true
+WHERE is_sample = false AND ((name = 'كابتن تجريبي' AND job_title = 'كابتن') OR (name = 'عامل تعبئة' AND job_title = 'تعبئة'))
+  AND EXISTS (SELECT 1 FROM employee_transactions t WHERE t.employee_id = employees.id AND t.note = 'سحب (تجريبي)');

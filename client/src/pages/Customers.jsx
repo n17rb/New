@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
+import SampleDataBanner from "../components/SampleDataBanner.jsx";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiUserPlus, FiSearch, FiUpload, FiTool, FiMapPin, FiHash } from "react-icons/fi";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
@@ -127,6 +128,7 @@ export default function Customers({ user }) {
           إجمالي العملاء: <strong className="tabular-num">{totalCount}</strong>
         </p>
       )}
+      {user?.role === "super_admin" && <SampleDataBanner onCleared={() => { search(query, regionId); api.getCustomerCount?.().then((r) => setTotalCount(r.count)).catch(() => {}); }} />}
 
       {!showAddForm && !showImportForm && (
         <>
@@ -213,6 +215,7 @@ export default function Customers({ user }) {
                   <div>
                     <div style={{ fontWeight: 600 }}>
                       {c.name}
+                      {c.is_sample && <span className="badge sample-badge">تجريبي</span>}
                       {hasNoLink && (
                         <span style={{ color: "var(--warning)", fontSize: "0.75rem", marginRight: 6 }}> ⚠️ بدون موقع أصلًا</span>
                       )}
