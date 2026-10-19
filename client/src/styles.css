@@ -1799,3 +1799,19 @@ input[type="date"]:focus, textarea:focus {
 .prod-toggle.on .dot { background: var(--success); }
 .prod-toggle.plain { color: var(--text); }
 .prod-toggle.danger { color: var(--urgent); border-color: transparent; background: none; }
+
+/* التسليم: كاش أو كوبون */
+.pay-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pay-choice-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 16px 8px 14px; border-radius: var(--radius-lg); border: 2px solid var(--border); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; text-align: center; }
+.pay-choice-btn:disabled { opacity: 0.45; cursor: default; }
+.pay-choice-btn .pc-ic { font-size: 1.9rem; line-height: 1.2; }
+.pay-choice-btn .pc-t { font-weight: 800; font-size: 1.15rem; }
+.pay-choice-btn .pc-v { font-weight: 700; font-size: 0.95rem; }
+.pay-choice-btn .pc-s { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; line-height: 1.4; }
+.pay-choice-btn.cash:not(:disabled) { border-color: var(--success); background: var(--success-soft); }
+.pay-choice-btn.cash .pc-t, .pay-choice-btn.cash .pc-v { color: var(--success); }
+.pay-choice-btn.coupon:not(:disabled) { border-color: var(--primary); background: var(--primary-soft); }
+.pay-choice-btn.coupon .pc-t, .pay-choice-btn.coupon .pc-v { color: var(--navy); }
+[data-theme="dark"] .pay-choice-btn.coupon .pc-t, [data-theme="dark"] .pay-choice-btn.coupon .pc-v { color: var(--primary-dark); }
+.trip-money { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 2px; font-size: 0.88rem; }
+.trip-money b { font-size: 1rem; }

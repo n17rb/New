@@ -550,6 +550,12 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
           {deliveredCount} / {totalCount} تم التسليم
         </div>
+        {deliveredCount > 0 && (
+          <div className="trip-money">
+            <span>💵 كاش معك <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.cash_collected || 0) : 0), 0).toFixed(2)} JD</b></span>
+            <span>🎫 كوبونات <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.coupons_collected || 0) : 0), 0)}</b></span>
+          </div>
+        )}
         {trip.total_distance_km > 0 && (
           <div className="text-secondary">
             المسافة الكلية: {Number(trip.total_distance_km).toFixed(1)} كم
@@ -641,6 +647,12 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
                 </a>
               )}
               <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
+              {s.order_status === "DELIVERED" && (Number(s.cash_collected || 0) > 0 || Number(s.coupons_collected || 0) > 0) && (
+                <div className="tabular-num" style={{ fontSize: "0.7rem", marginTop: 2, fontWeight: 700 }}>
+                  {Number(s.coupons_collected || 0) > 0 && <span style={{ color: "var(--navy)" }}>🎫 {s.coupons_collected} </span>}
+                  {Number(s.cash_collected || 0) > 0 && <span style={{ color: "var(--success)" }}>💵 {Number(s.cash_collected).toFixed(2)}</span>}
+                </div>
+              )}
               {s.estimated_eta_minutes != null && (
                 <div className="text-secondary tabular-num" style={{ fontSize: "0.7rem", marginTop: 2 }}>
                   متوقع: {formatClockTime(s.estimated_eta_minutes)}
@@ -738,6 +750,57 @@ function computeAmountDue(stop, couponQty = {}) {
   const finalTotal = Number(stop.final_total) || 0;
   const ratio = subtotal > 0 ? Math.min(1, finalTotal / subtotal) : 1;
   return Math.round(cashPart * ratio * 100) / 100;
+}
+
+// بعد «تم التسليم»: خيارين كبار — كاش أو كوبون (والتفاصيل للحالات الخاصة)
+function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
+  const items = stop.items || [];
+  const eligible = items.filter((it) => it.coupon_eligible);
+  const eligibleQty = eligible.reduce((s, it) => s + it.quantity, 0);
+  const balance = Number(stop.coupon_balance || 0);
+  const cashAll = computeAmountDue(stop);
+  const allCoupons = Object.fromEntries(eligible.map((it) => [it.id, it.quantity]));
+  const cashWithCoupons = computeAmountDue(stop, allCoupons);
+  const canCoupon = eligibleQty > 0 && balance > 0;
+  const enoughCoupons = balance >= eligibleQty;
+
+  function payCash() {
+    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: 0 })), { cash_received: cashAll });
+    onCancel();
+  }
+  function payCoupons() {
+    if (!enoughCoupons) { onDetails(); return; } // كوبوناته ما بتكفي: نفتح التفاصيل (الباقي كاش أو دين)
+    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: it.quantity })), { cash_received: cashWithCoupons });
+    onCancel();
+  }
+
+  return (
+    <div className="card pay-choice">
+      <h2 className="title-md" style={{ marginBottom: 4 }}>كيف حاسب {stop.customer_name}؟</h2>
+      <p className="text-secondary" style={{ marginTop: 0, fontSize: "0.82rem" }}>
+        {items.map((it) => `${it.quantity} × ${it.product_name_snapshot}`).join("، ")}
+      </p>
+      <div className="pay-choice-grid">
+        <button className="pay-choice-btn cash" disabled={busy} onClick={payCash}>
+          <span className="pc-ic">💵</span>
+          <span className="pc-t">كاش</span>
+          <span className="pc-v tabular-num">{cashAll.toFixed(2)} JD</span>
+        </button>
+        <button className="pay-choice-btn coupon" disabled={busy || !canCoupon} onClick={payCoupons}>
+          <span className="pc-ic">🎫</span>
+          <span className="pc-t">كوبون</span>
+          <span className="pc-v tabular-num">
+            {!canCoupon ? (eligibleQty ? "ما معه كوبونات" : "الطلب ما بيقبل كوبون") : `${Math.min(eligibleQty, balance)} كوبون`}
+          </span>
+          {canCoupon && <span className="pc-s">{enoughCoupons ? `معه ${balance} · بيضل ${balance - eligibleQty}${cashWithCoupons > 0 ? ` · + ${cashWithCoupons.toFixed(2)} JD كاش` : ""}` : `معه ${balance} بس — الباقي كاش أو دين`}</span>}
+        </button>
+      </div>
+      <button className="link-btn" style={{ width: "100%", justifyContent: "center", margin: "10px 0 6px" }} onClick={onDetails}>
+        دين، دفع جزئي، كاش وكوبون مع بعض، أو فوارغ
+      </button>
+      <button className="btn-secondary" onClick={onCancel}>رجوع</button>
+    </div>
+  );
 }
 
 function DeliveryPaymentForm({ stop, deliverFast, onCancel }) {
@@ -935,6 +998,7 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
   const [showFailMenu, setShowFailMenu] = useState(false);
   const [showPostponeForm, setShowPostponeForm] = useState(false);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showPayChoice, setShowPayChoice] = useState(false);
   const [postponeTime, setPostponeTime] = useState("");
   const [postponeNote, setPostponeNote] = useState("");
 
@@ -952,6 +1016,8 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
   const debt = Number(stop.debt_balance || 0);
 
   function handleDeliverClick() {
+    // دايمًا بنسأل: حاسب كاش ولا كوبون؟ عشان جرد السيارة يطلع مضبوط
+    if (!missingQuantity) { setShowPayChoice(true); return; }
     if (needsPaymentChoice) setShowPaymentForm(true);
     else deliverFast(stop, [], { cash_received: amountDue });
   }
@@ -970,6 +1036,18 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
       setPostponeTime("");
       setPostponeNote("");
     });
+  }
+
+  if (showPayChoice && !showPaymentForm) {
+    return (
+      <PayChoice
+        stop={stop}
+        busy={busy}
+        deliverFast={deliverFast}
+        onDetails={() => { setShowPayChoice(false); setShowPaymentForm(true); }}
+        onCancel={() => setShowPayChoice(false)}
+      />
+    );
   }
 
   if (showPaymentForm) {
@@ -1059,18 +1137,8 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
         onClick={handleDeliverClick}
       >
         <FiCheckCircle />
-        {needsPaymentChoice ? "تم التسليم" : amountDue > 0 ? `تم التسليم · قبضت ${amountDue.toFixed(2)} JD` : "تم التسليم"}
+        تم التسليم
       </button>
-      {!missingQuantity && !needsPaymentChoice && (
-        <button
-          className="btn-danger-text"
-          style={{ width: "100%", color: "var(--primary)", marginBottom: 6, fontSize: "0.88rem" }}
-          disabled={busy}
-          onClick={() => setShowPaymentForm(true)}
-        >
-          دين، دفع جزئي، أو فوارغ
-        </button>
-      )}
 
       {!showFailMenu && (
         <button className="btn-danger-text icon-row" style={{ justifyContent: "center" }} disabled={busy} onClick={() => setShowFailMenu(true)}>
