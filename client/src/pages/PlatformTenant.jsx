@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { FiArrowRight, FiEye, FiPhone, FiMessageCircle, FiPause, FiPlay, FiEdit2, FiKey } from "react-icons/fi";
+import { FiArrowRight, FiEye, FiPhone, FiMessageCircle, FiPause, FiPlay, FiEdit2, FiKey, FiTrash2 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { api } from "../api.js";
 import { readShop, saveShop, whatsappNumber } from "../shop.js";
@@ -186,6 +186,26 @@ export default function PlatformTenant() {
           >
             {t.status === "active" ? <><FiPause aria-hidden="true" /> إيقاف المحل</> : <><FiPlay aria-hidden="true" /> رجّع المحل يشتغل</>}
           </button>
+          {!t.is_home && (
+            <button
+              className="btn-secondary icon-row"
+              style={{ justifyContent: "center", marginTop: 8, color: "var(--urgent)", borderColor: "var(--urgent)" }}
+              disabled={busy}
+              onClick={async () => {
+                const paid = t.paid_ever ? "\n⚠️ هاد المحل دفع قبل هيك." : "";
+                const typed = prompt(`حذف «${t.name}» نهائيًا؟${paid}\nبتنمسح كل داتاه وحساباته ودفعاته ورسائل الدعم، وما بترجع.\nاكتب «احذف» للتأكيد:`);
+                if (typed?.trim() !== "احذف") return;
+                try {
+                  await api.platformDeleteTenant(t.id);
+                  navigate("/platform");
+                } catch (err) {
+                  alert(err.message);
+                }
+              }}
+            >
+              <FiTrash2 aria-hidden="true" /> احذف الحساب نهائيًا
+            </button>
+          )}
         </div>
       )}
 
