@@ -1,5 +1,5 @@
 import multer from "multer";
-import { currentSchema } from "../db.js";
+import { currentSchema, tenantStore } from "../db.js";
 import sharp from "sharp";
 import { v2 as cloudinary } from "cloudinary";
 
@@ -15,7 +15,14 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 },
 });
 
-export const uploadSingleImage = upload.single("photo");
+const single = upload.single("photo");
+
+// multer بيكمّل من جوّا أحداث الـstream، وهناك سياق المحل (AsyncLocalStorage) بيضيع
+// فالاستعلامات كانت تروح لحساب موج الرئيسي بدل المحل/المصنع. منرجّع نفس السياق قبل ما نكمّل.
+export function uploadSingleImage(req, res, next) {
+  const store = tenantStore.getStore();
+  single(req, res, (err) => (store ? tenantStore.run(store, () => next(err)) : next(err)));
+}
 
 export async function saveCompressedImage(fileBuffer, prefix = "img") {
   const compressed = await sharp(fileBuffer)
