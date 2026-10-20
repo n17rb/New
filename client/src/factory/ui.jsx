@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { FiX, FiInfo, FiCamera, FiCheck, FiMessageCircle, FiRefreshCw, FiMapPin, FiLink } from "react-icons/fi";
 import { fapi } from "./fapi.js";
-import { HiOutlineLightBulb } from "react-icons/hi2";
 
 // ============================================================
 // موج للمصانع — قطع مشتركة بين الشاشات
@@ -60,19 +59,17 @@ export function Sheet({ title, onClose, children }) {
 }
 
 // شرح قصير بأول مرة بيفتح فيها الشاشة
-export function Tip({ id, title, children }) {
+export function Tip({ id, children }) {
   const key = `fx-tip-${id}`;
   const [hidden, setHidden] = useState(() => {
     try { return localStorage.getItem(key) === "1"; } catch { return false; }
   });
   if (hidden) return null;
   return (
-    <div className={`fx-tip ${title ? "big" : ""}`} role="note">
-      {title ? <HiOutlineLightBulb aria-hidden="true" /> : <FiInfo aria-hidden="true" />}
-      <span className="fx-grow">{title && <b>{title}</b>}{title ? <small>{children}</small> : children}</span>
-      <button className={title ? "fx-tip-ok" : "fx-link"} onClick={() => { try { localStorage.setItem(key, "1"); } catch { /* تجاهل */ } setHidden(true); }}>
-        {title ? <>مفهوم <FiX aria-hidden="true" /></> : "فهمت"}
-      </button>
+    <div className="fx-tip" role="note">
+      <FiInfo aria-hidden="true" />
+      <span>{children}</span>
+      <button className="fx-link" onClick={() => { try { localStorage.setItem(key, "1"); } catch { /* تجاهل */ } setHidden(true); }}>فهمت</button>
     </div>
   );
 }
