@@ -393,3 +393,19 @@ a.fx-pill { text-decoration: none; }
 .fx-trip-sum .bad b { color: var(--fx-crit); }
 .fx-proof { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 1px solid var(--fx-line); background: #fff; }
 .fx-proof.sig { object-fit: contain; }
+
+/* زباين بسيطين: زر «طلب» على كل زبون، أزرار سريعة، وخيارات زيادة مطوية */
+.fx-cust-row { padding: 0; gap: 0; }
+.fx-cust-main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 12px 14px; }
+.fx-cust-main .t { display: grid; min-width: 0; }
+.fx-order-btn { flex: none; display: grid; justify-items: center; gap: 2px; margin-inline-end: 10px; padding: 8px 14px; border-radius: 14px; border: 0; background: var(--fx-navy); color: #fff; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.fx-order-btn svg { width: 20px; height: 20px; }
+.fx-big { padding-block: 16px !important; font-size: 16.5px; }
+.fx-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px; }
+.fx-quick > * { display: grid; justify-items: center; gap: 4px; padding: 12px 4px; border-radius: 14px; background: #fff; border: 1px solid var(--fx-line, #e3edf5); color: var(--fx-navy); text-decoration: none; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.fx-quick svg { width: 20px; height: 20px; }
+.fx-quick .wa { color: #128c4a; }
+.fx-quick .sky { color: #0b7fc0; }
+.fx-quick .off { color: var(--fx-muted); opacity: .6; cursor: default; }
+.fx-more { border: 1px solid var(--fx-line, #e3edf5); border-radius: 14px; padding: 12px 14px; background: #fff; }
+.fx-more > summary { cursor: pointer; font-weight: 700; color: var(--fx-navy); }

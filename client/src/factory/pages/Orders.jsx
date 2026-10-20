@@ -143,12 +143,12 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
 }
 
 // ---------- طلب جديد / تعديل ----------
-function OrderSheet({ order, onClose, onSaved }) {
+export function OrderSheet({ order, customer, onClose, onSaved }) {
   const fx = useFx();
   const products = fx.boot.products.filter((p) => p.active);
   const [q, setQ] = useState("");
   const [list, setList] = useState([]);
-  const [cust, setCust] = useState(order ? { id: order.customer_id, name: order.customer_name, city: order.city } : null);
+  const [cust, setCust] = useState(order ? { id: order.customer_id, name: order.customer_name, city: order.city } : customer || null);
   const [items, setItems] = useState(order ? order.items.map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual })) : []);
   const [due, setDue] = useState(order?.due_date || today());
   const [urgent, setUrgent] = useState(!!order?.urgent);
@@ -199,8 +199,9 @@ function OrderSheet({ order, onClose, onSaved }) {
           </>
         ) : (
           <div className="fx-card soft fx-row">
-            <span className="fx-grow"><b>{cust.name}</b><br /><span className="fx-muted">{cust.city}</span></span>
-            {!order && <button className="fx-link" onClick={() => setCust(null)}>غيّر</button>}
+            {cust.photo_url && <img className="fx-avatar fx-avatar-img" src={cust.photo_url} alt="" />}
+            <span className="fx-grow"><b>{cust.seq_no ? <span className="fx-seq">#{cust.seq_no}</span> : null}{cust.name}</b><br /><span className="fx-muted">{cust.city}</span></span>
+            {!order && !customer && <button className="fx-link" onClick={() => setCust(null)}>غيّر</button>}
           </div>
         )}
 
