@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap } from "react-icons/fi";
+import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers } from "react-icons/fi";
 import { canUser, canUserAction } from "../auth.jsx";
 import { fapi } from "./fapi.js";
 import { FxContext } from "./ui.jsx";
@@ -117,6 +117,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
     const all = [
       can("f_home") && { to: "/", icon: FiHome, label: "الرئيسية", end: true },
       isDriver && !can("f_home") && { to: "/f/drive", icon: FiNavigation, label: "رحلتي" },
+      (can("f_customers") || can("f_orders") || can("f_home")) && { to: "/f/customers", icon: FiUsers, label: "العملاء" },
       (can("f_orders") || can("f_dispatch")) && { to: "/f/orders", icon: FiPackage, label: "الطلبات" },
       can("f_dispatch") && { to: "/f/trips", icon: FiTruck, label: "الرحلات" },
       (can("f_stock") || can("f_production")) && { to: "/f/stock", icon: FiBox, label: can("f_stock") ? "المستودع" : "الإنتاج" },

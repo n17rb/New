@@ -33,7 +33,7 @@ router.get("/customers", view, async (req, res) => {
     where += ` AND c.line_id = $${params.length}`;
   }
   const r = await query(
-    `SELECT c.id, c.seq_no, c.photo_url, c.name, c.contact_name, c.phone, c.city, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.balance, c.is_sample,
+    `SELECT c.id, c.seq_no, c.photo_url, c.name, c.contact_name, c.phone, c.address, c.city, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.balance, c.is_sample,
             l.name AS line_name, l.vehicle_id,
             (SELECT COUNT(*)::int FROM f_orders o WHERE o.customer_id = c.id AND o.status IN ('new','assigned','onway','delayed')) AS open_orders,
             (SELECT MAX(created_at) FROM f_orders o WHERE o.customer_id = c.id) AS last_order_at,

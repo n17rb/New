@@ -6,7 +6,7 @@ export default function More({ onLogout }) {
   const fx = useFx();
   const nav = useNavigate();
   const items = [
-    { to: "/f/customers", icon: FiUsers, label: "الزباين", hint: "بياناتهم وأسعارهم وكشف حسابهم" },
+    { to: "/f/customers", icon: FiUsers, label: "العملاء", hint: "بياناتهم وطلباتهم وكشف حسابهم" },
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/trips", icon: FiTruck, label: "الرحلات", hint: "وين كل سيارة وشو ضل عليها" },
     (fx.can("f_stock") || fx.can("f_production") || fx.can("f_home")) && { to: "/f/stock", icon: FiBox, label: "المستودع والإنتاج", hint: "الأرصدة، التحميل، التالف، المكنات" },
     (fx.can("f_money") || fx.can("f_home")) && { to: "/f/money", icon: FiDollarSign, label: "الحسابات", hint: "كاش السائقين، المصاريف، الديون" },

@@ -26,13 +26,16 @@ export default function Customers() {
   return (
     <div className="fx-page">
       <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1">الزباين</h1>
-        {canAdd && <button className="fx-btn pri sm" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون جديد</button>}
+        <span style={{ display: "grid" }}>
+          <h1 className="fx-h1" style={{ margin: 0 }}>العملاء</h1>
+          {list && <span className="fx-muted">إجمالي العملاء: <b className="fx-num" style={{ color: "var(--fx-ink)" }}>{num(list.length)}</b></span>}
+        </span>
       </div>
-      <Tip id="customers2">اكبس «طلب» جنب الزبون عشان تسجّله طلب. واكبس على اسمه تشوف حسابه وموقعه.</Tip>
+      {canAdd && <button className="fx-btn pri block fx-big" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون جديد</button>}
+      <Tip id="customers2">اكبس «طلب جديد» جنب الزبون عشان تسجّله طلب. واكبس على اسمه تشوف حسابه وموقعه.</Tip>
       <div className="fx-row" style={{ flexWrap: "nowrap" }}>
         <FiSearch style={{ color: "var(--fx-muted)" }} />
-        <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم، رقم الزبون، تلفون، أو مدينة" />
+        <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم، رقم، تلفون، أو مدينة" />
       </div>
       {fx.boot.lines.length > 0 && (
         <div className="fx-hscroll">
@@ -50,12 +53,13 @@ export default function Customers() {
               <button className="fx-plain fx-cust-main" onClick={() => setSheet({ kind: "view", id: c.id })}>
                 {c.photo_url ? <img className="fx-avatar fx-avatar-img" src={c.photo_url} alt="" loading="lazy" /> : <span className="fx-avatar">{c.name.trim().charAt(0)}</span>}
                 <span className="t">
-                  <b>{c.seq_no ? <span className="fx-seq">#{c.seq_no}</span> : null}{c.name}</b>
-                  <span>{c.city || "بدون مدينة"}{c.open_orders ? ` · ${c.open_orders} طلب مفتوح` : ""}</span>
+                  <b style={{ fontSize: 16 }}>{c.name}</b>
+                  <span className="fx-num" dir="ltr" style={{ textAlign: "right" }}>{[c.seq_no ? `#${c.seq_no}` : null, c.phone].filter(Boolean).join(" · ")}</span>
+                  <span>{[c.city, c.address].filter(Boolean).join(" · ") || "بدون عنوان"}{c.open_orders ? ` · ${c.open_orders} طلب مفتوح` : ""}</span>
                   {c.balance !== undefined && c.balance > 0 && <span style={{ color: c.credit_limit && c.balance > c.credit_limit ? "var(--fx-crit)" : "var(--fx-muted)", fontSize: 12.5 }}>عليه {money(c.balance)} د.أ</span>}
                 </span>
               </button>
-              {canOrder && <button className="fx-order-btn" onClick={() => setSheet({ kind: "order", c })} aria-label={`طلب جديد لـ${c.name}`}><FiShoppingCart /><span>طلب</span></button>}
+              {canOrder && <button className="fx-order-btn" onClick={() => setSheet({ kind: "order", c })} aria-label={`طلب جديد لـ${c.name}`}><FiShoppingCart /><span>طلب جديد</span></button>}
             </div>
           ))}
         </div>
@@ -111,6 +115,7 @@ function CustomerEdit({ c, onClose, onSaved }) {
           </label>
         </div>
 
+        <label className="fx-field">العنوان<input className="fx-input" value={f.address} onChange={set("address")} placeholder="مثلًا: شارع الجامعة · عمارة 12 · جنب المسجد" /></label>
         <LocationPicker title="موقع الزبون" hereLabel="أنا عند الزبون هلأ — خذ موقعي" hl="customer-location"
           lat={f.lat} lng={f.lng} onChange={(p) => { setF((x) => ({ ...x, ...p })); if (p.lat !== "") fx.toast("انحفظ موقع الزبون"); }} />
         <div className="fx-card fx-stack fx-locbox">
@@ -118,7 +123,7 @@ function CustomerEdit({ c, onClose, onSaved }) {
           <BuildingPhoto value={f.photo_url} onChange={(u) => setF((x) => ({ ...x, photo_url: u }))} />
         </div>
         <details className="fx-more" open={!!c && (c.pay_terms === "credit" || (c.prices || []).length > 0)}>
-          <summary>خيارات زيادة: الدين، الأسعار الخاصة، الخط، الملاحظات</summary>
+          <summary>خيارات زيادة: الدين، الأسعار الخاصة، الملاحظات</summary>
           <div className="fx-stack" style={{ marginTop: 10 }}>
         <div className="fx-grid2">
           <label className="fx-field">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
@@ -129,7 +134,6 @@ function CustomerEdit({ c, onClose, onSaved }) {
             </select>
           </label>
         </div>
-        <label className="fx-field">العنوان بالتفصيل<input className="fx-input" value={f.address} onChange={set("address")} placeholder="الشارع، جنب..." /></label>
         <div className="fx-field">طريقة الدفع
           <div className="fx-chips">
             <button className={`fx-chip ${f.pay_terms === "cash" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "cash" })}>كاش</button>
