@@ -198,9 +198,9 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
             </div>
           </>
         ) : (
-          <div className="fx-card soft fx-row">
-            {cust.photo_url && <img className="fx-avatar fx-avatar-img" src={cust.photo_url} alt="" />}
-            <span className="fx-grow"><b>{cust.seq_no ? <span className="fx-seq">#{cust.seq_no}</span> : null}{cust.name}</b><br /><span className="fx-muted">{cust.city}</span></span>
+          <div className="fx-card soft fx-row fx-ord-cust">
+            {cust.photo_url ? <img className="fx-avatar fx-avatar-img" src={cust.photo_url} alt="" /> : <span className="fx-avatar">{(cust.name || "").trim().charAt(0)}</span>}
+            <span className="fx-grow"><b>{cust.seq_no ? <span className="fx-seq">#{cust.seq_no}</span> : null}{cust.name}</b><br /><span className="fx-muted">{[cust.city, cust.address].filter(Boolean).join(" · ")}</span></span>
             {!order && !customer && <button className="fx-link" onClick={() => setCust(null)}>غيّر</button>}
           </div>
         )}
@@ -208,7 +208,7 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
         {cust && <ProductPicker products={products} items={items} setItems={setItems} customerId={cust.id} />}
 
         <div className="fx-field">موعد التوصيل
-          <div className="fx-chips">
+          <div className="fx-chips fx-due">
             <button className={`fx-chip ${due === today() ? "on" : ""}`} onClick={() => setDue(today())}>اليوم</button>
             <button className={`fx-chip ${due === tomorrow() ? "on" : ""}`} onClick={() => setDue(tomorrow())}>بكرا</button>
             <input className="fx-input" style={{ width: "auto" }} type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="تاريخ" />
@@ -225,27 +225,42 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
   );
 }
 
+// «شرنك 600 مل» ← «600 مل»، «شرنك 1500 مل» ← «1.5 لتر»، «كاس رقم 1» ← «كاس رقم 1»
+function sizeLabel(name = "") {
+  const ml = String(name).match(/(\d+(?:\.\d+)?)\s*(مل|ml)/i);
+  if (ml) { const n = Number(ml[1]); return n >= 1000 ? `${n / 1000} لتر` : `${n} مل`; }
+  const l = String(name).match(/(\d+(?:\.\d+)?)\s*(لتر|ل\b|L)/i);
+  if (l) return `${l[1]} لتر`;
+  return String(name).trim();
+}
+
 // اختيار المنتجات بالصور، والكمية بأزرار سريعة (المصانع بتطلب مئات الكراتين)
 const QUICK = [50, 100, 200, 300, 500];
 function ProductPicker({ products, items, setItems, customerId }) {
   const fx = useFx();
   const canBonus = fx.canAction("give_bonus");
   const setBonus = (id, patch) => setItems((xs) => xs.map((x) => (x.product_id === id ? { ...x, ...patch } : x)));
-  const pick = (id) => setItems((xs) => (xs.some((x) => x.product_id === id) ? xs.filter((x) => x.product_id !== id) : [...xs, { product_id: id, qty: "" }]));
+  const pick = (id) => {
+    const adding = !items.some((x) => x.product_id === id);
+    setItems((xs) => (xs.some((x) => x.product_id === id) ? xs.filter((x) => x.product_id !== id) : [...xs, { product_id: id, qty: "" }]));
+    // بننزل لخانة الكمية عشان يكتب العدد على طول
+    if (adding) setTimeout(() => document.getElementById(`qty-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
   const setQty = (id, q) => setItems((xs) => xs.map((x) => (x.product_id === id ? { ...x, qty: q } : x)));
   if (!products.length) return <div className="fx-note warn">ما في منتجات. ضيفها من الإعدادات.</div>;
   return (
     <>
-      <div className="fx-field">شو بده؟</div>
+      <div className="fx-ord-h">شو بده؟ <span>اكبس على المنتج</span></div>
       <div className="fx-prods">
         {products.map((p) => {
           const it = items.find((x) => x.product_id === p.id);
           return (
             <button key={p.id} type="button" className={`fx-prod ${it ? "on" : ""}`} onClick={() => pick(p.id)} aria-pressed={!!it}>
               {it && <span className="tick">{Number(it.qty) > 0 ? num(it.qty) : "✓"}</span>}
-              <ProductArt p={p} size={64} />
+              <span className="pic">{p.image_url ? <img src={p.image_url} alt={p.name} loading="lazy" /> : <ProductArt p={p} size={96} />}</span>
+              <span className="pill">{[sizeLabel(p.name), p.per_carton ? `${p.per_carton} حبة` : null].filter(Boolean).join(" • ")}</span>
               <b>{p.name}</b>
-              <small>{p.per_carton ? `${p.per_carton} حبة · ` : ""}{money(p.price)} د.أ</small>
+              <span className="price">{money(p.price)} د.أ</span>
             </button>
           );
         })}
@@ -255,7 +270,7 @@ function ProductPicker({ products, items, setItems, customerId }) {
         if (!p) return null;
         const q = Number(it.qty) || 0;
         return (
-          <div key={it.product_id} className="fx-qty">
+          <div key={it.product_id} id={`qty-${it.product_id}`} className="fx-qty">
             <div className="top">
               <ProductArt p={p} size={44} />
               <b className="fx-grow">{p.name}</b>
