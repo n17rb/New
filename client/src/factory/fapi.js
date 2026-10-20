@@ -125,6 +125,8 @@ export const fapi = {
   driverLedgerAdd: (id, b) => post(`/money/drivers/${id}/ledger`, b),
 
   reports: (p) => get(`/reports${qs(p)}`),
+  sampleInfo: () => get("/sample"),
+  clearSample: () => post("/sample/remove", { confirm: "امسح" }),
 
   // صفحات الزبون العامة
   track: (token) => request(`/public/f/track/${encodeURIComponent(token)}`),

@@ -90,6 +90,43 @@ export function Brand({ compact = false }) {
         await refresh(fx);
         fx.toast("انحفظ");
       }}>احفظ</Act>
+      {!compact && fx.isOwner && <SampleCard />}
+    </div>
+  );
+}
+
+// حذف الداتا التجريبية والبداية من جديد
+export function SampleCard() {
+  const fx = useFx();
+  const [info, setInfo] = useState(null);
+  const [typed, setTyped] = useState("");
+  const [done, setDone] = useState(null);
+  useEffect(() => { fapi.sampleInfo().then(setInfo).catch(() => {}); }, [done]);
+  if (!info || (!info.customers && !info.employees && !done)) return null;
+  return (
+    <div className="fx-card fx-stack" id="sample" data-hl="sample-card" style={{ borderColor: "var(--fx-warn)" }}>
+      <b>الداتا التجريبية</b>
+      {done ? (
+        <div className="fx-note ok">انمسحت: {done.customers} زبون، {done.orders} طلب، {done.employees} موظف تجريبي. المصنع جاهز يبلش بزباينه الحقيقيين.</div>
+      ) : info.is_demo ? (
+        <div className="fx-note warn">هاي نسخة عرض وبترجع لأولها كل يوم. اطلب من موج يحوّل الحساب لحساب حقيقي، وبعدين امسح التجريبي من هون.</div>
+      ) : (
+        <>
+          <span className="fx-muted">فيه {info.customers} زبون تجريبي و{info.orders} طلب و{info.employees} موظف تجريبي.</span>
+          <div className="fx-card soft" style={{ fontSize: 13.5 }}>
+            <b>بينمسح:</b> الزباين التجريبيين وطلباتهم وحساباتهم، والرحلات تبعتهم، وأرصدة المستودع والمواد الخام الوهمية، والموظفين التجريبيين (حساباتهم بتنطفي)، والتنبيهات.<br />
+            <b>بيضل:</b> المنتجات وصورها، السيارات، الخطوط، المكنات، المواد الخام (برصيد صفر)، البونص، الشعار{info.real_customers ? `، و${info.real_customers} زبون حقيقي ضفتهم` : ""}.
+          </div>
+          <label className="fx-field">اكتب «امسح» للتأكيد<input className="fx-input" value={typed} onChange={(e) => setTyped(e.target.value)} /></label>
+          <Act className="fx-btn danger block" disabled={typed.trim() !== "امسح"} onClick={async () => {
+            const r = await fapi.clearSample();
+            setDone(r);
+            await refresh(fx);
+            fx.toast("انمسحت الداتا التجريبية");
+          }}>امسح التجريبي وابدأ من جديد</Act>
+          <span className="fx-muted" style={{ fontSize: 12.5 }}>بعدها: عدّل السيارات واربطها بسائقينك، اعمل حسابات موظفينك، وضيف زباينك. معالج البداية بيرجع يمشّيك.</span>
+        </>
+      )}
     </div>
   );
 }
