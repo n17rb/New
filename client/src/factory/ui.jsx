@@ -221,15 +221,18 @@ export function SignaturePad({ onChange }) {
   );
 }
 
-export function getLocation(timeout = 8000) {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
+export function getLocation(timeout = 8000, maxAge = 60000) {
+  const once = (opts) => new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout, maximumAge: 60000 }
+      opts
     );
   });
+  if (!navigator.geolocation) return Promise.resolve(null);
+  // بالأول GPS دقيق؛ إذا ما لقط (جوا محل مثلًا) بنرضى بآخر موقع معروف من الشبكة
+  return once({ enableHighAccuracy: true, timeout, maximumAge: maxAge })
+    .then((r) => r || once({ enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 }));
 }
 
 export function waNumber(phone) {

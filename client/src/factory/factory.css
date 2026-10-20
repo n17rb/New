@@ -327,3 +327,17 @@ button.fx-item { cursor: pointer; }
 .fx-bonus { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--fx-ok-soft); color: var(--fx-ok); border-radius: 12px; padding: 8px 12px; font-size: 13.5px; }
 .fx-bonus svg { width: 18px; height: 18px; flex: none; }
 .fx-bonus .fx-link { color: var(--fx-ok); }
+
+/* زباين: رقم تسلسلي، صورة العمارة، صندوق الموقع */
+.fx-seq { display: inline-block; margin-inline-end: 6px; padding: 1px 7px; border-radius: 8px; background: var(--fx-sky-soft); color: var(--fx-navy); font-size: 12px; font-weight: 800; direction: ltr; vertical-align: 1px; }
+.fx-avatar-img { object-fit: cover; padding: 0; }
+.fx-grid-seq { display: grid; grid-template-columns: 1fr 96px; gap: 10px; align-items: end; }
+.fx-locbox { background: var(--fx-surface-2); }
+.fx-building { width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; display: block; border: 1px solid var(--fx-line, #e3edf5); }
+.fx-building.small { max-height: 110px; }
+.fx-building-wrap { position: relative; }
+.fx-building-wrap .fx-icon-btn { position: absolute; top: 8px; inset-inline-start: 8px; background: #fff; }
+.fx-building-btn { padding: 0; border: 0; background: none; width: 100%; cursor: zoom-in; }
+.fx-icon-btn.sm { width: 32px; height: 32px; }
+.fx-hscroll .fx-chip { white-space: nowrap; }
+a.fx-pill { text-decoration: none; }

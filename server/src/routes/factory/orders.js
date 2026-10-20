@@ -28,7 +28,7 @@ function dayWord(date) {
 export async function loadOrders(where, params = []) {
   const r = await query(
     `SELECT o.*, to_char(o.due_date, 'YYYY-MM-DD') AS due_date,
-            c.name AS customer_name, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
+            c.name AS customer_name, c.seq_no, c.photo_url, c.maps_url, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
             t.vehicle_id, t.status AS trip_status, v.name AS vehicle_name, u.full_name AS driver_name
      FROM f_orders o JOIN f_customers c ON c.id = o.customer_id
      LEFT JOIN f_trips t ON t.id = o.trip_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id LEFT JOIN users u ON u.id = t.driver_id
