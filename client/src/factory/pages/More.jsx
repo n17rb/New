@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap } from "react-icons/fi";
 import { useFx } from "../ui.jsx";
+import PushCard from "../PushCard.jsx";
 
 export default function More({ onLogout }) {
   const fx = useFx();
@@ -25,6 +26,7 @@ export default function More({ onLogout }) {
   return (
     <div className="fx-page">
       <h1 className="fx-h1">المزيد</h1>
+      <PushCard always who={fx.can("f_home") ? "admin" : "driver"} />
       <div className="fx-list">
         {items.map((i) => (
           <button key={i.to} className="fx-item" onClick={() => nav(i.to)}>

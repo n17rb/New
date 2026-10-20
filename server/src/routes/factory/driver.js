@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km } from "../../utils/factoryGeo.js";
-import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken } from "./lib.js";
+import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers } from "./lib.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 
 // ============================================================
@@ -114,6 +114,7 @@ router.post("/driver/trips/:id/start", drive, async (req, res) => {
     const track = await ensureTrackToken(o.customer_id);
     ids.push(await queueMessage({ customerId: o.customer_id, orderId: o.id, kind: "onway", data: { driver: t.driver_name || "السائق", eta: o.eta_at, track }, userId: req.user.id }));
   }
+  await pushManagers({ title: `🚚 ${t.driver_name || "السائق"} طلع بالرحلة`, body: `${t.vehicle_name} · ${orders.length} زبون. تابعه على الخريطة.`, url: "/f/trips", tag: `ts-${t.id}` });
   res.json({ ok: true, message_ids: ids });
 });
 
@@ -218,6 +219,12 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });
+  const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0);
+  await pushManagers({
+    title: `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
+    body: `${cartons} كرتونة · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
+    url: "/f/trips", tag: `fd-${o.id}`,
+  });
   res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left });
 });
 

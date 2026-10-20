@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { FiCheckCircle, FiChevronLeft, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
+import PushCard from "../PushCard.jsx";
 import { useFx, useLoad, money, num, time, Tip, Err, Loading, Reload, Act } from "../ui.jsx";
 
 const STATE = {
@@ -53,6 +54,7 @@ export default function Home() {
         <Reload onClick={reload} />
       </div>
 
+      <PushCard />
       {needsSetup && (
         <button className="fx-card soft fx-row" style={{ textAlign: "start", font: "inherit", cursor: "pointer", border: 0 }} onClick={() => nav("/f/setup")}>
           <FiCheckCircle style={{ width: 26, height: 26, color: "var(--fx-navy)" }} />

@@ -6,7 +6,7 @@ import { canAction } from "../../permissions.js";
 import { sendPushToUser } from "../../utils/push.js";
 import { inferRegion } from "../../utils/jordanRegions.js";
 import {
-  need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint,
+  need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint, pushManagers,
 } from "./lib.js";
 
 // ============================================================
@@ -138,6 +138,11 @@ router.post("/orders", editOrders, async (req, res) => {
   const track = await ensureTrackToken(customer.id);
   const msg = await queueMessage({ customerId: customer.id, orderId: id, kind: "received", data: { customer: customer.name, order: id, items: itemsText(items), due: dayWord(due), track }, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CREATE_ORDER", recordType: "f_order", recordId: id, newValue: { customer: customer.id, items, total } });
+  await pushManagers({
+    title: `🛒 طلب جديد: ${customer.name}`,
+    body: `${itemsText(items)} · سجّله ${req.user.full_name || ""}`,
+    url: "/f/orders", tag: `fo-new-${id}`, except: req.user.id,
+  });
   res.status(201).json({ id, total, bonus: items.reduce((s, i) => s + i.bonus, 0), message_id: msg });
 });
 

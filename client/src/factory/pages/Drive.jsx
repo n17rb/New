@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FiTruck, FiPhone, FiNavigation, FiAlertTriangle, FiPlus, FiMessageCircle, FiCheck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
+import PushCard from "../PushCard.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
@@ -35,6 +36,7 @@ export default function Drive() {
 
   return (
     <div className="fx-page">
+      <PushCard who="driver" />
       <div className="fx-card fx-row">
         <span className="fx-avatar"><FiTruck /></span>
         <span className="fx-grow" style={{ display: "grid" }}>

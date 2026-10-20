@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { query } from "../../db.js";
 import { can } from "../../permissions.js";
-import { needAny, round2, jordanDate, alert, checkVehicleDocs, factoryPoint } from "./lib.js";
+import { needAny, round2, jordanDate, alert, checkVehicleDocs, factoryPoint, pushTo } from "./lib.js";
+import { isPushAvailable } from "../../utils/push.js";
 import { loadTrips } from "./orders.js";
 import { km } from "../../utils/factoryGeo.js";
 import { stockBalances } from "./stock.js";
@@ -103,6 +104,13 @@ router.get("/live", needAny(["f_home"], ["f_dispatch"]), async (req, res) => {
   const rank = { moving: 0, lost: 1, planned: 2, idle: 3 };
   out.sort((a, b) => rank[a.state] - rank[b.state] || a.id - b.id);
   res.json({ factory: fp, vehicles: out });
+});
+
+// «جرّب إشعار»: بيوصل لكل أجهزة المستخدم
+router.post("/push-test", async (req, res) => {
+  const n = (await query("SELECT COUNT(*)::int AS n FROM push_subscriptions WHERE user_id = $1", [req.user.id])).rows[0].n;
+  await pushTo(req.user.id, { title: "🔔 الإشعارات شغالة", body: "هيك رح يوصلك كل تنبيه، حتى والتطبيق مسكّر.", url: "/", tag: "test" });
+  res.json({ ok: true, devices: n, available: isPushAvailable() });
 });
 
 router.get("/alerts", needAny(["f_home"], ["f_money"], ["f_dispatch"]), async (req, res) => {
