@@ -510,3 +510,10 @@ a.fx-pill { text-decoration: none; }
 .fx-photo-row button { background: none; border: 0; color: var(--fx-navy); font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer; }
 .fx-sf-more { border-top: 1px solid var(--fx-line); padding-top: 12px; }
 .fx-sf-more > summary { cursor: pointer; font-weight: 700; color: var(--fx-navy); font-size: 14.5px; }
+
+/* وين السيارات */
+.fx-live-map { height: 52vh; min-height: 300px; border-radius: 20px; overflow: hidden; border: 1px solid var(--fx-line); }
+.fx-live-row { width: 100%; text-align: start; }
+.fx-live-row.on { box-shadow: 0 0 0 2px var(--fx-navy); }
+.fx-live-row:disabled { opacity: .75; cursor: default; }
+.fx-live-row small { font-size: 12.5px; color: var(--fx-muted); }

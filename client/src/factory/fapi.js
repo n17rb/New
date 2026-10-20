@@ -16,6 +16,7 @@ const get = (path) => request(F + path);
 export const fapi = {
   bootstrap: () => get("/bootstrap"),
   home: () => get("/home"),
+  live: () => get("/live"),
   alerts: () => get("/alerts"),
   alertsCount: () => get("/alerts/count"),
   closeAlert: (id) => post(`/alerts/${id}/close`),

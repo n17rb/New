@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query } from "../../db.js";
 import { can } from "../../permissions.js";
-import { needAny, round2, jordanDate, alert, checkVehicleDocs } from "./lib.js";
+import { needAny, round2, jordanDate, alert, checkVehicleDocs, factoryPoint } from "./lib.js";
 import { loadTrips } from "./orders.js";
 import { stockBalances } from "./stock.js";
 
@@ -56,6 +56,46 @@ router.get("/home", needAny(["f_home"]), async (req, res) => {
     vehicles: vstate,
     trips_today: trips.length,
   });
+});
+
+// ---------- وين السيارات هلأ: آخر موقع، الاتجاه، والوقفة الجاية ----------
+router.get("/live", needAny(["f_home"], ["f_dispatch"]), async (req, res) => {
+  const today = jordanDate();
+  const [vehicles, trips, prev, fp] = await Promise.all([
+    query(`SELECT v.id, v.name, v.plate, v.capacity, v.status, v.last_lat, v.last_lng, v.last_seen_at, u.full_name AS driver_name, u.username AS driver_phone
+           FROM f_vehicles v LEFT JOIN users u ON u.id = v.driver_id WHERE v.status <> 'inactive' ORDER BY v.id`),
+    loadTrips("t.status IN ('planned','active') AND t.trip_date <= $1", [today]),
+    // آخر نقطتين قبل الأخيرة عشان نعرف لوين متجهة
+    query(`SELECT DISTINCT ON (vehicle_id) vehicle_id, lat, lng, at FROM f_positions
+           WHERE at > now() - interval '40 minutes' AND at < now() - interval '50 seconds' ORDER BY vehicle_id, at DESC`),
+    factoryPoint(),
+  ]);
+  const prevBy = new Map(prev.rows.map((p) => [p.vehicle_id, p]));
+  const out = vehicles.rows.map((v) => {
+    const t = trips.find((x) => x.vehicle_id === v.id && x.status === "active") || trips.find((x) => x.vehicle_id === v.id);
+    const open = t ? t.stops.filter((o) => ["assigned", "onway"].includes(o.status)) : [];
+    const next = open[0] || null;
+    const p = prevBy.get(v.id);
+    let heading = null;
+    if (p && v.last_lat != null && (Math.abs(p.lat - v.last_lat) > 0.0004 || Math.abs(p.lng - v.last_lng) > 0.0004)) {
+      const r = (x) => (x * Math.PI) / 180;
+      const y = Math.sin(r(v.last_lng - p.lng)) * Math.cos(r(v.last_lat));
+      const x = Math.cos(r(p.lat)) * Math.sin(r(v.last_lat)) - Math.sin(r(p.lat)) * Math.cos(r(v.last_lat)) * Math.cos(r(v.last_lng - p.lng));
+      heading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+    }
+    const mins = v.last_seen_at ? Math.round((Date.now() - new Date(v.last_seen_at).getTime()) / 60000) : null;
+    return {
+      id: v.id, name: v.name, plate: v.plate, driver_name: v.driver_name, driver_phone: /^07\d{8}$/.test(v.driver_phone || "") ? v.driver_phone : null,
+      lat: v.last_lat, lng: v.last_lng, last_seen_at: v.last_seen_at, minutes_ago: mins, heading,
+      state: !t ? "idle" : t.status === "active" ? (mins == null || mins > 15 ? "lost" : "moving") : "planned",
+      trip_id: t?.id || null, done: t?.done || 0, stops: t?.stops.length || 0, load: t?.load || 0,
+      next: next && { id: next.id, customer_name: next.customer_name, city: next.city, lat: next.lat, lng: next.lng, eta_at: next.eta_at },
+      route: open.filter((o) => o.lat != null).map((o) => ({ id: o.id, customer_name: o.customer_name, lat: o.lat, lng: o.lng })),
+    };
+  });
+  const rank = { moving: 0, lost: 1, planned: 2, idle: 3 };
+  out.sort((a, b) => rank[a.state] - rank[b.state] || a.id - b.id);
+  res.json({ factory: fp, vehicles: out });
 });
 
 router.get("/alerts", needAny(["f_home"], ["f_money"], ["f_dispatch"]), async (req, res) => {
