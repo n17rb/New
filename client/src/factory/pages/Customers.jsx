@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiImage } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
+import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiImage, FiMap } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { OrderSheet } from "./Orders.jsx";
 import { RecurringCard } from "./Recurring.jsx";
@@ -11,6 +12,7 @@ const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع
 
 export default function Customers() {
   const fx = useFx();
+  const nav = useNavigate();
   const [q, setQ] = useState("");
   const [line, setLine] = useState("");
   const [list, setList] = useState(null);
@@ -32,7 +34,10 @@ export default function Customers() {
     <div className="fx-page">
       <div className="fx-chead">
         <h1>العملاء {list && <span className="n fx-num">{num(shown.length)}</span>}</h1>
+        <span className="fx-row" style={{ gap: 8, flexWrap: "nowrap" }}>
+        <button className="fx-icon-btn" onClick={() => nav("/f/density")} aria-label="خريطة العملاء"><FiMap /></button>
         {canAdd && <button className="fx-cadd" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون</button>}
+        </span>
       </div>
       <div className="fx-csearch">
         <FiSearch aria-hidden="true" />

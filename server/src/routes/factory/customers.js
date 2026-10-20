@@ -54,6 +54,20 @@ router.get("/customers", view, async (req, res) => {
   res.json(r.rows.map((c) => ({ ...withRegion(c), balance: showMoney ? Number(c.balance) : undefined, credit_limit: Number(c.credit_limit) })));
 });
 
+// ---------- خريطة كثافة الزباين: وين متجمّعين، وكم بيطلبوا ----------
+router.get("/density", view, async (req, res) => {
+  const r = await query(
+    `SELECT c.id, c.name, c.city, c.governorate, c.district, c.lat, c.lng,
+            COUNT(o.id)::int AS orders_30, COALESCE(SUM(o.delivered_total), 0) AS sales_30,
+            COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN (SELECT SUM(COALESCE(i.delivered_qty, i.qty)) FROM f_order_items i WHERE i.order_id = o.id) END), 0)::int AS cartons_30
+     FROM f_customers c
+     LEFT JOIN f_orders o ON o.customer_id = c.id AND o.created_at > now() - interval '30 days' AND o.status <> 'cancelled'
+     WHERE c.active GROUP BY c.id`
+  );
+  const showMoney = can(req.user, "f_money") || can(req.user, "f_home");
+  res.json(r.rows.map((c) => ({ ...withRegion(c), sales_30: showMoney ? Number(c.sales_30) : undefined })));
+});
+
 router.get("/customers/:id", view, async (req, res) => {
   const c = (await query(
     `SELECT c.*, l.name AS line_name FROM f_customers c LEFT JOIN f_lines l ON l.id = c.line_id WHERE c.id = $1`,
