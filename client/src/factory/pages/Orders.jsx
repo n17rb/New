@@ -182,12 +182,12 @@ function OrderSheet({ order, onClose, onSaved }) {
         {!cust ? (
           <>
             <label className="fx-field">الزبون
-              <span className="fx-row" style={{ flexWrap: "nowrap" }}><FiSearch style={{ color: "var(--fx-muted)" }} /><input className="fx-input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم المحل أو التلفون أو المدينة" /></span>
+              <span className="fx-row" style={{ flexWrap: "nowrap" }}><FiSearch style={{ color: "var(--fx-muted)" }} /><input className="fx-input" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم المحل، رقمه، التلفون أو المدينة" /></span>
             </label>
             <div className="fx-list" style={{ maxHeight: 260, overflow: "auto" }}>
               {list.map((c) => (
                 <button key={c.id} className="fx-item" onClick={() => setCust(c)}>
-                  <span className="t"><b>{c.name}</b><span>{c.city || ""}{c.line_name ? ` · ${c.line_name}` : ""}</span></span>
+                  <span className="t"><b>{c.seq_no ? <span className="fx-seq">#{c.seq_no}</span> : null}{c.name}</b><span>{c.city || ""}{c.line_name ? ` · ${c.line_name}` : ""}</span></span>
                 </button>
               ))}
               {list.length === 0 && <div className="fx-item"><span className="fx-muted">ما لقيت. ضيف الزبون من شاشة الزباين أول.</span></div>}

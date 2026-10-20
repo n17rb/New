@@ -57,6 +57,8 @@ export const fapi = {
   // الزباين
   customers: (p) => get(`/customers${qs(p)}`),
   customer: (id) => get(`/customers/${id}`),
+  nextCustomerSeq: () => get("/customers-next-seq"),
+  resolveMapLink: (url) => post("/customers-resolve-link", { url }),
   saveCustomer: (c) => (c.id ? put(`/customers/${c.id}`, c) : post("/customers", c)),
   deleteCustomer: (id) => del(`/customers/${id}`),
   customerLocation: (id, lat, lng) => post(`/customers/${id}/location`, { lat, lng }),

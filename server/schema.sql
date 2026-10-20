@@ -942,3 +942,10 @@ ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS delivered_bonus INTEGER;
 -- ترخيص وتأمين السيارات: تنبيه للمدير قبل ما يخلصوا
 ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS license_expires DATE;
 ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS insurance_expires DATE;
+
+-- زباين المصنع: رقم تسلسلي، صورة العمارة/المحل، ورابط الموقع
+ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS seq_no INTEGER;
+ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS maps_url TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_f_customers_seq ON f_customers(seq_no) WHERE seq_no IS NOT NULL;
+UPDATE f_customers c SET seq_no = s.n FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY id) + COALESCE((SELECT MAX(seq_no) FROM f_customers), 0) AS n FROM f_customers WHERE seq_no IS NULL) s WHERE c.id = s.id;

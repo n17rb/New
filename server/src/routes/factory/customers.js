@@ -24,14 +24,15 @@ router.get("/customers", view, async (req, res) => {
   let where = "c.active";
   if (q) {
     params.push(`%${q}%`);
-    where += ` AND (c.name ILIKE $1 OR c.phone ILIKE $1 OR c.city ILIKE $1 OR c.contact_name ILIKE $1)`;
+    where += ` AND (c.name ILIKE $1 OR c.phone ILIKE $1 OR c.city ILIKE $1 OR c.contact_name ILIKE $1 OR c.seq_no::text = TRIM(LEADING '#' FROM $${params.length + 1}))`;
+    params.push(q);
   }
   if (req.query.line) {
     params.push(Number(req.query.line));
     where += ` AND c.line_id = $${params.length}`;
   }
   const r = await query(
-    `SELECT c.id, c.name, c.contact_name, c.phone, c.city, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.balance, c.is_sample,
+    `SELECT c.id, c.seq_no, c.photo_url, c.name, c.contact_name, c.phone, c.city, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.balance, c.is_sample,
             l.name AS line_name, l.vehicle_id,
             (SELECT COUNT(*)::int FROM f_orders o WHERE o.customer_id = c.id AND o.status IN ('new','assigned','onway','delayed')) AS open_orders,
             (SELECT MAX(created_at) FROM f_orders o WHERE o.customer_id = c.id) AS last_order_at,
@@ -77,12 +78,66 @@ router.get("/customers/:id", view, async (req, res) => {
   });
 });
 
-function cleanCustomer(b) {
+// إحداثيات من رابط خرائط جوجل (الطويل مباشرة، والقصير maps.app.goo.gl بنفتحه ونقرأ وين بيحوّل)
+export function coordsFromLink(link) {
+  if (!link) return null;
+  const s = decodeURIComponent(String(link));
+  const m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/[?&](?:q|query|ll|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/) || s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || s.match(/(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/);
+  if (!m) return null;
+  const lat = Number(m[1]), lng = Number(m[2]);
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+}
+
+async function resolveLink(link) {
+  const direct = coordsFromLink(link);
+  if (direct) return direct;
+  if (!/^https?:\/\/([a-z0-9-]+\.)*(goo\.gl|google\.[a-z.]+|g\.co)\//i.test(link)) return null;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(link, { redirect: "follow", signal: ctl.signal, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" } });
+    clearTimeout(t);
+    return coordsFromLink(r.url) || coordsFromLink((await r.text()).slice(0, 200000).match(/https:\/\/www\.google\.[a-z.]+\/maps[^"'\s]+/)?.[0]);
+  } catch {
+    return null;
+  }
+}
+
+async function nextSeq(client = null) {
+  const q = client ? (t, p) => client.query(t, p) : query;
+  return Number((await q("SELECT COALESCE(MAX(seq_no), 0) + 1 AS n FROM f_customers")).rows[0].n);
+}
+
+router.get("/customers-next-seq", view, async (req, res) => res.json({ next: await nextSeq() }));
+
+// رابط موقع ملصوق: بنرجّع الإحداثيات عشان الشاشة توري «الموقع محفوظ»
+router.post("/customers-resolve-link", edit, async (req, res) => {
+  const p = await resolveLink(String(req.body?.url || "").trim());
+  if (!p) return bad(res, "ما قدرنا نقرأ الموقع من الرابط. افتح الموقع بخرائط جوجل ← مشاركة ← نسخ الرابط، والصقه هون.");
+  res.json(p);
+});
+
+async function cleanCustomer(b) {
   const name = str(b.name);
   if (!name) throw new Error("اكتب اسم المحل أو الزبون.");
-  const lat = b.lat === "" || b.lat == null ? null : Number(b.lat);
-  const lng = b.lng === "" || b.lng == null ? null : Number(b.lng);
+  let lat = b.lat === "" || b.lat == null ? null : Number(b.lat);
+  let lng = b.lng === "" || b.lng == null ? null : Number(b.lng);
+  const maps_url = str(b.maps_url, 600);
+  if (maps_url && !/^https?:\/\//i.test(maps_url)) throw new Error("رابط الموقع لازم يبلّش بـ https://");
+  if (maps_url && b.from_link) {
+    const p = await resolveLink(maps_url);
+    if (!p) throw new Error("ما قدرنا نقرأ الموقع من الرابط. افتح الموقع بخرائط جوجل ← مشاركة ← نسخ الرابط، والصقه هون.");
+    lat = p.lat; lng = p.lng;
+  }
+  let seq_no = null;
+  if (b.seq_no !== undefined && b.seq_no !== null && String(b.seq_no).trim() !== "") {
+    seq_no = Number(String(b.seq_no).replace(/[^\d]/g, ""));
+    if (!Number.isInteger(seq_no) || seq_no <= 0 || seq_no > 99999999) throw new Error("الرقم التسلسلي لازم يكون رقم موجب.");
+  }
+  const photo_url = str(b.photo_url, 500);
+  if (photo_url && !/^https:\/\//i.test(photo_url)) throw new Error("الصورة غير صحيحة.");
   return {
+    seq_no, photo_url, maps_url,
     name, contact_name: str(b.contact_name, 100), phone: phoneClean(b.phone), city: str(b.city, 60), address: str(b.address, 300),
     line_id: b.line_id ? Number(b.line_id) : null, lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null,
     kind: str(b.kind, 30), pay_terms: b.pay_terms === "credit" ? "credit" : "cash",
@@ -102,14 +157,19 @@ async function savePrices(client, customerId, prices) {
 }
 
 router.post("/customers", edit, async (req, res) => {
-  let c; try { c = cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
+  let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query("LOCK TABLE f_customers IN SHARE ROW EXCLUSIVE MODE");
+    if (c.seq_no) {
+      const taken = (await client.query("SELECT name FROM f_customers WHERE seq_no = $1", [c.seq_no])).rows[0];
+      if (taken) { await client.query("ROLLBACK"); return bad(res, `الرقم ${c.seq_no} مستخدم للزبون «${taken.name}». اختار رقم ثاني أو خلّيه فاضي.`); }
+    } else c.seq_no = await nextSeq(client);
     const r = await client.query(
-      `INSERT INTO f_customers (name, contact_name, phone, city, address, line_id, lat, lng, kind, pay_terms, credit_limit, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.user.id]
+      `INSERT INTO f_customers (name, contact_name, phone, city, address, line_id, lat, lng, kind, pay_terms, credit_limit, notes, created_by, seq_no, photo_url, maps_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.user.id, c.seq_no, c.photo_url, c.maps_url]
     );
     const id = r.rows[0].id;
     if (can(req.user, "f_customers", "edit")) await savePrices(client, id, req.body?.prices);
@@ -129,14 +189,18 @@ router.post("/customers", edit, async (req, res) => {
 });
 
 router.put("/customers/:id", need("f_customers", "edit"), async (req, res) => {
-  let c; try { c = cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
+  let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    if (c.seq_no) {
+      const taken = (await client.query("SELECT name FROM f_customers WHERE seq_no = $1 AND id <> $2", [c.seq_no, req.params.id])).rows[0];
+      if (taken) { await client.query("ROLLBACK"); return bad(res, `الرقم ${c.seq_no} مستخدم للزبون «${taken.name}». اختار رقم ثاني.`); }
+    }
     const r = await client.query(
       `UPDATE f_customers SET name=$1, contact_name=$2, phone=$3, city=$4, address=$5, line_id=$6, lat=$7, lng=$8, kind=$9,
-         pay_terms=$10, credit_limit=$11, notes=$12 WHERE id=$13 RETURNING *`,
-      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.params.id]
+         pay_terms=$10, credit_limit=$11, notes=$12, seq_no=COALESCE($14, seq_no), photo_url=$15, maps_url=$16 WHERE id=$13 RETURNING *`,
+      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.params.id, c.seq_no, c.photo_url, c.maps_url]
     );
     if (!r.rows[0]) { await client.query("ROLLBACK"); return bad(res, "الزبون غير موجود.", 404); }
     await savePrices(client, r.rows[0].id, req.body?.prices);
@@ -155,7 +219,7 @@ router.put("/customers/:id", need("f_customers", "edit"), async (req, res) => {
 router.post("/customers/:id/location", edit, async (req, res) => {
   const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return bad(res, "الموقع غير صحيح.");
-  await query("UPDATE f_customers SET lat = $1, lng = $2 WHERE id = $3", [lat, lng, req.params.id]);
+  await query("UPDATE f_customers SET lat = $1, lng = $2, maps_url = $4 WHERE id = $3", [lat, lng, req.params.id, `https://www.google.com/maps?q=${lat},${lng}`]);
   res.json({ ok: true });
 });
 

@@ -117,9 +117,9 @@ export async function seedFactoryBasics({ sample = false, ownerUsername, passwor
     const pt = cityPoint(city);
     k++;
     C[key] = (await query(
-      `INSERT INTO f_customers (name, phone, city, line_id, lat, lng, pay_terms, credit_limit, is_sample, kind)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,'سوبرماركت') RETURNING id`,
-      [name, `079${String(1000000 + k * 7919).slice(0, 7)}`, city, L[line], pt[0] + 0.004 * k / 3, pt[1] - 0.003 * k / 3, terms, limit]
+      `INSERT INTO f_customers (name, phone, city, line_id, lat, lng, pay_terms, credit_limit, is_sample, kind, seq_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,'سوبرماركت',$9) RETURNING id`,
+      [name, `079${String(1000000 + k * 7919).slice(0, 7)}`, city, L[line], pt[0] + 0.004 * k / 3, pt[1] - 0.003 * k / 3, terms, limit, k]
     )).rows[0].id;
     if (bal) {
       await query("UPDATE f_customers SET balance = $1 WHERE id = $2", [bal, C[key]]);

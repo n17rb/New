@@ -151,17 +151,23 @@ function BeforeStart({ t, levels, lastFuel, onDone }) {
 
 function StopCard({ o, n, active, onDeliver, onFail }) {
   const dest = o.lat ? `${o.lat},${o.lng}` : encodeURIComponent(`${o.city || ""} الأردن`);
+  const [big, setBig] = useState(false);
   const closed = ["delivered", "failed"].includes(o.status);
   return (
     <div className="fx-card fx-stack" style={closed ? { background: "var(--fx-surface-2)" } : undefined}>
       <div className="fx-row" style={{ flexWrap: "nowrap" }}>
         <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{n}</span>
         <span className="fx-grow" style={{ display: "grid" }}>
-          <b>{o.customer_name}</b>
+          <b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
           <span className="fx-muted">{o.city}{o.address ? ` · ${o.address}` : ""}</span>
           <span className="fx-muted">{o.items.map((i) => `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}`).join("، ")}{o.eta_at && !closed ? ` · يوصل ${time(o.eta_at)}` : ""}</span>
         </span>
       </div>
+      {o.photo_url && !closed && (
+        <button className="fx-building-btn" onClick={() => setBig(!big)} aria-label="صورة المحل">
+          <img className={`fx-building ${big ? "" : "small"}`} src={o.photo_url} alt={`صورة محل ${o.customer_name}`} loading="lazy" />
+        </button>
+      )}
       {o.status === "delivered" && <div className="fx-note ok">سلّمت · قيمة الفاتورة {money(o.delivered_total)} · كاش {money(o.cash_paid)}</div>}
       {o.status === "failed" && <div className="fx-note crit">ما تسلّم: {o.fail_reason}</div>}
       {!closed && (
