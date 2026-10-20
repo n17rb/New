@@ -3,7 +3,7 @@ import { query, logActivity } from "../../db.js";
 import { uploadSingleImage, saveCompressedImage } from "../../middleware/upload.js";
 import { can } from "../../permissions.js";
 import { CITIES, GOVERNORATES } from "../../utils/factoryGeo.js";
-import { need, bad, brand, settings, factoryPoint, round2 } from "./lib.js";
+import { need, bad, brand, settings, factoryPoint, round2, checkVehicleDocs } from "./lib.js";
 
 // ============================================================
 // المصنع: الإعدادات الأساسية — المنتجات، السيارات، الخطوط، المكنات، المواد الخام، هوية المصنع
@@ -18,7 +18,9 @@ router.get("/bootstrap", async (req, res) => {
   const [products, vehicles, lines, machines, materials, drivers, counts, s] = await Promise.all([
     query("SELECT * FROM f_products ORDER BY active DESC, sort_order, id"),
     query(
-      `SELECT v.*, u.full_name AS driver_name FROM f_vehicles v LEFT JOIN users u ON u.id = v.driver_id
+      `SELECT v.*, u.full_name AS driver_name, to_char(v.license_expires, 'YYYY-MM-DD') AS license_expires,
+              to_char(v.insurance_expires, 'YYYY-MM-DD') AS insurance_expires
+       FROM f_vehicles v LEFT JOIN users u ON u.id = v.driver_id
        ORDER BY v.status = 'inactive', v.id`
     ),
     query("SELECT l.*, v.name AS vehicle_name FROM f_lines l LEFT JOIN f_vehicles v ON v.id = l.vehicle_id WHERE l.active ORDER BY l.governorate, l.name"),
@@ -136,17 +138,31 @@ function cleanVehicle(b) {
   const capacity = int(b.capacity, 700);
   if (capacity <= 0) throw new Error("الحمولة لازم تكون أكبر من صفر.");
   const status = ["active", "workshop", "inactive"].includes(b.status) ? b.status : "active";
-  return { name, plate: str(b.plate, 30), capacity, driver_id: b.driver_id ? Number(b.driver_id) : null, governorate: str(b.governorate, 60), status };
+  const d = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
+  return { name, plate: str(b.plate, 30), capacity, driver_id: b.driver_id ? Number(b.driver_id) : null, governorate: str(b.governorate, 60), status, license_expires: d(b.license_expires), insurance_expires: d(b.insurance_expires) };
 }
 router.post("/vehicles", edit, async (req, res) => {
   let v; try { v = cleanVehicle(req.body || {}); } catch (e) { return bad(res, e.message); }
-  const r = await query("INSERT INTO f_vehicles (name, plate, capacity, driver_id, governorate, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [v.name, v.plate, v.capacity, v.driver_id, v.governorate, v.status]);
+  const r = await query(
+    "INSERT INTO f_vehicles (name, plate, capacity, driver_id, governorate, status, license_expires, insurance_expires) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+    [v.name, v.plate, v.capacity, v.driver_id, v.governorate, v.status, v.license_expires, v.insurance_expires]
+  );
+  await checkVehicleDocs();
   res.status(201).json(r.rows[0]);
 });
 router.put("/vehicles/:id", edit, async (req, res) => {
   let v; try { v = cleanVehicle(req.body || {}); } catch (e) { return bad(res, e.message); }
-  const r = await query("UPDATE f_vehicles SET name=$1, plate=$2, capacity=$3, driver_id=$4, governorate=$5, status=$6 WHERE id=$7 RETURNING *", [v.name, v.plate, v.capacity, v.driver_id, v.governorate, v.status, req.params.id]);
+  const before = (await query("SELECT to_char(license_expires, 'YYYY-MM-DD') AS license_expires, to_char(insurance_expires, 'YYYY-MM-DD') AS insurance_expires FROM f_vehicles WHERE id = $1", [req.params.id])).rows[0];
+  const r = await query(
+    "UPDATE f_vehicles SET name=$1, plate=$2, capacity=$3, driver_id=$4, governorate=$5, status=$6, license_expires=$7, insurance_expires=$8 WHERE id=$9 RETURNING *",
+    [v.name, v.plate, v.capacity, v.driver_id, v.governorate, v.status, v.license_expires, v.insurance_expires, req.params.id]
+  );
   if (!r.rows[0]) return bad(res, "السيارة غير موجودة.", 404);
+  // تجدد الترخيص أو التأمين: التنبيهات القديمة بتتسكّر
+  const ds = (x) => x || null;
+  if (ds(before?.license_expires) !== v.license_expires) await query("UPDATE f_alerts SET closed_at = now(), closed_by = $2 WHERE kind LIKE 'license%' AND ref_id = $1 AND closed_at IS NULL", [r.rows[0].id, req.user.id]);
+  if (ds(before?.insurance_expires) !== v.insurance_expires) await query("UPDATE f_alerts SET closed_at = now(), closed_by = $2 WHERE kind LIKE 'insurance%' AND ref_id = $1 AND closed_at IS NULL", [r.rows[0].id, req.user.id]);
+  await checkVehicleDocs();
   res.json(r.rows[0]);
 });
 

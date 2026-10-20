@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query } from "../../db.js";
 import { can } from "../../permissions.js";
-import { needAny, round2, jordanDate, alert } from "./lib.js";
+import { needAny, round2, jordanDate, alert, checkVehicleDocs } from "./lib.js";
 import { loadTrips } from "./orders.js";
 import { stockBalances } from "./stock.js";
 
@@ -194,6 +194,7 @@ function machinesFix(rows) {
 
 // ---------- مراقبة تلقائية كل ١٠ دقايق (السيرفر بيشغلها لكل مصنع) ----------
 export async function factoryWatch() {
+  await checkVehicleDocs();
   // سائق متأخر عن موعد زبون أكثر من نص ساعة
   const late = (await query(
     `SELECT o.id, o.eta_at, c.name, v.name AS vehicle, u.full_name AS driver

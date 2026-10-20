@@ -79,6 +79,30 @@ export async function alert({ level = "info", kind = "general", ref = null, titl
   return r.rows[0].id;
 }
 
+// ترخيص وتأمين السيارات: تنبيه قبل ٣٠ يوم، وتنبيه أحمر قبل ٧ أيام، ويوم ما يخلص
+export async function checkVehicleDocs() {
+  const rows = (await query(
+    `SELECT id, name, (license_expires - CURRENT_DATE) AS lic, (insurance_expires - CURRENT_DATE) AS ins,
+            to_char(license_expires, 'YYYY-MM-DD') AS lic_d, to_char(insurance_expires, 'YYYY-MM-DD') AS ins_d
+     FROM f_vehicles WHERE status <> 'inactive' AND (license_expires IS NOT NULL OR insurance_expires IS NOT NULL)`
+  )).rows;
+  for (const v of rows) {
+    for (const [key, label, days, date] of [["license", "ترخيص", v.lic, v.lic_d], ["insurance", "تأمين", v.ins, v.ins_d]]) {
+      if (days == null || days > 30) continue;
+      const stage = days < 0 ? "0" : days <= 7 ? "7" : "30";
+      const title = days < 0 ? `${label} ${v.name} منتهي` : days === 0 ? `${label} ${v.name} بيخلص اليوم` : `${label} ${v.name} بيخلص بعد ${days} يوم`;
+      const body = days < 0 ? `انتهى من ${-days} يوم (${date}). السيارة ما لازم تطلع قبل ما يتجدد.` : `تاريخ الانتهاء ${date}. جدّده وعدّل التاريخ من الإعدادات ← السيارات.`;
+      // مرة بكل مرحلة، وإذا المدير سكّره بيرجع يذكّره بعد ٣ أيام (لحد ما يتجدد)
+      const seen = await query(
+        "SELECT 1 FROM f_alerts WHERE kind = $1 AND ref_id = $2 AND (closed_at IS NULL OR created_at > now() - interval '3 days')",
+        [`${key}${stage}`, v.id]
+      );
+      if (seen.rows[0]) continue;
+      await alert({ level: stage === "30" ? "warn" : "crit", kind: `${key}${stage}`, ref: v.id, title, body });
+    }
+  }
+}
+
 export async function closeAlerts(kind, ref, userId = null) {
   await query("UPDATE f_alerts SET closed_at = now(), closed_by = $3 WHERE kind = $1 AND ref_id IS NOT DISTINCT FROM $2 AND closed_at IS NULL", [kind, ref, userId]);
 }
