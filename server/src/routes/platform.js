@@ -187,6 +187,20 @@ router.post("/tenants/:id/clear-sample", async (req, res) => {
   res.json({ ok: true, ...(await runInTenant(t, () => removeSampleData())) });
 });
 
+// حذف حساب محل نهائيًا (للي ما اشتركوا): الداتا وأسماء المستخدمين والدفعات ورسائل الدعم
+router.delete("/tenants/:id", async (req, res) => {
+  const t = await getTenant(req.params.id);
+  if (!t) return res.status(404).json({ error: "المحل غير موجود." });
+  if (t.is_home || t.schema_name === "public") return res.status(400).json({ error: "ما بينفع تحذف المحل الأساسي." });
+  if (String(req.body?.confirm || "").trim() !== "احذف") return res.status(400).json({ error: "اكتب «احذف» للتأكيد." });
+  await platformQuery("DELETE FROM platform.user_directory WHERE tenant_id = $1", [t.id]);
+  await platformQuery(`DROP SCHEMA IF EXISTS ${quoteSchema(t.schema_name)} CASCADE`);
+  await platformQuery("DELETE FROM platform.tenants WHERE id = $1", [t.id]);
+  invalidateTenant(t.id);
+  console.log(`🗑️ انحذف حساب «${t.name}» (#${t.id}) من ${req.user.username}`);
+  res.json({ ok: true });
+});
+
 // معاينة المحل: توكن مشاهدة فقط لساعتين
 router.post("/tenants/:id/inspect", async (req, res) => {
   const t = await getTenant(req.params.id);

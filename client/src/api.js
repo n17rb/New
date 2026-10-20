@@ -319,6 +319,7 @@ export const api = {
   platformCreateTenant: (body) => request("/platform/tenants", { method: "POST", body }),
   platformUpdateTenant: (id, body) => request(`/platform/tenants/${id}`, { method: "PUT", body }),
   platformExtendTenant: (id, body) => request(`/platform/tenants/${id}/extend`, { method: "POST", body }),
+  platformDeleteTenant: (id) => request(`/platform/tenants/${id}`, { method: "DELETE", body: { confirm: "احذف" } }),
   platformInspectTenant: (id) => request(`/platform/tenants/${id}/inspect`, { method: "POST" }),
   platformResetTenant: (id, sample) => request(`/platform/tenants/${id}/reset`, { method: "POST", body: { sample } }),
   clearSampleData: () => request("/subscription/clear-sample", { method: "POST", body: { confirm: "امسح" } }),

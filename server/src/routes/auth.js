@@ -67,9 +67,10 @@ async function shopInfo(req) {
   };
   if (info.plan === "factory") {
     // هوية المصنع: الاسم والشعار والرقم بيطلعوا بالتطبيق والفواتير ورسائل الزباين
-    const r = await query("SELECT key, value FROM app_settings WHERE key IN ('brand_name','brand_logo','brand_phone','brand_tagline')").catch(() => ({ rows: [] }));
+    const r = await query("SELECT key, value FROM app_settings WHERE key IN ('brand_name','brand_logo','brand_phone','brand_tagline','brand_icon')").catch(() => ({ rows: [] }));
     const m = Object.fromEntries(r.rows.map((x) => [x.key, x.value]));
-    info.brand = { name: m.brand_name || t.name, logo: m.brand_logo || null, phone: m.brand_phone || t.phone || null, tagline: m.brand_tagline || null };
+    const logo = m.brand_logo || null;
+    info.brand = { name: m.brand_name || t.name, logo, icon: m.brand_icon || (logo === "/brands/al-mahdi.png" ? "/brands/al-mahdi-icon.png" : logo), phone: m.brand_phone || t.phone || null, tagline: m.brand_tagline || null };
   }
   if (access.state !== "active") {
     const s = await getPlatformSettings().catch(() => ({}));

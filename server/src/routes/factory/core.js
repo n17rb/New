@@ -234,6 +234,14 @@ router.post("/settings/logo", edit, uploadSingleImage, async (req, res) => {
   res.json({ ok: true, brand: await brand() });
 });
 
+// أيقونة التطبيق (مربعة) للشاشة الرئيسية
+router.post("/settings/icon", edit, uploadSingleImage, async (req, res) => {
+  if (!req.file) return bad(res, "اختار صورة الأيقونة.");
+  const url = await saveCompressedImage(req.file.buffer, "icon");
+  await query("INSERT INTO app_settings (key, value) VALUES ('brand_icon', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [url]);
+  res.json({ ok: true, brand: await brand() });
+});
+
 // رفع صورة (عداد، ديزل، فاتورة، تالف...) — أي موظف بالمصنع
 router.post("/upload", uploadSingleImage, async (req, res) => {
   if (!req.file) return bad(res, "ما وصلت الصورة.");

@@ -43,6 +43,11 @@ export const fapi = {
     form.append("photo", file);
     return request(`${F}/settings/logo`, { method: "POST", body: form, isFormData: true });
   },
+  uploadIcon: (file) => {
+    const form = new FormData();
+    form.append("photo", file);
+    return request(`${F}/settings/icon`, { method: "POST", body: form, isFormData: true });
+  },
   upload: (file, kind = "f") => {
     const form = new FormData();
     form.append("photo", file);

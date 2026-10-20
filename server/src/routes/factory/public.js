@@ -24,7 +24,38 @@ router.get("/f/brand/:id", async (req, res) => {
   if (!t || t.status !== "active" || t.plan !== "factory") return res.status(404).json({ error: "غير موجود." });
   setRequestTenant(t);
   const b = await brand();
-  res.json({ id: t.id, name: b.name, logo: b.logo, tagline: b.tagline, phone: b.phone });
+  res.json({ id: t.id, name: b.name, logo: b.logo, icon: b.icon, tagline: b.tagline, phone: b.phone });
+});
+
+// ملف التطبيق (manifest): لما الموظف يضيف المصنع للشاشة الرئيسية بيطلع باسم المصنع وأيقونته
+router.get("/f/manifest/:id", async (req, res) => {
+  const t = await getTenant(Number(req.params.id));
+  if (!t || t.status !== "active" || t.plan !== "factory") return res.status(404).json({ error: "غير موجود." });
+  setRequestTenant(t);
+  const b = await brand();
+  const o = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(String(req.query.o || "")) ? req.query.o : process.env.APP_URL || "https://new-1-tb2d.onrender.com";
+  const abs = (u) => (!u ? null : /^https?:/.test(u) ? u : `${o}${u}`);
+  const short = b.name.split(" ").slice(0, 2).join(" ");
+  const icon = abs(b.icon) || `${o}/icon-512.png`;
+  res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.end(JSON.stringify({
+    id: `${o}/m/${t.id}`,
+    name: b.name,
+    short_name: short,
+    start_url: `${o}/m/${t.id}`,
+    scope: `${o}/`,
+    display: "standalone",
+    orientation: "portrait",
+    dir: "rtl",
+    lang: "ar",
+    background_color: "#ffffff",
+    theme_color: "#ffffff",
+    icons: [
+      { src: icon, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: icon, sizes: "192x192", type: "image/png", purpose: "any" },
+    ],
+  }));
 });
 
 router.get("/f/track/:token", async (req, res) => {

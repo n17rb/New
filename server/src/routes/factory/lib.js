@@ -44,9 +44,12 @@ export async function settings(keys) {
 }
 
 export async function brand() {
-  const s = await settings(["brand_name", "brand_phone", "brand_logo", "brand_tagline"]);
+  const s = await settings(["brand_name", "brand_phone", "brand_logo", "brand_tagline", "brand_icon"]);
   const t = currentTenant();
-  return { name: s.brand_name || t?.name || "المصنع", phone: s.brand_phone || t?.phone || "", logo: s.brand_logo || null, tagline: s.brand_tagline || "" };
+  const logo = s.brand_logo || null;
+  // أيقونة التطبيق على الشاشة الرئيسية: المرفوعة، أو أيقونة المهدي الجاهزة، أو الشعار
+  const icon = s.brand_icon || (logo === "/brands/al-mahdi.png" ? "/brands/al-mahdi-icon.png" : logo);
+  return { name: s.brand_name || t?.name || "المصنع", phone: s.brand_phone || t?.phone || "", logo, icon, tagline: s.brand_tagline || "" };
 }
 
 export async function factoryPoint() {
