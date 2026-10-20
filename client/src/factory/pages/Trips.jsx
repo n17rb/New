@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { FiMapPin, FiArrowUp, FiArrowDown, FiClock, FiChevronLeft, FiMap } from "react-icons/fi";
+import { useEffect, useState } from "react";
+import { LiveMap, LIVE_COLORS } from "./Live.jsx";
+import { FiArrowUp, FiArrowDown, FiClock, FiNavigation, FiPhone } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, TRIP_STATUS, SendMessages, Reload, money, num, time, date, dateTime, today } from "../ui.jsx";
 import { TransferSheet, itemsLine } from "./Orders.jsx";
@@ -8,30 +8,58 @@ import { StopSheet, deliveredCartons } from "./StopSheet.jsx";
 
 export default function Trips() {
   const fx = useFx();
-  const nav = useNavigate();
   const dispatch = fx.can("f_dispatch", "edit");
   const [day, setDay] = useState("");
   const { data, error, reload } = useLoad(() => fapi.trips(day ? { date: day } : {}), [day]);
+  const [live, setLive] = useState(null);
+  const [sel, setSel] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [msgs, setMsgs] = useState(null);
+  const isToday = !day;
+
+  // الخريطة والرحلات بيتحدّثوا لحالهم كل ٣٠ ثانية
+  useEffect(() => {
+    if (!isToday) return;
+    const load = () => fapi.live().then(setLive).catch(() => {});
+    load();
+    const t = setInterval(() => { load(); reload(); }, 30000);
+    return () => clearInterval(t);
+  }, [isToday]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const liveBy = new Map((live?.vehicles || []).map((v) => [v.id, v]));
+  const trips = [...(data || [])].sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
+  const counts = { moving: trips.filter((t) => t.status === "active").length, planned: trips.filter((t) => t.status === "planned").length, back: trips.filter((t) => ["returned", "closed"].includes(t.status)).length };
+
+  function focus(t) {
+    setSel(t.vehicle_id);
+    document.querySelector(".fx-live-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   return (
     <div className="fx-page">
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1">الرحلات</h1>
-        <div className="fx-row">
-          <button className="fx-btn sm sky" onClick={() => nav("/f/live")}><FiMap /> الخريطة</button>
-          <input className="fx-input" style={{ width: 150 }} type="date" value={day || today()} onChange={(e) => setDay(e.target.value === today() ? "" : e.target.value)} aria-label="اليوم" />
-          <Reload onClick={reload} />
-        </div>
+      <div className="fx-chead">
+        <h1>الرحلات</h1>
+        <input className="fx-input" style={{ width: 150 }} type="date" value={day || today()} onChange={(e) => setDay(e.target.value === today() ? "" : e.target.value)} aria-label="اليوم" />
       </div>
-      <Tip id="trips">كل الرحلات الشغالة هون. إذا سيارة تعطلت، زر «تأخير» بيجهّز رسالة لكل زباينها مع السبب والموعد الجديد.</Tip>
       <Err msg={error} />
       {!data && !error && <Loading />}
-      {data && data.length === 0 && <Empty title="ما في رحلات" text="من شاشة الطلبات علّم على الطلبات واكبس «رحلة جديدة»." />}
+
+      {isToday && live && trips.length > 0 && (
+        <>
+          <LiveMap data={live} selected={sel} onSelect={setSel} height="42vh" />
+          <div className="fx-tripsum">
+            <span><i style={{ background: LIVE_COLORS.moving }} /> {counts.moving} بالطريق</span>
+            <span><i style={{ background: LIVE_COLORS.planned }} /> {counts.planned} جاهزة تطلع</span>
+            <span><i style={{ background: LIVE_COLORS.idle }} /> {counts.back} رجعت</span>
+          </div>
+        </>
+      )}
+
+      {data && trips.length === 0 && <Empty title="ما في رحلات" text="من الطلبات علّم على الطلبات واكبس «حطها على سيارة»." />}
       <div className="fx-stack" data-hl="trips-list">
-        {data?.map((t, i) => (
-          <TripCard key={t.id} t={t} first={i === 0} dispatch={dispatch} onOpen={(kind, o) => setSheet({ kind, t, o })} />
+        {trips.map((t, i) => (
+          <TripCard key={t.id} t={t} lv={liveBy.get(t.vehicle_id)} on={sel === t.vehicle_id} first={i === 0} dispatch={dispatch}
+            onFocus={() => focus(t)} onOpen={(kind, o) => setSheet({ kind, t, o })} />
         ))}
       </div>
 
@@ -43,56 +71,71 @@ export default function Trips() {
   );
 }
 
-function TripCard({ t, first, dispatch, onOpen }) {
-  const pct = Math.min(100, (t.load / t.capacity) * 100);
+// ٨١ ← «ساعة و٢١ د»
+const mins = (m) => (m >= 60 ? `${Math.floor(m / 60) === 1 ? "ساعة" : `${Math.floor(m / 60)} ساعات`}${m % 60 ? ` و${m % 60} د` : ""}` : `${m} د`);
+
+const RANK = { active: 0, planned: 1, returned: 2, closed: 3 };
+
+function tripState(t, lv) {
+  if (t.status === "active") return lv?.state === "lost" ? ["التتبع مقطوع", "lost"] : ["بالطريق", "moving"];
+  if (t.status === "planned") return [t.load_confirmed_at ? "جاهزة تطلع" : "لسا ما تحمّلت", "planned"];
+  if (t.status === "returned") return ["رجعت للمصنع", "idle"];
+  return ["خلصت", "idle"];
+}
+
+function TripCard({ t, lv, on, first, dispatch, onOpen, onFocus }) {
+  const [label, key] = tripState(t, lv);
+  const done = t.stops.filter((o) => ["delivered", "failed"].includes(o.status)).length;
+  const next = lv?.next;
+  const pct = t.stops.length ? Math.round((done / t.stops.length) * 100) : 0;
   return (
-    <section className="fx-card fx-stack">
-      <div className="fx-row">
-        <span className="fx-avatar">{t.vehicle_name?.replace(/\D/g, "") || "#"}</span>
-        <span className="fx-grow" style={{ display: "grid" }}>
-          <b>{t.vehicle_name} · {t.driver_name || "بدون سائق"}</b>
-          <span className="fx-muted">{date(t.trip_date)} · طلعة {t.depart_time} · {t.done}/{t.stops.length} وقفات</span>
+    <section className={`fx-trip ${on ? "on" : ""}`}>
+      <button className="fx-plain fx-trip-h" onClick={onFocus}>
+        <span className="fx-cav" style={{ background: LIVE_COLORS[key], color: "#fff" }}>{t.vehicle_name?.replace(/\D/g, "") || "#"}</span>
+        <span className="t">
+          <b>{t.driver_name || "بدون سائق"}</b>
+          <small>{t.vehicle_name} · {num(t.load)} كرتونة</small>
         </span>
-        <StatusPill map={TRIP_STATUS} value={t.status} />
-      </div>
-      <div className="fx-row" style={{ gap: 6 }}>
-        {t.late > 0 && <span className="fx-pill crit">متأخر عن {t.late} زبون</span>}
-        {t.tracking_lost && <span className="fx-pill crit">التتبع مقطوع</span>}
-        {t.load_confirmed_at ? <span className="fx-pill ok">الحمولة متأكدة</span> : t.status === "planned" && <span className="fx-pill warn">لسا ما تحمّلت</span>}
-        {t.delay_reason && <span className="fx-pill warn">تأخير: {t.delay_reason}</span>}
-      </div>
-      <div>
-        <div className="fx-row" style={{ justifyContent: "space-between", fontSize: 13 }}><span className="fx-muted">الحمولة</span><b className="fx-num">{num(t.load)} / {num(t.capacity)}</b></div>
-        <div className={`fx-bar ${t.load > t.capacity ? "over" : ""}`}><i style={{ width: `${pct}%` }} /></div>
-      </div>
-      {t.status !== "planned" && <TripSummary t={t} />}
-      <div>
-        {t.stops.map((o, i) => (
-          <button key={o.id} className="fx-stop fx-stop-btn" onClick={() => onOpen("stop", o)}>
-            <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{i + 1}</span>
-            <span style={{ display: "grid" }}>
-              <b style={{ fontSize: 14 }}>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
-              <span className="fx-muted">{o.city} · {num(o.cartons)} كرتونة{o.eta_at && !["delivered", "failed"].includes(o.status) ? ` · يوصل ${time(o.eta_at)}` : ""}</span>
-              {o.status === "delivered" && <span className="fx-ok-line">سلّم {time(o.delivered_at)} · {num(deliveredCartons(o))} كرتونة · فاتورة {money(o.delivered_total)} · كاش {money(o.cash_paid)}</span>}
-              {o.status === "failed" && <span className="fx-crit-line">ما تسلّم: {o.fail_reason}</span>}
-            </span>
-            <span className="fx-row" style={{ gap: 4, flexWrap: "nowrap" }}><StatusPill map={ORDER_STATUS} value={o.status} /><FiChevronLeft aria-hidden="true" className="fx-muted" /></span>
-          </button>
-        ))}
-      </div>
-      {["active", "returned"].includes(t.status) && (
-        <div className="fx-row fx-muted" style={{ fontSize: 13 }}>كاش محصّل {money(t.collected)} · مصاريف {money(t.expenses_total)} · المطلوب {money(t.cash_due)}</div>
+        <span className={`fx-trip-st ${key}`}>{label}</span>
+      </button>
+
+      {t.status === "active" && next && (
+        <div className="fx-trip-next">
+          <FiNavigation aria-hidden="true" />
+          <span>رايح على <b>{next.customer_name}</b></span>
+          <b className="eta">{next.minutes_away ? `بعد ${mins(next.minutes_away)}` : next.eta_at ? time(next.eta_at) : ""}</b>
+        </div>
       )}
-      <div className="fx-row">
-        {dispatch && ["planned", "active"].includes(t.status) && t.stops.some((o) => ["assigned", "onway"].includes(o.status)) && (
-          <button className="fx-btn danger sm" data-hl={first ? "delay-btn" : undefined} onClick={() => onOpen("delay")}><FiClock /> تأخير</button>
-        )}
-        <button className="fx-btn sm" onClick={() => onOpen("order")}>تفاصيل وترتيب</button>
-        {t.last_lat && (
-          <a className="fx-btn sm sky" href={`https://maps.google.com/?q=${t.last_lat},${t.last_lng}`} target="_blank" rel="noreferrer"><FiMapPin /> وين هي؟</a>
-        )}
+      {t.late > 0 && <div className="fx-trip-warn">متأخر عن {t.late} زبون</div>}
+      {t.delay_reason && <div className="fx-trip-warn">تأخير: {t.delay_reason}</div>}
+
+      <div className="fx-trip-prog"><span>سلّم {done} من {t.stops.length}</span><div className="fx-bar"><i style={{ width: `${pct}%` }} /></div></div>
+
+      <div className="fx-trip-stops">
+        {t.stops.map((o, i) => {
+          const isNext = t.status === "active" && next?.id === o.id;
+          return (
+            <button key={o.id} className={`fx-plain fx-trip-stop ${isNext ? "next" : ""}`} onClick={() => onOpen("stop", o)}>
+              <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{o.status === "delivered" ? "✓" : o.status === "failed" ? "✗" : i + 1}</span>
+              <span className="nm">{o.customer_name}</span>
+              <span className="tm">
+                {o.status === "delivered" ? `سلّم ${time(o.delivered_at)}` : o.status === "failed" ? "ما تم" : o.eta_at ? `يوصل ${time(o.eta_at)}` : ""}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      {t.last_seen_at && t.status === "active" && <span className="fx-muted" style={{ fontSize: 12 }}>آخر موقع {time(t.last_seen_at)}</span>}
+
+      {["returned", "closed"].includes(t.status) && <TripSummary t={t} />}
+
+      <div className="fx-trip-btns">
+        <button className="fx-btn sm" onClick={() => onOpen("order")}>التفاصيل</button>
+        {dispatch && ["planned", "active"].includes(t.status) && t.stops.some((o) => ["assigned", "onway"].includes(o.status)) && (
+          <button className="fx-btn sm" data-hl={first ? "delay-btn" : undefined} onClick={() => onOpen("delay")}><FiClock /> تأخير</button>
+        )}
+        {lv?.driver_phone && <a className="fx-btn sm" href={`tel:${lv.driver_phone}`}><FiPhone /> اتصل</a>}
+      </div>
+      {lv?.minutes_ago != null && t.status === "active" && <small className="fx-muted" style={{ fontSize: 12 }}>آخر موقع {lv.minutes_ago < 1 ? "هلأ" : `قبل ${lv.minutes_ago} دقيقة`}</small>}
     </section>
   );
 }

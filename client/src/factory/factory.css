@@ -541,3 +541,31 @@ a.fx-pill { text-decoration: none; }
 .fx-cargroup .row .t { flex: 1; display: grid; text-align: start; min-width: 0; }
 .fx-crow .fx-icon-btn.sm svg { width: 16px; height: 16px; }
 .fx-steps button span { white-space: nowrap; }
+
+/* الرحلات: خريطة فوق، وبطاقة واضحة لكل سيارة */
+.fx-tripsum { display: flex; gap: 14px; justify-content: center; font-size: 13px; color: var(--fx-muted); }
+.fx-tripsum i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-inline-end: 4px; vertical-align: 0; }
+.fx-trip { background: #fff; border-radius: 20px; padding: 14px; display: grid; gap: 10px; box-shadow: 0 2px 12px rgba(4, 86, 162, .05); }
+.fx-trip.on { box-shadow: 0 0 0 2px var(--fx-navy); }
+.fx-trip-h { display: flex; align-items: center; gap: 10px; width: 100%; }
+.fx-trip-h .t { flex: 1; display: grid; text-align: start; }
+.fx-trip-h b { font-size: 16.5px; }
+.fx-trip-h small { color: var(--fx-muted); font-size: 12.5px; }
+.fx-trip-st { font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #eef2f6; color: #5e7085; white-space: nowrap; }
+.fx-trip-st.moving { background: #e6f5ec; color: #1f9d55; }
+.fx-trip-st.planned { background: var(--fx-sky-soft); color: var(--fx-navy); }
+.fx-trip-st.lost { background: #fcebeb; color: #d64545; }
+.fx-trip-next { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 14px; background: #e6f5ec; color: #14653a; font-size: 14px; }
+.fx-trip-next svg { width: 18px; height: 18px; flex: none; }
+.fx-trip-next span { flex: 1; }
+.fx-trip-next .eta { font-size: 15px; white-space: nowrap; }
+.fx-trip-warn { padding: 8px 12px; border-radius: 12px; background: #fff4e0; color: #9a5b00; font-size: 13px; font-weight: 600; }
+.fx-trip-prog { display: grid; gap: 4px; font-size: 12.5px; color: var(--fx-muted); }
+.fx-trip-stops { display: grid; }
+.fx-trip-stop { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--fx-line); width: 100%; text-align: start; }
+.fx-trip-stop:last-child { border-bottom: 0; }
+.fx-trip-stop .nm { flex: 1; font-size: 14.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-trip-stop .tm { font-size: 12.5px; color: var(--fx-muted); white-space: nowrap; }
+.fx-trip-stop.next .nm { font-weight: 800; color: #14653a; }
+.fx-trip-stop.next .fx-n { background: #1f9d55; color: #fff; }
+.fx-trip-btns { display: flex; gap: 8px; flex-wrap: wrap; }
