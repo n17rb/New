@@ -3,6 +3,7 @@ import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
 import { planStops, sortNearest, km, pointOf } from "../../utils/factoryGeo.js";
 import { canAction } from "../../permissions.js";
+import { sendPushToUser } from "../../utils/push.js";
 import {
   need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint,
 } from "./lib.js";
@@ -29,9 +30,11 @@ export async function loadOrders(where, params = []) {
   const r = await query(
     `SELECT o.*, to_char(o.due_date, 'YYYY-MM-DD') AS due_date,
             c.name AS customer_name, c.seq_no, c.photo_url, c.maps_url, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
-            t.vehicle_id, t.status AS trip_status, v.name AS vehicle_name, u.full_name AS driver_name
+            t.vehicle_id, t.status AS trip_status, t.load_confirmed_at AS trip_loaded_at, t.driver_id, v.name AS vehicle_name, u.full_name AS driver_name,
+            cb.full_name AS created_by_name, eb.full_name AS edited_by_name
      FROM f_orders o JOIN f_customers c ON c.id = o.customer_id
      LEFT JOIN f_trips t ON t.id = o.trip_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id LEFT JOIN users u ON u.id = t.driver_id
+     LEFT JOIN users cb ON cb.id = o.created_by LEFT JOIN users eb ON eb.id = o.edited_by
      WHERE ${where} ORDER BY o.urgent DESC, o.stop_seq NULLS LAST, o.id`,
     params
   );
@@ -100,6 +103,21 @@ router.post("/orders", editOrders, async (req, res) => {
   let id;
   try {
     await client.query("BEGIN");
+    // تلفونين سجّلوا نفس الطلب؟ قفل على الزبون، وإذا عنده طلب مفتوح منسأل قبل ما نكرر
+    await client.query("SELECT id FROM f_customers WHERE id = $1 FOR UPDATE", [customer.id]);
+    if (!b.allow_duplicate) {
+      const open = (await client.query(
+        `SELECT o.id, o.status, o.created_at, u.full_name AS by_name,
+                (SELECT string_agg(i.qty || ' ' || p.name, '، ') FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = o.id) AS items
+         FROM f_orders o LEFT JOIN users u ON u.id = o.created_by
+         WHERE o.customer_id = $1 AND o.status IN ('new','assigned','onway','delayed') ORDER BY o.id DESC LIMIT 3`,
+        [customer.id]
+      )).rows;
+      if (open.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: `${customer.name} عنده طلب مفتوح.`, code: "duplicate", existing: open });
+      }
+    }
     id = (await client.query(
       "INSERT INTO f_orders (customer_id, due_date, urgent, notes, total, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
       [customer.id, due, !!b.urgent, b.notes ? String(b.notes).slice(0, 500) : null, total, req.user.id]
@@ -121,34 +139,68 @@ router.post("/orders", editOrders, async (req, res) => {
 });
 
 router.put("/orders/:id", editOrders, async (req, res) => {
-  const o = (await query("SELECT * FROM f_orders WHERE id = $1", [req.params.id])).rows[0];
+  const o = (await query(
+    "SELECT o.*, t.load_confirmed_at, t.driver_id, t.status AS trip_status FROM f_orders o LEFT JOIN f_trips t ON t.id = o.trip_id WHERE o.id = $1",
+    [req.params.id]
+  )).rows[0];
   if (!o) return bad(res, "الطلب غير موجود.", 404);
-  if (!["new", "assigned", "delayed"].includes(o.status)) return bad(res, "الطلب طلع مع السائق — ما بينفع يتعدل هلأ.");
+  if (["delivered", "cancelled", "failed"].includes(o.status)) return bad(res, o.status === "delivered" ? "الطلب انسلّم — ما بينفع يتعدّل." : "الطلب مسكّر — ما بينفع يتعدّل.");
+  if ((o.status === "onway" || o.load_confirmed_at) && !can(req.user, "f_dispatch", "edit")) return bad(res, "الطلب محمّل على السيارة — مسؤول الحركة بيعدّله.");
   let items; try { items = await buildItems(o.customer_id, req.body?.items, req.user); } catch (e) { return bad(res, e.message); }
+  const before = (await query("SELECT SUM(qty + bonus_qty)::int AS n FROM f_order_items WHERE order_id = $1", [o.id])).rows[0].n || 0;
+  const after = items.reduce((s, i) => s + i.qty + i.bonus, 0);
   const total = round2(items.reduce((s, i) => s + i.qty * i.price, 0));
-  await query("DELETE FROM f_order_items WHERE order_id = $1", [o.id]);
-  for (const i of items) await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,$6)", [o.id, i.product_id, i.qty, i.price, i.bonus, i.bonus_manual]);
-  const due = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.due_date || "") ? req.body.due_date : null;
-  await query(
-    "UPDATE f_orders SET total = $1, urgent = $2, notes = $3, due_date = COALESCE($4, due_date), updated_at = now() WHERE id = $5",
-    [total, !!req.body?.urgent, req.body?.notes || null, due, o.id]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM f_order_items WHERE order_id = $1", [o.id]);
+    for (const i of items) await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,$6)", [o.id, i.product_id, i.qty, i.price, i.bonus, i.bonus_manual]);
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.due_date || "") ? req.body.due_date : null;
+    await client.query(
+      "UPDATE f_orders SET total = $1, urgent = $2, notes = $3, due_date = COALESCE($4, due_date), edited_by = $6, edited_at = now(), updated_at = now() WHERE id = $5",
+      [total, !!req.body?.urgent, req.body?.notes || null, due, o.id, req.user.id]
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
   if (o.trip_id) await recomputeEta(o.trip_id);
-  res.json({ ok: true, total });
+  // السائق لازم يعرف إذا الطلب تغيّر وهو محمّل أو بالطريق
+  let warning = null;
+  if (o.trip_id && (o.load_confirmed_at || o.status === "onway")) {
+    const diff = after - before;
+    warning = diff > 0 ? `السيارة محمّلة: لازم ينحمّل ${diff} كرتونة زيادة، وإلا السائق بيسلّم الموجود معه بس.` : diff < 0 ? `${-diff} كرتونة بترجع مع السائق للمستودع.` : null;
+    if (o.driver_id) sendPushToUser(o.driver_id, { title: `تعدّل طلب #${o.id}`, body: `الكميات الجديدة: ${itemsText(items)}`, url: "/f/drive", tag: `fo-${o.id}` }).catch(() => {});
+  }
+  await logActivity({ userId: req.user.id, action: "F_UPDATE_ORDER", recordType: "f_order", recordId: o.id, newValue: { items, total } });
+  res.json({ ok: true, total, warning });
 });
 
 router.post("/orders/:id/cancel", editOrders, async (req, res) => {
-  const o = (await query("SELECT * FROM f_orders WHERE id = $1", [req.params.id])).rows[0];
+  const o = (await query(
+    "SELECT o.*, t.load_confirmed_at, t.driver_id FROM f_orders o LEFT JOIN f_trips t ON t.id = o.trip_id WHERE o.id = $1",
+    [req.params.id]
+  )).rows[0];
   if (!o) return bad(res, "الطلب غير موجود.", 404);
-  if (!["new", "assigned", "delayed", "failed"].includes(o.status)) return bad(res, "ما بينفع تلغي طلب طلع مع السائق — خليه يسجّله «ما تم التسليم».");
+  if (!["new", "assigned", "delayed", "failed", "onway"].includes(o.status)) return bad(res, "الطلب انسلّم أو انلغى من قبل.");
   if (!can(req.user, "f_dispatch", "edit") && o.status !== "new") return bad(res, "الطلب موزّع على سيارة — مسؤول الحركة بيلغيه.");
-  await query("UPDATE f_orders SET status = 'cancelled', trip_id = NULL, fail_reason = $1, updated_at = now() WHERE id = $2", [req.body?.reason || "انلغى", o.id]);
+  const reason = String(req.body?.reason || "انلغى").slice(0, 200);
+  // إذا الكراتين محمّلة، الطلب بيضل على الرحلة (ملغي) عشان المرتجع ينحسب صح
+  const loaded = !!(o.trip_id && (o.load_confirmed_at || o.status === "onway"));
+  await query(
+    `UPDATE f_orders SET status = 'cancelled', trip_id = ${loaded ? "trip_id" : "NULL"}, fail_reason = $1, edited_by = $3, edited_at = now(), updated_at = now() WHERE id = $2`,
+    [reason, o.id, req.user.id]
+  );
   if (o.trip_id) {
     await recomputeEta(o.trip_id);
-    await dropIfEmpty(o.trip_id);
+    if (!loaded) await dropIfEmpty(o.trip_id);
+    if (loaded && o.driver_id) sendPushToUser(o.driver_id, { title: `انلغى طلب #${o.id}`, body: `${reason}. الكراتين بترجع معك للمستودع.`, url: "/f/drive", tag: `fo-${o.id}` }).catch(() => {});
   }
-  await logActivity({ userId: req.user.id, action: "F_CANCEL_ORDER", recordType: "f_order", recordId: o.id, newValue: { reason: req.body?.reason } });
-  res.json({ ok: true });
+  await logActivity({ userId: req.user.id, action: "F_CANCEL_ORDER", recordType: "f_order", recordId: o.id, newValue: { reason } });
+  res.json({ ok: true, returns: loaded });
 });
 
 // طلب ما تسلّم أو تأجل: بيرجع للطلبات الجديدة عشان ينحط برحلة ثانية
@@ -174,7 +226,7 @@ export async function loadTrips(where, params = []) {
   );
   if (!r.rows.length) return [];
   const ids = r.rows.map((t) => t.id);
-  const [orders, exps, extras] = await Promise.all([
+  const [orders, exps, extras, moved] = await Promise.all([
     loadOrders("o.trip_id = ANY($1::int[])", [ids]),
     query("SELECT * FROM f_expenses WHERE trip_id = ANY($1::int[]) ORDER BY id", [ids]),
     query(
@@ -182,10 +234,19 @@ export async function loadTrips(where, params = []) {
        WHERE m.trip_id = ANY($1::int[]) AND m.kind = 'load' AND m.reason = 'زيادة للبيع' GROUP BY m.trip_id, m.product_id, p.name`,
       [ids]
     ),
+    // اللي طلع فعلًا على السيارة، واللي تلف فيها — منهم بنحسب المرتجع حتى لو الطلب تعدّل أو انلغى بعد التحميل
+    query(
+      `SELECT m.trip_id, m.product_id, p.name, m.kind, SUM(m.qty)::int AS qty FROM f_stock_moves m JOIN f_products p ON p.id = m.product_id
+       WHERE m.trip_id = ANY($1::int[]) AND (m.kind = 'load' OR (m.kind = 'damage' AND m.damage_source = 'vehicle')) GROUP BY m.trip_id, m.product_id, p.name, m.kind`,
+      [ids]
+    ),
   ]);
   const now = Date.now();
   return r.rows.map((t) => {
     const stops = orders.filter((o) => o.trip_id === t.id && o.status !== "cancelled").sort((a, b) => (a.stop_seq ?? 999) - (b.stop_seq ?? 999));
+    const cancelled_stops = orders.filter((o) => o.trip_id === t.id && o.status === "cancelled");
+    const loaded_per = moved.rows.filter((m) => m.trip_id === t.id && m.kind === "load");
+    const damaged_per = moved.rows.filter((m) => m.trip_id === t.id && m.kind === "damage");
     const expenses = exps.rows.filter((e) => e.trip_id === t.id).map((e) => ({ ...e, amount: Number(e.amount) }));
     const load = stops.reduce((s, o) => s + o.cartons, 0) + (t.extra_cartons || 0);
     const collected = round2(stops.filter((o) => o.status === "delivered").reduce((s, o) => s + o.cash_paid, 0));
@@ -199,6 +260,7 @@ export async function loadTrips(where, params = []) {
       cash_diff: t.cash_diff == null ? null : Number(t.cash_diff),
       stops, expenses, load, collected, expenses_total: expTotal, cash_due: round2(collected - expTotal),
       extra_items: extras.rows.filter((x) => x.trip_id === t.id),
+      cancelled_stops, loaded_per, damaged_per,
       done: stops.filter((o) => ["delivered", "failed"].includes(o.status)).length,
       late,
       tracking_lost: t.status === "active" && (!t.last_seen_at || now - new Date(t.last_seen_at).getTime() > 15 * 60000),
