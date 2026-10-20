@@ -8,7 +8,7 @@ export default function More({ onLogout }) {
   const nav = useNavigate();
   const items = [
     { to: "/f/customers", icon: FiUsers, label: "العملاء", hint: "بياناتهم وطلباتهم وكشف حسابهم" },
-    { to: "/f/density", icon: FiMapPin, label: "خريطة الزباين", hint: "وين زباينك متجمّعين ووين الطلب أكثر" },
+    { to: "/f/density", icon: FiMapPin, label: "خريطة العملاء", hint: "وين زباينك متجمّعين" },
     (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/recurring", icon: FiRepeat, label: "الطلبات الثابتة", hint: "زباين بياخذوا نفس الطلب كل كم يوم" },
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/live", icon: FiMap, label: "وين السيارات", hint: "كل السيارات على الخريطة ولوين متجهة" },
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/trips", icon: FiTruck, label: "الرحلات", hint: "وين كل سيارة وشو ضل عليها" },

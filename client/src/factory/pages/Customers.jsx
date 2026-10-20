@@ -35,7 +35,7 @@ export default function Customers() {
       <div className="fx-chead">
         <h1>العملاء {list && <span className="n fx-num">{num(shown.length)}</span>}</h1>
         <span className="fx-row" style={{ gap: 8, flexWrap: "nowrap" }}>
-        <button className="fx-icon-btn" onClick={() => nav("/f/density")} aria-label="خريطة الزباين"><FiMap /></button>
+        <button className="fx-icon-btn" onClick={() => nav("/f/density")} aria-label="خريطة العملاء"><FiMap /></button>
         {canAdd && <button className="fx-cadd" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون</button>}
         </span>
       </div>
