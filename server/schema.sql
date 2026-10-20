@@ -953,3 +953,7 @@ UPDATE f_customers c SET seq_no = s.n FROM (SELECT id, ROW_NUMBER() OVER (ORDER 
 -- مين عدّل الطلب آخر مرة (تعديل كميات أو إلغاء)
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS edited_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+-- منطقة الزبون: المحافظة واللواء (city ضلت للمنطقة/البلدة نفسها، مثلًا «الشجرة»)
+ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS governorate VARCHAR(40);
+ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS district VARCHAR(60);

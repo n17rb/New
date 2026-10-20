@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiImage } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { OrderSheet } from "./Orders.jsx";
+import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
+import { GOVERNORATES, inferRegion } from "../regions.js";
 import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime } from "../ui.jsx";
 
 const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع", adjust: "تعديل", opening: "رصيد افتتاحي" };
@@ -16,6 +18,8 @@ export default function Customers() {
   const canAdd = fx.can("f_customers", "edit") || fx.can("f_orders", "edit") || fx.can("f_drive", "edit");
   const canOrder = fx.can("f_orders", "edit") || fx.can("f_dispatch", "edit");
   const [msgs, setMsgs] = useState(null);
+  const [region, setRegion] = useState(null);
+  const shown = (list || []).filter((c) => matchRegion(c, region));
 
   const load = () => fapi.customers({ q, line }).then(setList).catch((e) => setError(e.message));
   useEffect(() => {
@@ -26,25 +30,20 @@ export default function Customers() {
   return (
     <div className="fx-page">
       <div className="fx-chead">
-        <h1>العملاء {list && <span className="n fx-num">{num(list.length)}</span>}</h1>
+        <h1>العملاء {list && <span className="n fx-num">{num(shown.length)}</span>}</h1>
         {canAdd && <button className="fx-cadd" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون</button>}
       </div>
       <div className="fx-csearch">
         <FiSearch aria-hidden="true" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر باسم، رقم، أو تلفون" aria-label="بحث" />
       </div>
-      {fx.boot.lines.length > 0 && (
-        <div className="fx-hscroll">
-          <button className={`fx-chip ${!line ? "on" : ""}`} onClick={() => setLine("")}>الكل</button>
-          {fx.boot.lines.map((l) => <button key={l.id} className={`fx-chip ${line === l.id ? "on" : ""}`} onClick={() => setLine(l.id)}>{l.name}</button>)}
-        </div>
-      )}
+      {list && list.length > 0 && <RegionFilter items={list} value={region} onChange={setRegion} noun="زبون" />}
       <Err msg={error} />
       {!list && !error && <Loading />}
       {list && list.length === 0 && <Empty title="ما في زباين" text={q ? "جرّب اسم ثاني." : "ضيف أول زبون من زر «زبون جديد»."} />}
       {list && list.length > 0 && (
         <div className="fx-clist">
-          {list.map((c) => (
+          {shown.map((c) => (
             <div key={c.id} className="fx-crow">
               <button className="fx-plain fx-crow-main" onClick={() => setSheet({ kind: "view", id: c.id })}>
                 {c.photo_url ? <img className="fx-cav img" src={c.photo_url} alt="" loading="lazy" /> : <span className="fx-cav">{c.name.trim().charAt(0)}</span>}
@@ -84,6 +83,7 @@ function CustomerEdit({ c, onClose, onSaved }) {
     line_id: c?.line_id || "", lat: c?.lat ?? "", lng: c?.lng ?? "", kind: c?.kind || "", pay_terms: c?.pay_terms || "cash",
     credit_limit: c?.credit_limit || "", notes: c?.notes || "", opening_balance: "",
     seq_no: c?.seq_no ?? "", photo_url: c?.photo_url || "", maps_url: c?.maps_url || "",
+    governorate: c?.governorate || "", district: c?.district || "", region_manual: false,
   }));
   const seqTouched = useRef(false);
 
@@ -115,10 +115,12 @@ function CustomerEdit({ c, onClose, onSaved }) {
         <label className="fx-sf">رقم التلفون
           <input className="fx-input" inputMode="tel" dir="ltr" value={f.phone} onChange={set("phone")} placeholder="07XXXXXXXX" />
         </label>
-        <label className="fx-sf">المنطقة
-          <input className="fx-input" list="fx-cities" value={f.city} onChange={set("city")} placeholder="مثلًا: إربد" />
+        <div className="fx-sf">المنطقة
+          <input className="fx-input" list="fx-cities" value={f.city} placeholder="مثلًا: الشجرة"
+            onChange={(e) => { const city = e.target.value; const r = inferRegion(city); setF((x) => ({ ...x, city, ...(r.governorate && !x.region_manual ? { governorate: r.governorate, district: r.district } : {}) })); }} />
           <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
-        </label>
+          <RegionPick f={f} setF={setF} />
+        </div>
 
         <div className="fx-sf">الموقع
           <SimpleLocation f={f} setF={setF} />
@@ -173,6 +175,31 @@ function CustomerEdit({ c, onClose, onSaved }) {
         <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}>احفظ الزبون</Act>
       </div>
     </Sheet>
+  );
+}
+
+// المحافظة واللواء: بيتعبّوا لحالهم من اسم المنطقة، وبتقدر تغيّرهم
+function RegionPick({ f, setF }) {
+  const [edit, setEdit] = useState(false);
+  const dists = GOVERNORATES[f.governorate] || [];
+  if (!edit) {
+    return (
+      <span className="fx-region-line">
+        {f.governorate ? <>تابعة لـ <b>{f.governorate}{f.district ? ` › ${f.district.replace(/^قصبة /, "")}` : ""}</b></> : "اختار المحافظة واللواء"}
+        <button type="button" className="fx-link" onClick={() => setEdit(true)}>{f.governorate ? "غيّر" : "اختار"}</button>
+      </span>
+    );
+  }
+  return (
+    <div className="fx-grid2">
+      <select value={f.governorate} onChange={(e) => setF((x) => ({ ...x, governorate: e.target.value, district: (GOVERNORATES[e.target.value] || [])[0] || "", region_manual: true }))} aria-label="المحافظة">
+        <option value="">المحافظة</option>
+        {Object.keys(GOVERNORATES).map((g) => <option key={g} value={g}>{g}</option>)}
+      </select>
+      <select value={f.district} onChange={(e) => setF((x) => ({ ...x, district: e.target.value, region_manual: true }))} disabled={!dists.length} aria-label="اللواء">
+        {dists.map((d) => <option key={d} value={d}>لواء {d.replace(/^قصبة /, "")}</option>)}
+      </select>
+    </div>
   );
 }
 
