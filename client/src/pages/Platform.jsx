@@ -200,7 +200,7 @@ function ShopsTab() {
 function CreatedCard({ data, onClose }) {
   const { t, username, password } = data;
   const captain = t.captain_username;
-  const text = welcomeText(t, username, password, captain);
+  const text = welcomeText(t, username, password, captain) + ((t.demo_users || []).length ? `\n\nحسابات الموظفين للتجربة (نفس كلمة السر):\n${t.demo_users.map((u) => `${u.job}: ${u.username}`).join("\n")}` : "");
   const [copied, setCopied] = useState(false);
   return (
     <div className="card receipt-banner">
@@ -212,6 +212,7 @@ function CreatedCard({ data, onClose }) {
         <div><span className="text-secondary">اسم المستخدم</span><strong dir="ltr">{username}</strong></div>
         <div><span className="text-secondary">كلمة السر</span><strong dir="ltr">{password}</strong></div>
         {captain && <div style={{ gridColumn: "1 / -1" }}><span className="text-secondary">حساب كابتن للتجربة (نفس كلمة السر)</span><strong dir="ltr">{captain}</strong></div>}
+        {(t.demo_users || []).map((u) => <div key={u.username} style={{ gridColumn: "1 / -1" }}><span className="text-secondary">{u.job}: {u.name} (نفس كلمة السر)</span><strong dir="ltr">{u.username}</strong></div>)}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         {t.phone && (
@@ -229,7 +230,7 @@ function CreatedCard({ data, onClose }) {
 
 function CreateShop({ onCancel, onCreated }) {
   const [settings, setSettings] = useState(null);
-  const [f, setF] = useState({ name: "", owner_name: "", phone: "", city: "", username: "", password: randomPassword(), monthly_price: "", days: "", is_demo: false, sample_data: true, notes: "" });
+  const [f, setF] = useState({ name: "", owner_name: "", phone: "", city: "", username: "", password: randomPassword(), monthly_price: "", days: "", is_demo: false, sample_data: true, notes: "", plan: "shop" });
   const [kind, setKind] = useState("trial"); // trial | paid | demo
 
   function chooseKind(k) {
@@ -275,9 +276,17 @@ function CreateShop({ onCancel, onCreated }) {
 
   return (
     <div className="card">
-      <h2 className="title-md" style={{ marginTop: 0 }}>اشتراك محل جديد</h2>
+      <h2 className="title-md" style={{ marginTop: 0 }}>اشتراك جديد</h2>
       {error && <div className="error-box">{error}</div>}
-      <div className="field"><label htmlFor="ns-name">اسم محل المياه</label><input id="ns-name" value={f.name} onChange={set("name")} placeholder="مثلاً: مياه النبع" /></div>
+      <div className="field">
+        <label>الباقة</label>
+        <div className="seg">
+          <button type="button" className={f.plan === "shop" ? "on" : ""} onClick={() => setF({ ...f, plan: "shop" })}>محل مياه</button>
+          <button type="button" className={f.plan === "factory" ? "on" : ""} onClick={() => setF({ ...f, plan: "factory" })}>مصنع</button>
+        </div>
+        {f.plan === "factory" && <div className="text-secondary" style={{ fontSize: "0.8rem", marginTop: 4 }}>واجهة المصانع: سيارات وخطوط، رحلات، مستودع وإنتاج، تسوية السائقين، ديزل، توالف، ضمان. فاتحة وبشعار المصنع.</div>}
+      </div>
+      <div className="field"><label htmlFor="ns-name">{f.plan === "factory" ? "اسم المصنع" : "اسم محل المياه"}</label><input id="ns-name" value={f.name} onChange={set("name")} placeholder="مثلاً: مياه النبع" /></div>
       <div className="field-row">
         <div className="field"><label htmlFor="ns-owner">اسم صاحب المحل</label><input id="ns-owner" value={f.owner_name} onChange={set("owner_name")} /></div>
         <div className="field"><label htmlFor="ns-phone">رقم التلفون</label><input id="ns-phone" value={f.phone} onChange={set("phone")} inputMode="tel" dir="ltr" /></div>
@@ -314,7 +323,7 @@ function CreateShop({ onCancel, onCreated }) {
       {kind === "trial" && (
         <label className="icon-row" style={{ gap: 10, marginBottom: 12, cursor: "pointer" }}>
           <input type="checkbox" checked={f.sample_data} onChange={set("sample_data")} style={{ width: 20, height: 20 }} />
-          <span>عبّيله داتا تجريبية (زباين، طلبات، كابتن، موظفين) عشان يجرّب فورًا — وبيقدر يمسحها لما يبلّش جد</span>
+          <span>{f.plan === "factory" ? "عبّيله داتا تجريبية (منتجات، سيارات، سائقين، زباين، طلبات) عشان يجرّب فورًا" : "عبّيله داتا تجريبية (زباين، طلبات، كابتن، موظفين) عشان يجرّب فورًا — وبيقدر يمسحها لما يبلّش جد"}</span>
         </label>
       )}
       <div className="field-row">

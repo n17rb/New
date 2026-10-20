@@ -103,7 +103,7 @@ export async function migrateAllTenants() {
 // ---------- إنشاء محل جديد ----------
 // is_demo = نسخة عرض: شغّالة بالكامل وبترجع لأولها كل يوم
 // sample_data = تعبئة داتا تجريبية (زباين، طلبات، كابتن...) عشان الزبون يجرّب فورًا
-export async function createTenant({ name, owner_name, phone, city, username, password, monthly_price, days, is_demo = false, sample_data = false, notes }) {
+export async function createTenant({ name, owner_name, phone, city, username, password, monthly_price, days, is_demo = false, sample_data = false, notes, plan = "shop" }) {
   const uname = normalizeUsername(username);
   if (!name || !uname || !password) throw new Error("اسم المحل واسم المستخدم وكلمة السر مطلوبين.");
   if (!/^[a-z0-9._-]{3,40}$/.test(uname)) throw new Error("اسم المستخدم لازم يكون أحرف إنجليزي أو أرقام (٣ أحرف على الأقل) بدون مسافات.");
@@ -112,9 +112,9 @@ export async function createTenant({ name, owner_name, phone, city, username, pa
 
   const ends = new Date(Date.now() + Math.max(1, Number(days) || 14) * DAY);
   const ins = await platformQuery(
-    `INSERT INTO platform.tenants (name, schema_name, owner_name, phone, city, monthly_price, subscription_ends_at, is_demo, notes)
-     VALUES ($1, 'pending_' || md5(random()::text), $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-    [name.trim(), owner_name || null, phone || null, city || null, Number(monthly_price) || 0, ends, !!is_demo, notes || null]
+    `INSERT INTO platform.tenants (name, schema_name, owner_name, phone, city, monthly_price, subscription_ends_at, is_demo, notes, plan)
+     VALUES ($1, 'pending_' || md5(random()::text), $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [name.trim(), owner_name || null, phone || null, city || null, Number(monthly_price) || 0, ends, !!is_demo, notes || null, plan === "factory" ? "factory" : "shop"]
   );
   const id = ins.rows[0].id;
   const schema = `shop_${id}`;
@@ -147,6 +147,7 @@ async function buildTenantData(tenant, { owner, sample }) {
   const schema = tenant.schema_name;
   await runSqlInSchema(schema, fs.readFileSync(SCHEMA_SQL_PATH, "utf-8"));
   let captain = null;
+  let demoUsers = [];
   await runInTenant(tenant, async () => {
     await query(
       `INSERT INTO users (username, password_hash, full_name, role, status, can_discount, can_delete_customer, can_edit_product_price, can_cancel_order)
@@ -157,6 +158,16 @@ async function buildTenantData(tenant, { owner, sample }) {
       `INSERT INTO app_settings (key, value) VALUES ('shop_name', $1) ON CONFLICT (key) DO UPDATE SET value = $1`,
       [tenant.name]
     );
+    if (tenant.plan === "factory") {
+      // المصنع: هوية المصنع + منتجات وسيارات أولية (وداتا تجريبية إذا بده)
+      await query(
+        "INSERT INTO app_settings (key, value) VALUES ('brand_name', $1), ('brand_phone', $2) ON CONFLICT (key) DO NOTHING",
+        [tenant.name, tenant.phone || ""]
+      );
+      const { seedFactoryBasics } = await import("./factorySeed.js");
+      demoUsers = await seedFactoryBasics({ sample, ownerUsername: owner.username, passwordHash: owner.password_hash, tenantName: tenant.name });
+      return;
+    }
     if (sample) {
       // حساب كابتن للتجربة: بيقدر يجرّب الرحلات والتسليم من موبايل ثاني
       const capName = `${owner.username}_cap`.slice(0, 40);
@@ -173,7 +184,9 @@ async function buildTenantData(tenant, { owner, sample }) {
   });
   await claimUsername(owner.username, tenant.id);
   if (captain) await claimUsername(captain.username, tenant.id);
-  return { captain_username: captain?.username || null };
+  // حسابات الموظفين التجريبيين للمصنع (سائق، حركة، مستودع...)
+  for (const u of demoUsers) await claimUsername(u.username, tenant.id).catch(() => {});
+  return { captain_username: captain?.username || null, demo_users: demoUsers };
 }
 
 // بيرجّع داتا المحل لأولها: sample=true داتا تجريبية جديدة، false = محل فاضي نظيف.

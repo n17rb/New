@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { FiUserPlus, FiChevronLeft, FiArrowRight, FiTrash2 } from "react-icons/fi";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
-import { ROLE_LABELS } from "./More.jsx";
+import { ROLE_LABELS as SHOP_ROLE_LABELS } from "./More.jsx";
+import { readShop } from "../shop.js";
+
+// المصانع: «سائق» بدل «كابتن توصيل»
+const ROLE_LABELS = readShop()?.plan === "factory" ? { ...SHOP_ROLE_LABELS, driver: "سائق" } : SHOP_ROLE_LABELS;
 
 const LEVEL_LABELS = { none: "مخفي", view: "متفرج", edit: "تعديل" };
 

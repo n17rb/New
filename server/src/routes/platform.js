@@ -39,7 +39,7 @@ async function tenantStats(t) {
 function present(t, stats = null, extra = {}) {
   return {
     id: t.id, name: t.name, owner_name: t.owner_name, phone: t.phone, city: t.city, status: t.status,
-    is_demo: t.is_demo, is_home: t.is_home, paid_ever: t.paid_ever, monthly_price: Number(t.monthly_price),
+    is_demo: t.is_demo, is_home: t.is_home, plan: t.plan || "shop", paid_ever: t.paid_ever, monthly_price: Number(t.monthly_price),
     subscription_ends_at: t.subscription_ends_at, notes: t.notes, created_at: t.created_at,
     last_active_at: t.last_active_at, access: tenantAccess(t), stats, ...extra,
   };
@@ -105,12 +105,13 @@ router.post("/tenants", async (req, res) => {
       monthly_price: b.monthly_price ?? s.default_monthly_price,
       days: b.days ?? (b.is_demo ? 365 : s.trial_days),
       is_demo: !!b.is_demo, sample_data: !!b.sample_data, notes: b.notes,
+      plan: b.plan === "factory" ? "factory" : "shop",
     });
     if (b.paid === true && !b.is_demo) {
       await platformQuery("UPDATE platform.tenants SET paid_ever = true WHERE id = $1", [t.id]);
       invalidateTenant(t.id);
     }
-    res.status(201).json(present(await getTenant(t.id), null, { captain_username: t.captain_username || null }));
+    res.status(201).json(present(await getTenant(t.id), null, { captain_username: t.captain_username || null, demo_users: t.demo_users || [] }));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -126,11 +127,12 @@ router.put("/tenants/:id", async (req, res) => {
     `UPDATE platform.tenants SET
        name = COALESCE(NULLIF($1, ''), name), owner_name = COALESCE($2, owner_name), phone = COALESCE($3, phone),
        city = COALESCE($4, city), monthly_price = COALESCE($5, monthly_price), notes = COALESCE($6, notes),
-       status = COALESCE($7, status), is_demo = COALESCE($8, is_demo)
+       status = COALESCE($7, status), is_demo = COALESCE($8, is_demo), plan = COALESCE($10, plan)
      WHERE id = $9`,
     [b.name?.trim(), b.owner_name ?? null, b.phone ?? null, b.city ?? null,
      b.monthly_price != null && b.monthly_price !== "" ? Number(b.monthly_price) : null, b.notes ?? null,
-     b.status || null, t.is_home ? false : (typeof b.is_demo === "boolean" ? b.is_demo : null), t.id]
+     b.status || null, t.is_home ? false : (typeof b.is_demo === "boolean" ? b.is_demo : null), t.id,
+     !t.is_home && ["shop", "factory"].includes(b.plan) ? b.plan : null]
   );
   if (b.status && b.status !== t.status) {
     await platformQuery(

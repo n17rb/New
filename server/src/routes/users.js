@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { query, logActivity } from "../db.js";
 import { requireAuth, invalidateUserCache } from "../middleware/auth.js";
 import { claimUsername, releaseUsername, findTenantIdByUsername } from "../utils/tenants.js";
-import { requireOwner, sanitizePermissions, effectivePermissions, TEMPLATES, ROLES } from "../permissions.js";
+import { requireOwner, sanitizePermissions, effectivePermissions, TEMPLATES, FACTORY_TEMPLATES, ROLES } from "../permissions.js";
 
 const router = Router();
 // إدارة المستخدمين والصلاحيات للمدير العام بس
@@ -45,7 +45,7 @@ router.post("/", async (req, res) => {
   const finalRole = cleanRole(role);
   const finalPermissions = finalRole === "super_admin"
     ? null
-    : sanitizePermissions(permissions || TEMPLATES[finalRole] || TEMPLATES.viewer);
+    : sanitizePermissions(permissions || (req.tenant?.plan === "factory" ? FACTORY_TEMPLATES[role] || FACTORY_TEMPLATES.viewer : TEMPLATES[finalRole] || TEMPLATES.viewer));
 
   const password_hash = await bcrypt.hash(password, 10);
   const result = await query(

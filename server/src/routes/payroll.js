@@ -117,6 +117,7 @@ function employeeSummary(emp, attMap, txList, today, month) {
     id: emp.id, name: emp.name, phone: emp.phone, job_title: emp.job_title, user_id: emp.user_id, username: emp.username,
     pay_type: emp.pay_type, pay_amount: Number(emp.pay_amount), deduct_absence: emp.deduct_absence,
     start_date: start, status: emp.status, notes: emp.notes,
+    ss_enrolled: !!emp.ss_enrolled, ss_number: emp.ss_number || null,
     today_status: attMap.get(today) || null,
     balance,
     month: {
@@ -196,6 +197,7 @@ function cleanEmployee(b) {
     job_title: b.job_title ? String(b.job_title).slice(0, 80) : null, user_id: b.user_id ? Number(b.user_id) : null,
     pay_type, pay_amount, deduct_absence: b.deduct_absence !== false,
     start_date: b.start_date || jordanDate(), notes: b.notes || null,
+    ss_enrolled: b.ss_enrolled === true, ss_number: b.ss_number ? String(b.ss_number).slice(0, 40) : null,
   };
 }
 
@@ -204,9 +206,9 @@ router.post("/employees", requireEdit, async (req, res) => {
   try { e = cleanEmployee(req.body || {}); } catch (err) { return res.status(400).json({ error: err.message }); }
   try {
     const r = await query(
-      `INSERT INTO employees (name, phone, job_title, user_id, pay_type, pay_amount, deduct_absence, start_date, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [e.name, e.phone, e.job_title, e.user_id, e.pay_type, e.pay_amount, e.deduct_absence, e.start_date, e.notes]
+      `INSERT INTO employees (name, phone, job_title, user_id, pay_type, pay_amount, deduct_absence, start_date, notes, ss_enrolled, ss_number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [e.name, e.phone, e.job_title, e.user_id, e.pay_type, e.pay_amount, e.deduct_absence, e.start_date, e.notes, e.ss_enrolled, e.ss_number]
     );
     await logActivity({ userId: req.user.id, action: "CREATE_EMPLOYEE", recordType: "employee", recordId: r.rows[0].id, newValue: e });
     res.status(201).json(r.rows[0]);
@@ -223,8 +225,8 @@ router.put("/employees/:id", requireEdit, async (req, res) => {
   try {
     const r = await query(
       `UPDATE employees SET name=$1, phone=$2, job_title=$3, user_id=$4, pay_type=$5, pay_amount=$6, deduct_absence=$7,
-         start_date=$8, notes=$9, status=$10 WHERE id=$11 RETURNING *`,
-      [e.name, e.phone, e.job_title, e.user_id, e.pay_type, e.pay_amount, e.deduct_absence, e.start_date, e.notes, status, req.params.id]
+         start_date=$8, notes=$9, status=$10, ss_enrolled=$12, ss_number=$13 WHERE id=$11 RETURNING *`,
+      [e.name, e.phone, e.job_title, e.user_id, e.pay_type, e.pay_amount, e.deduct_absence, e.start_date, e.notes, status, req.params.id, e.ss_enrolled, e.ss_number]
     );
     if (!r.rows[0]) return res.status(404).json({ error: "الموظف غير موجود." });
     await logActivity({ userId: req.user.id, action: "UPDATE_EMPLOYEE", recordType: "employee", recordId: Number(req.params.id), newValue: { ...e, status } });
@@ -297,6 +299,59 @@ router.get("/users", requireView, async (req, res) => {
      WHERE u.status = 'active' ORDER BY u.full_name`
   );
   res.json(r.rows);
+});
+
+// ---------- الضمان الاجتماعي (باقة المصانع) ----------
+// بيحسب حصة الموظف من الضمان لكل الموظفين المشتركين، وبيسجلها «خصم» على الشهر (مرة وحدة بالشهر)
+const SS_NOTE = "ضمان اجتماعي";
+async function ssRate() {
+  const r = await query("SELECT value FROM app_settings WHERE key = 'ss_employee_rate'");
+  const v = Number(r.rows[0]?.value);
+  return Number.isFinite(v) && v > 0 && v < 50 ? v : 7.5;
+}
+
+router.get("/social-security", requireView, async (req, res) => {
+  const today = jordanDate();
+  const month = /^\d{4}-\d{2}$/.test(req.query.month || "") ? req.query.month : today.slice(0, 7);
+  const rate = await ssRate();
+  const { from, to } = monthRange(month);
+  const emps = (await query("SELECT id, name, pay_type, pay_amount, ss_number FROM employees WHERE status = 'active' AND ss_enrolled ORDER BY name")).rows;
+  const done = (await query(
+    "SELECT employee_id, amount FROM employee_transactions WHERE kind = 'deduction' AND entry_date BETWEEN $1 AND $2 AND note LIKE $3",
+    [from, to, `${SS_NOTE} ${month}%`]
+  )).rows;
+  const doneMap = new Map(done.map((d) => [d.employee_id, Number(d.amount)]));
+  const list = emps.map((e) => {
+    const base = e.pay_type === "monthly" ? Number(e.pay_amount) : Number(e.pay_amount) * 26;
+    return { id: e.id, name: e.name, ss_number: e.ss_number, base: round2(base), amount: round2(base * rate / 100), deducted: doneMap.get(e.id) ?? null };
+  });
+  res.json({ month, rate, employees: list, total: round2(list.reduce((s, e) => s + e.amount, 0)) });
+});
+
+router.post("/social-security", requireEdit, async (req, res) => {
+  const today = jordanDate();
+  const month = /^\d{4}-\d{2}$/.test(req.body?.month || "") ? req.body.month : today.slice(0, 7);
+  const rate = await ssRate();
+  const { from, to } = monthRange(month);
+  const date = to > today ? today : to;
+  const emps = (await query("SELECT id, pay_type, pay_amount FROM employees WHERE status = 'active' AND ss_enrolled")).rows;
+  let added = 0;
+  for (const e of emps) {
+    const exists = await query(
+      "SELECT 1 FROM employee_transactions WHERE employee_id = $1 AND kind = 'deduction' AND entry_date BETWEEN $2 AND $3 AND note LIKE $4",
+      [e.id, from, to, `${SS_NOTE} ${month}%`]
+    );
+    if (exists.rows[0]) continue;
+    const base = e.pay_type === "monthly" ? Number(e.pay_amount) : Number(e.pay_amount) * 26;
+    const amount = round2(base * rate / 100);
+    if (amount <= 0) continue;
+    await query(
+      "INSERT INTO employee_transactions (employee_id, kind, amount, entry_date, note, created_by) VALUES ($1, 'deduction', $2, $3, $4, $5)",
+      [e.id, amount, date, `${SS_NOTE} ${month} (${rate}%)`, req.user.id]
+    );
+    added++;
+  }
+  res.json({ ok: true, added });
 });
 
 // ---------- الموظف نفسه: حسابي وتسجيل الحضور ----------

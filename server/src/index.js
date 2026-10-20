@@ -42,6 +42,7 @@ import supportRoutes from "./routes/support.js";
 import payrollRoutes from "./routes/payroll.js";
 import jardRoutes from "./routes/jard.js";
 import invoiceRoutes, { publicInvoiceRouter } from "./routes/invoices.js";
+import factoryRoutes, { factoryPublicRouter, factoryWatch } from "./routes/factory/index.js";
 
 dotenv.config();
 
@@ -110,6 +111,8 @@ app.use("/api/payroll", payrollRoutes);
 app.use("/api/jard", jardRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/public", publicInvoiceRouter);
+app.use("/api/public", factoryPublicRouter);
+app.use("/api/factory", factoryRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -129,7 +132,7 @@ async function initDbIfNeeded() {
 }
 
 // بيشغّل مهمة على كل محل شغّال (مش موقوف ومش خالص اشتراكه)
-async function forEachTenant(label, fn) {
+async function forEachTenant(label, fn, { plan = null } = {}) {
   let tenants = [];
   try {
     tenants = await listTenants({ includeSuspended: false });
@@ -140,6 +143,7 @@ async function forEachTenant(label, fn) {
   for (const t of tenants) {
     const a = tenantAccess(t);
     if (a.state === "expired" || a.state === "suspended") continue;
+    if (plan && (t.plan || "shop") !== plan) continue;
     try {
       await runInTenant(t, fn);
     } catch (err) {
@@ -171,4 +175,6 @@ initDbIfNeeded().then(() => {
   setInterval(hourlyJobs, 60 * 60 * 1000);
   // تذكير «قبل الموعد بساعة» بده فحص أكثر من مرة بالساعة
   setInterval(() => forEachTenant("الطلبات بموعد", () => checkScheduledOrders()), 10 * 60 * 1000);
+  // المصانع: سائق متأخر أو تتبع منقطع — كل ١٠ دقايق
+  setInterval(() => forEachTenant("مراقبة المصنع", () => factoryWatch(), { plan: "factory" }), 10 * 60 * 1000);
 });

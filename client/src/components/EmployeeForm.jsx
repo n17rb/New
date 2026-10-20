@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { readShop } from "../shop.js";
 
 // إضافة/تعديل موظف: الاسم، يومية أو راتب شهري، وربطه بحساب بالتطبيق (اختياري)
 export default function EmployeeForm({ initial, onCancel, onSaved }) {
@@ -14,7 +15,10 @@ export default function EmployeeForm({ initial, onCancel, onSaved }) {
     user_id: initial?.user_id || "",
     status: initial?.status || "active",
     notes: initial?.notes || "",
+    ss_enrolled: !!initial?.ss_enrolled,
+    ss_number: initial?.ss_number || "",
   });
+  const factory = readShop()?.plan === "factory";
   const [users, setUsers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -82,6 +86,15 @@ export default function EmployeeForm({ initial, onCancel, onSaved }) {
           لما تربطه: بيقدر يسجّل حضوره ويشوف حسابه، والكابتن اللي بيسلّم طلبات بينقترح حضوره تلقائيًا.
         </div>
       </div>
+      {factory && (
+        <div className="field">
+          <label className="icon-row" style={{ gap: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={f.ss_enrolled} onChange={set("ss_enrolled")} style={{ width: 20, height: 20 }} />
+            <span>مشترك بالضمان الاجتماعي</span>
+          </label>
+          {f.ss_enrolled && <input style={{ marginTop: 8 }} value={f.ss_number} onChange={set("ss_number")} placeholder="رقم الضمان (اختياري)" dir="ltr" />}
+        </div>
+      )}
       {initial && (
         <div className="field">
           <label>الحالة</label>
