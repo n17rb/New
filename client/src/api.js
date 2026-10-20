@@ -40,7 +40,7 @@ export function clearApiCache() {
   try { Object.keys(localStorage).filter((k) => k.startsWith("c:")).forEach((k) => localStorage.removeItem(k)); } catch { /* تجاهل */ }
 }
 
-async function request(path, { method = "GET", body, isFormData = false, timeout } = {}, attempt = 0) {
+export async function request(path, { method = "GET", body, isFormData = false, timeout } = {}, attempt = 0) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;

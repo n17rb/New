@@ -23,7 +23,23 @@ export const SECTIONS = [
   { key: "settings", label: "إعدادات المحل", hint: "موقع المحل اللي بتخلص فيه الرحلات" },
   { key: "activity_log", label: "سجل النشاط", hint: "مين عمل شو وإيمتى", viewOnly: true },
   { key: "backup", label: "النسخ الاحتياطي", hint: "تنزيل نسخة من كل البيانات", viewOnly: true },
+
+  // ---------- باقة المصانع (بتظهر بس عند المصنع) ----------
+  { key: "f_home", label: "لوحة المالك", hint: "حالة المصنع اليوم والتنبيهات", viewOnly: true, plan: "factory" },
+  { key: "f_orders", label: "الطلبات", hint: "تسجيل طلبات الزباين وتعديلها", plan: "factory" },
+  { key: "f_dispatch", label: "الحركة والرحلات", hint: "توزيع الطلبات على السيارات، النقل بين السائقين، رسائل التأخير", plan: "factory" },
+  { key: "f_drive", label: "تطبيق السائق", hint: "رحلته، التسليم، المصاريف، تسليم الكاش", plan: "factory" },
+  { key: "f_customers", label: "الزباين", hint: "بيانات الزباين وأسعارهم وكشف حسابهم", plan: "factory" },
+  { key: "f_stock", label: "المستودع", hint: "تحميل السيارات، المرتجع، التالف، الجرد", plan: "factory" },
+  { key: "f_production", label: "الإنتاج والمكنات", hint: "الإنتاج اليومي، المواد الخام، أعطال المكنات", plan: "factory" },
+  { key: "f_money", label: "الحسابات", hint: "استلام الكاش من السائقين، المصاريف، الديون والتحصيل", plan: "factory" },
+  { key: "f_fleet", label: "الإعدادات", hint: "المنتجات، السيارات، الخطوط، المكنات، شعار المصنع", plan: "factory" },
+  { key: "f_reports", label: "التقارير", hint: "المبيعات، التوالف، الديزل، أداء السائقين", viewOnly: true, plan: "factory" },
 ];
+
+// الأقسام اللي بتنفع للمصنع من أقسام المحل
+const FACTORY_SHARED = ["payroll", "activity_log", "backup"];
+const SHOP_ONLY_ACTIONS = ["adjust_coupons"];
 
 export const ACTIONS = [
   { key: "discount", label: "إعطاء خصم على طلب" },
@@ -33,6 +49,9 @@ export const ACTIONS = [
   { key: "adjust_coupons", label: "تعديل رصيد كوبونات العميل يدويًا" },
   { key: "give_credit", label: "البيع بالدين (الزبون بيدفع بعدين)" },
   { key: "chat_with_admin", label: "مراسلة الإدارة بالشات" },
+  { key: "approve_expense", label: "الموافقة على مصاريف السائقين", plan: "factory" },
+  { key: "adjust_stock", label: "تعديل رصيد المستودع يدويًا", plan: "factory" },
+  { key: "give_bonus", label: "إعطاء بونص (كراتين ببلاش) يدويًا على الطلب", plan: "factory" },
 ];
 
 export const LEVELS = ["none", "view", "edit"];
@@ -77,6 +96,56 @@ export const TEMPLATES = {
     actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: false, chat_with_admin: true },
   },
 };
+
+// قوالب المصنع
+const F = (o) => ({ f_home: "none", f_orders: "none", f_dispatch: "none", f_drive: "none", f_customers: "none", f_stock: "none", f_production: "none", f_money: "none", f_fleet: "none", f_reports: "none", payroll: "none", ...o });
+export const FACTORY_TEMPLATES = {
+  admin: {
+    label: "مدير",
+    sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", payroll: "edit" }),
+    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true },
+  },
+  dispatcher: {
+    label: "مسؤول الحركة",
+    sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "view" }),
+    actions: { give_credit: true },
+  },
+  driver: {
+    label: "سائق",
+    sections: F({ f_drive: "edit" }),
+    actions: { give_credit: true },
+  },
+  warehouse: {
+    label: "أمين مستودع",
+    sections: F({ f_stock: "edit", f_production: "view" }),
+    actions: {},
+  },
+  production: {
+    label: "مشرف إنتاج",
+    sections: F({ f_production: "edit", f_stock: "view" }),
+    actions: {},
+  },
+  accountant: {
+    label: "محاسب",
+    sections: F({ f_home: "view", f_money: "edit", f_customers: "view", f_reports: "view", payroll: "edit" }),
+    actions: { approve_expense: true },
+  },
+  viewer: {
+    label: "متفرج",
+    sections: F({ f_home: "view", f_orders: "view", f_dispatch: "view", f_customers: "view", f_stock: "view", f_production: "view", f_money: "view", f_fleet: "view", f_reports: "view", payroll: "view" }),
+    actions: {},
+  },
+};
+
+// الأقسام والقوالب اللي بتظهر بشاشة الصلاحيات حسب باقة المشترك
+export function permissionsMeta(plan) {
+  const factory = plan === "factory";
+  return {
+    sections: SECTIONS.filter((s) => (factory ? s.plan === "factory" || FACTORY_SHARED.includes(s.key) : s.plan !== "factory")),
+    actions: ACTIONS.filter((a) => (factory ? !SHOP_ONLY_ACTIONS.includes(a.key) && (a.plan === "factory" || ["discount", "give_credit"].includes(a.key)) : a.plan !== "factory")),
+    templates: factory ? FACTORY_TEMPLATES : TEMPLATES,
+  };
+}
 
 export const ROLES = ["super_admin", "admin", "driver", "data_entry", "viewer", "staff"];
 

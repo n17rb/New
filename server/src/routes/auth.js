@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { query, setRequestTenant } from "../db.js";
 import { signToken, requireAuth, isPlatformAdmin } from "../middleware/auth.js";
 import { findTenantIdByUsername, getTenant, tenantAccess, getPlatformSettings } from "../utils/tenants.js";
-import { effectivePermissions, SECTIONS, ACTIONS, TEMPLATES } from "../permissions.js";
+import { effectivePermissions, permissionsMeta } from "../permissions.js";
 
 const router = Router();
 
@@ -63,7 +63,14 @@ async function shopInfo(req) {
     access,
     platform_admin: isPlatformAdmin({ tenant: t, user: req.user }),
     inspecting: !!req.user?.inspecting,
+    plan: t.plan === "factory" ? "factory" : "shop",
   };
+  if (info.plan === "factory") {
+    // هوية المصنع: الاسم والشعار والرقم بيطلعوا بالتطبيق والفواتير ورسائل الزباين
+    const r = await query("SELECT key, value FROM app_settings WHERE key IN ('brand_name','brand_logo','brand_phone','brand_tagline')").catch(() => ({ rows: [] }));
+    const m = Object.fromEntries(r.rows.map((x) => [x.key, x.value]));
+    info.brand = { name: m.brand_name || t.name, logo: m.brand_logo || null, phone: m.brand_phone || t.phone || null, tagline: m.brand_tagline || null };
+  }
   if (access.state !== "active") {
     const s = await getPlatformSettings().catch(() => ({}));
     info.payment = {
@@ -81,7 +88,7 @@ router.get("/me", requireAuth, async (req, res) => {
 
 // تعريف الأقسام والإجراءات والقوالب — لشاشة الصلاحيات
 router.get("/permissions-meta", requireAuth, (req, res) => {
-  res.json({ sections: SECTIONS, actions: ACTIONS, templates: TEMPLATES });
+  res.json(permissionsMeta(req.tenant?.plan));
 });
 
 export default router;

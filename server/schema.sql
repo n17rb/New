@@ -621,3 +621,320 @@ WHERE is_sample = false
 UPDATE employees SET is_sample = true
 WHERE is_sample = false AND ((name = 'كابتن تجريبي' AND job_title = 'كابتن') OR (name = 'عامل تعبئة' AND job_title = 'تعبئة'))
   AND EXISTS (SELECT 1 FROM employee_transactions t WHERE t.employee_id = employees.id AND t.note = 'سحب (تجريبي)');
+
+-- ============================================================
+-- باقة المصانع (موج للمصانع): كل الجداول بتبلش بـ f_
+-- بتنعمل بكل المحلات بس ما بتستعمل إلا عند المشترك اللي باقته «مصنع».
+-- ============================================================
+CREATE TABLE IF NOT EXISTS f_products (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  per_carton INTEGER NOT NULL DEFAULT 0,
+  price NUMERIC(10,3) NOT NULL DEFAULT 0 CHECK (price >= 0),
+  min_stock INTEGER NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS f_vehicles (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  plate VARCHAR(30),
+  capacity INTEGER NOT NULL DEFAULT 700 CHECK (capacity > 0),
+  driver_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  governorate VARCHAR(60),
+  status VARCHAR(15) NOT NULL DEFAULT 'active' CHECK (status IN ('active','workshop','inactive')),
+  last_lat DOUBLE PRECISION,
+  last_lng DOUBLE PRECISION,
+  last_seen_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS f_lines (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  governorate VARCHAR(60),
+  vehicle_id INTEGER REFERENCES f_vehicles(id) ON DELETE SET NULL,
+  days VARCHAR(20),
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS f_customers (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  contact_name VARCHAR(100),
+  phone VARCHAR(30),
+  city VARCHAR(60),
+  address TEXT,
+  line_id INTEGER REFERENCES f_lines(id) ON DELETE SET NULL,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  kind VARCHAR(30),
+  pay_terms VARCHAR(10) NOT NULL DEFAULT 'cash' CHECK (pay_terms IN ('cash','credit')),
+  credit_limit NUMERIC(12,2) NOT NULL DEFAULT 0,
+  balance NUMERIC(12,2) NOT NULL DEFAULT 0,
+  notes TEXT,
+  track_token VARCHAR(40) UNIQUE,
+  is_sample BOOLEAN NOT NULL DEFAULT false,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_customers_line ON f_customers(line_id);
+
+CREATE TABLE IF NOT EXISTS f_customer_prices (
+  customer_id INTEGER NOT NULL REFERENCES f_customers(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES f_products(id) ON DELETE CASCADE,
+  price NUMERIC(10,3) NOT NULL CHECK (price >= 0),
+  PRIMARY KEY (customer_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS f_trips (
+  id SERIAL PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES f_vehicles(id),
+  driver_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  trip_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  status VARCHAR(15) NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','active','returned','closed','cancelled')),
+  depart_time VARCHAR(5) NOT NULL DEFAULT '08:00',
+  extra_cartons INTEGER NOT NULL DEFAULT 0,
+  load_confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  load_confirmed_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
+  returned_at TIMESTAMPTZ,
+  odo_start INTEGER,
+  odo_end INTEGER,
+  fuel_start VARCHAR(20),
+  fuel_end VARCHAR(20),
+  photo_odo_start TEXT,
+  photo_fuel_start TEXT,
+  photo_odo_end TEXT,
+  photo_fuel_end TEXT,
+  gps_km NUMERIC(10,2) NOT NULL DEFAULT 0,
+  required_cash NUMERIC(12,2),
+  handed_cash NUMERIC(12,2),
+  cash_diff NUMERIC(12,2),
+  settled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  settled_at TIMESTAMPTZ,
+  returns_received_at TIMESTAMPTZ,
+  returns_received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  delay_reason TEXT,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_trips_date ON f_trips(trip_date DESC);
+
+CREATE TABLE IF NOT EXISTS f_orders (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES f_customers(id),
+  status VARCHAR(15) NOT NULL DEFAULT 'new' CHECK (status IN ('new','assigned','onway','delivered','failed','delayed','cancelled')),
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE SET NULL,
+  stop_seq INTEGER,
+  eta_at TIMESTAMPTZ,
+  due_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  urgent BOOLEAN NOT NULL DEFAULT false,
+  notes TEXT,
+  total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  delivered_total NUMERIC(12,2),
+  cash_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
+  fail_reason TEXT,
+  delay_reason TEXT,
+  signature TEXT,
+  proof_photo TEXT,
+  delivered_lat DOUBLE PRECISION,
+  delivered_lng DOUBLE PRECISION,
+  delivered_at TIMESTAMPTZ,
+  invoice_token VARCHAR(40) UNIQUE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_orders_status ON f_orders(status);
+CREATE INDEX IF NOT EXISTS idx_f_orders_trip ON f_orders(trip_id);
+CREATE INDEX IF NOT EXISTS idx_f_orders_customer ON f_orders(customer_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS f_order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES f_orders(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES f_products(id),
+  qty INTEGER NOT NULL CHECK (qty > 0),
+  price NUMERIC(10,3) NOT NULL,
+  delivered_qty INTEGER,
+  damaged_qty INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_f_items_order ON f_order_items(order_id);
+
+-- كشف حساب الزبون: الموجب بيزيد الدين، السالب بينزّله
+CREATE TABLE IF NOT EXISTS f_ledger (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES f_customers(id) ON DELETE CASCADE,
+  kind VARCHAR(15) NOT NULL CHECK (kind IN ('invoice','payment','return','adjust','opening')),
+  amount NUMERIC(12,2) NOT NULL,
+  balance_after NUMERIC(12,2) NOT NULL,
+  order_id INTEGER REFERENCES f_orders(id) ON DELETE SET NULL,
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE SET NULL,
+  method VARCHAR(15),
+  cheque_no VARCHAR(40),
+  cheque_date DATE,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_ledger_customer ON f_ledger(customer_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS f_expenses (
+  id SERIAL PRIMARY KEY,
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE SET NULL,
+  vehicle_id INTEGER REFERENCES f_vehicles(id) ON DELETE SET NULL,
+  driver_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  kind VARCHAR(20) NOT NULL,
+  amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  liters NUMERIC(8,2),
+  odo INTEGER,
+  photo_url TEXT,
+  odo_photo_url TEXT,
+  note TEXT,
+  status VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_expenses_status ON f_expenses(status, created_at DESC);
+
+-- حركة المستودع: الكمية بالإشارة (+ دخل المستودع، − طلع منه)
+CREATE TABLE IF NOT EXISTS f_stock_moves (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER NOT NULL REFERENCES f_products(id),
+  kind VARCHAR(15) NOT NULL CHECK (kind IN ('production','load','return','damage','adjust','count')),
+  qty INTEGER NOT NULL,
+  damage_source VARCHAR(15) CHECK (damage_source IN ('warehouse','vehicle','machine','customer')),
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE SET NULL,
+  vehicle_id INTEGER REFERENCES f_vehicles(id) ON DELETE SET NULL,
+  machine_id INTEGER,
+  downtime_id INTEGER,
+  shift VARCHAR(10),
+  reason TEXT,
+  photo_url TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_moves_product ON f_stock_moves(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_f_moves_created ON f_stock_moves(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS f_machines (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS f_downtime (
+  id SERIAL PRIMARY KEY,
+  machine_id INTEGER NOT NULL REFERENCES f_machines(id) ON DELETE CASCADE,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at TIMESTAMPTZ,
+  reason VARCHAR(100) NOT NULL,
+  repair_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS f_materials (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  unit VARCHAR(20) NOT NULL DEFAULT 'حبة',
+  balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+  min_level NUMERIC(14,2) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS f_material_moves (
+  id SERIAL PRIMARY KEY,
+  material_id INTEGER NOT NULL REFERENCES f_materials(id) ON DELETE CASCADE,
+  kind VARCHAR(10) NOT NULL CHECK (kind IN ('receive','use','adjust')),
+  qty NUMERIC(14,2) NOT NULL,
+  cost NUMERIC(12,2),
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- كم بتصرف كل كرتونة من كل مادة خام
+CREATE TABLE IF NOT EXISTS f_recipes (
+  product_id INTEGER NOT NULL REFERENCES f_products(id) ON DELETE CASCADE,
+  material_id INTEGER NOT NULL REFERENCES f_materials(id) ON DELETE CASCADE,
+  qty_per_carton NUMERIC(10,3) NOT NULL CHECK (qty_per_carton > 0),
+  PRIMARY KEY (product_id, material_id)
+);
+
+CREATE TABLE IF NOT EXISTS f_alerts (
+  id SERIAL PRIMARY KEY,
+  level VARCHAR(5) NOT NULL DEFAULT 'info' CHECK (level IN ('crit','warn','info','ok')),
+  kind VARCHAR(20) NOT NULL DEFAULT 'general',
+  ref_id INTEGER,
+  title VARCHAR(200) NOT NULL,
+  body TEXT,
+  closed_at TIMESTAMPTZ,
+  closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_alerts_open ON f_alerts(closed_at, created_at DESC);
+
+-- رسائل الزباين (بتنبعت على واتساب من زر بالتطبيق)
+CREATE TABLE IF NOT EXISTS f_messages (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES f_customers(id) ON DELETE CASCADE,
+  order_id INTEGER REFERENCES f_orders(id) ON DELETE SET NULL,
+  kind VARCHAR(20) NOT NULL DEFAULT 'custom',
+  body TEXT NOT NULL,
+  sent_at TIMESTAMPTZ,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_messages_customer ON f_messages(customer_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS f_positions (
+  id BIGSERIAL PRIMARY KEY,
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE CASCADE,
+  vehicle_id INTEGER REFERENCES f_vehicles(id) ON DELETE CASCADE,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_positions_trip ON f_positions(trip_id, id);
+
+-- عُهد السائقين: الموجب = عليه للمصنع
+CREATE TABLE IF NOT EXISTS f_driver_ledger (
+  id SERIAL PRIMARY KEY,
+  driver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind VARCHAR(15) NOT NULL CHECK (kind IN ('shortage','surplus','payment','deduction','adjust')),
+  amount NUMERIC(12,2) NOT NULL,
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE SET NULL,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_driver_ledger ON f_driver_ledger(driver_id, id DESC);
+
+-- الضمان الاجتماعي للموظفين (بيظهر بس بباقة المصانع)
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ss_enrolled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ss_number VARCHAR(40);
+
+-- صورة المنتج (بتطلع للموظف وهو بيسجّل الطلب)
+ALTER TABLE f_products ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- البونص: كراتين ببلاش مع الطلب (مثلًا كل ١٠٠ كرتونة → ٥ بونص). بتنحمّل وبتتسلّم بس ما بتنحسب بالفاتورة
+CREATE TABLE IF NOT EXISTS f_bonus_rules (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100),
+  product_id INTEGER REFERENCES f_products(id) ON DELETE CASCADE,
+  customer_id INTEGER REFERENCES f_customers(id) ON DELETE CASCADE,
+  every_qty INTEGER NOT NULL CHECK (every_qty > 0),
+  bonus_qty INTEGER NOT NULL CHECK (bonus_qty > 0),
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS bonus_manual BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS delivered_bonus INTEGER;

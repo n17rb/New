@@ -1,0 +1,256 @@
+import { useEffect, useState } from "react";
+import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2 } from "react-icons/fi";
+import { fapi } from "../fapi.js";
+import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime } from "../ui.jsx";
+
+const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع", adjust: "تعديل", opening: "رصيد افتتاحي" };
+
+export default function Customers() {
+  const fx = useFx();
+  const [q, setQ] = useState("");
+  const [line, setLine] = useState("");
+  const [list, setList] = useState(null);
+  const [error, setError] = useState("");
+  const [sheet, setSheet] = useState(null);
+  const canAdd = fx.can("f_customers", "edit") || fx.can("f_orders", "edit") || fx.can("f_drive", "edit");
+
+  const load = () => fapi.customers({ q, line }).then(setList).catch((e) => setError(e.message));
+  useEffect(() => {
+    const t = setTimeout(load, 250);
+    return () => clearTimeout(t);
+  }, [q, line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="fx-page">
+      <div className="fx-row" style={{ justifyContent: "space-between" }}>
+        <h1 className="fx-h1">الزباين</h1>
+        {canAdd && <button className="fx-btn pri sm" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون جديد</button>}
+      </div>
+      <Tip id="customers">كل زبون مربوط بخط، وكل خط بسيارة. من هون بتشوف كشف حسابه وبتبعتله رابط يتابع فيه طلباته لحاله.</Tip>
+      <div className="fx-row" style={{ flexWrap: "nowrap" }}>
+        <FiSearch style={{ color: "var(--fx-muted)" }} />
+        <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم، تلفون، أو مدينة" />
+      </div>
+      {fx.boot.lines.length > 0 && (
+        <div className="fx-hscroll">
+          <button className={`fx-chip ${!line ? "on" : ""}`} onClick={() => setLine("")}>الكل</button>
+          {fx.boot.lines.map((l) => <button key={l.id} className={`fx-chip ${line === l.id ? "on" : ""}`} onClick={() => setLine(l.id)}>{l.name}</button>)}
+        </div>
+      )}
+      <Err msg={error} />
+      {!list && !error && <Loading />}
+      {list && list.length === 0 && <Empty title="ما في زباين" text={q ? "جرّب اسم ثاني." : "ضيف أول زبون من زر «زبون جديد»."} />}
+      {list && list.length > 0 && (
+        <div className="fx-list">
+          {list.map((c) => (
+            <button key={c.id} className="fx-item" onClick={() => setSheet({ kind: "view", id: c.id })}>
+              <span className="fx-avatar">{c.name.trim().charAt(0)}</span>
+              <span className="t">
+                <b>{c.name}</b>
+                <span>{c.city || "بدون مدينة"}{c.line_name ? ` · ${c.line_name}` : ""}{c.open_orders ? ` · ${c.open_orders} طلب مفتوح` : ""}</span>
+              </span>
+              {c.balance !== undefined && c.balance > 0 && (
+                <span className="end"><b className={`fx-num`} style={{ color: c.credit_limit && c.balance > c.credit_limit ? "var(--fx-crit)" : "var(--fx-ink)" }}>{money(c.balance)}</b><span className="fx-muted" style={{ fontSize: 11.5 }}>عليه</span></span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {sheet?.kind === "edit" && <CustomerEdit c={sheet.c} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); load(); }} />}
+      {sheet?.kind === "view" && <CustomerView id={sheet.id} onClose={() => setSheet(null)} onEdit={(c) => setSheet({ kind: "edit", c })} onChanged={load} />}
+    </div>
+  );
+}
+
+function CustomerEdit({ c, onClose, onSaved }) {
+  const fx = useFx();
+  const canMoney = fx.can("f_money", "edit");
+  const canPrices = fx.can("f_customers", "edit");
+  const [f, setF] = useState(() => ({
+    name: c?.name || "", contact_name: c?.contact_name || "", phone: c?.phone || "", city: c?.city || "", address: c?.address || "",
+    line_id: c?.line_id || "", lat: c?.lat ?? "", lng: c?.lng ?? "", kind: c?.kind || "", pay_terms: c?.pay_terms || "cash",
+    credit_limit: c?.credit_limit || "", notes: c?.notes || "", opening_balance: "",
+  }));
+  const [prices, setPrices] = useState(() => Object.fromEntries((c?.prices || []).map((p) => [p.product_id, p.price])));
+  const [err, setErr] = useState("");
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  async function here() {
+    const loc = await getLocation();
+    if (!loc) return fx.toast("ما قدرنا نجيب الموقع — شغّل الموقع (GPS) بالتلفون.");
+    setF((x) => ({ ...x, lat: loc.lat, lng: loc.lng }));
+    fx.toast("انحفظ موقعك الحالي كموقع للزبون");
+  }
+
+  return (
+    <Sheet title={c ? `تعديل ${c.name}` : "زبون جديد"} onClose={onClose}>
+      <div className="fx-stack">
+        <label className="fx-field">اسم المحل<input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: بقالة الأمل" /></label>
+        <div className="fx-grid2">
+          <label className="fx-field">التلفون<input className="fx-input" inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="07XXXXXXXX" /></label>
+          <label className="fx-field">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
+        </div>
+        <div className="fx-grid2">
+          <label className="fx-field">المدينة
+            <input className="fx-input" list="fx-cities" value={f.city} onChange={set("city")} />
+            <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
+          </label>
+          <label className="fx-field">الخط
+            <select value={f.line_id} onChange={set("line_id")}>
+              <option value="">بدون</option>
+              {fx.boot.lines.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <label className="fx-field">العنوان بالتفصيل<input className="fx-input" value={f.address} onChange={set("address")} placeholder="الشارع، جنب..." /></label>
+        <div className="fx-row">
+          <button className="fx-btn sky sm" onClick={here}><FiMapPin /> موقعي هلأ (إذا إنت عند الزبون)</button>
+          {f.lat !== "" && <span className="fx-pill ok">الموقع محفوظ</span>}
+        </div>
+        <div className="fx-field">طريقة الدفع
+          <div className="fx-chips">
+            <button className={`fx-chip ${f.pay_terms === "cash" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "cash" })}>كاش</button>
+            <button className={`fx-chip ${f.pay_terms === "credit" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "credit" })}>دين (ذمم)</button>
+          </div>
+        </div>
+        {f.pay_terms === "credit" && <label className="fx-field">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
+        {!c && canMoney && <label className="fx-field">رصيد قديم عليه (اختياري)<input className="fx-input" type="number" inputMode="decimal" value={f.opening_balance} onChange={set("opening_balance")} /></label>}
+        {canPrices && fx.boot.products.length > 0 && (
+          <details>
+            <summary className="fx-link">أسعار خاصة لهالزبون (اختياري)</summary>
+            <div className="fx-stack" style={{ marginTop: 8 }}>
+              {fx.boot.products.filter((p) => p.active).map((p) => (
+                <label key={p.id} className="fx-row" style={{ flexWrap: "nowrap" }}>
+                  <span className="fx-grow">{p.name} <span className="fx-muted">(العادي {money(p.price)})</span></span>
+                  <input className="fx-input" style={{ width: 110 }} type="number" inputMode="decimal" value={prices[p.id] ?? ""} onChange={(e) => setPrices({ ...prices, [p.id]: e.target.value })} placeholder="—" />
+                </label>
+              ))}
+            </div>
+          </details>
+        )}
+        <label className="fx-field">ملاحظات<input className="fx-input" value={f.notes} onChange={set("notes")} /></label>
+        <Err msg={err} />
+        <Act className="fx-btn pri block" onClick={async () => {
+          setErr("");
+          try {
+            await fapi.saveCustomer({ ...f, id: c?.id, prices: Object.entries(prices).map(([product_id, price]) => ({ product_id: Number(product_id), price })) });
+            fx.toast("انحفظ الزبون");
+            onSaved();
+          } catch (e) { setErr(e.message); }
+        }}>احفظ</Act>
+      </div>
+    </Sheet>
+  );
+}
+
+function CustomerView({ id, onClose, onEdit, onChanged }) {
+  const fx = useFx();
+  const [c, setC] = useState(null);
+  const [err, setErr] = useState("");
+  const [pay, setPay] = useState(false);
+  const [msgs, setMsgs] = useState(null);
+  const [custom, setCustom] = useState("");
+  const load = () => fapi.customer(id).then(setC).catch((e) => setErr(e.message));
+  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const canPay = fx.can("f_money", "edit") || fx.can("f_customers", "edit");
+
+  if (msgs) return <SendMessages ids={msgs} onClose={() => setMsgs(null)} />;
+  if (pay && c) return <PaymentSheet c={c} onClose={() => setPay(false)} onSaved={(r) => { setPay(false); load(); onChanged(); fx.toast("انسجلت الدفعة"); if (r?.message_ids) setMsgs(r.message_ids); }} />;
+  return (
+    <Sheet title={c?.name || "الزبون"} onClose={onClose}>
+      <Err msg={err} />
+      {!c && !err && <Loading />}
+      {c && (
+        <div className="fx-stack">
+          <div className="fx-card">
+            <div className="fx-kv"><span>الرصيد عليه</span><b style={{ color: c.balance > 0 ? "var(--fx-crit)" : "var(--fx-ok)" }}>{money(c.balance)} د.أ</b></div>
+            {c.pay_terms === "credit" && <div className="fx-kv"><span>سقف الدين</span><b>{money(c.credit_limit)}</b></div>}
+            <div className="fx-kv"><span>المدينة · الخط</span><b>{c.city || "—"} · {c.line_name || "—"}</b></div>
+            {c.phone && <div className="fx-kv"><span>التلفون</span><b dir="ltr">{c.phone}</b></div>}
+          </div>
+          <div className="fx-row">
+            {fx.can("f_customers", "edit") && <button className="fx-btn sm" onClick={() => onEdit(c)}><FiEdit2 /> عدّل</button>}
+            {canPay && <button className="fx-btn pri sm" onClick={() => setPay(true)}>سجّل دفعة</button>}
+            {c.phone && <a className="fx-btn sm" href={`tel:${c.phone}`}><FiPhone /> اتصل</a>}
+            {c.lat && <a className="fx-btn sm sky" href={`https://maps.google.com/?q=${c.lat},${c.lng}`} target="_blank" rel="noreferrer"><FiMapPin /> الموقع</a>}
+          </div>
+          {c.phone && (
+            <Act className="fx-btn wa block" onClick={async () => {
+              const r = await fapi.trackLink(c.id);
+              window.open(waLink(c.phone, r.text), "_blank");
+            }}><FiLink /> ابعتله رابط متابعة طلباته وكشف حسابه</Act>
+          )}
+          <div className="fx-row" style={{ flexWrap: "nowrap" }}>
+            <input className="fx-input" value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="رسالة خاصة من الإدارة..." />
+            <Act className="fx-btn wa" disabled={!custom.trim()} onClick={async () => { const r = await fapi.sendMessage({ body: custom, customer_ids: [c.id] }); setCustom(""); setMsgs(r.ids); }}><FiMessageCircle /></Act>
+          </div>
+
+          <div className="fx-sec"><h2>آخر الطلبات</h2></div>
+          <div className="fx-list">
+            {c.orders.length === 0 && <div className="fx-item"><span className="fx-muted">ما في طلبات لسا.</span></div>}
+            {c.orders.slice(0, 8).map((o) => (
+              <div key={o.id} className="fx-item">
+                <span className="t"><b>#{o.id} · {o.items}</b><span>{date(o.created_at)}{o.delivered_total != null ? ` · ${money(o.delivered_total)}` : ""}</span></span>
+                <StatusPill map={ORDER_STATUS} value={o.status} />
+              </div>
+            ))}
+          </div>
+
+          <div className="fx-sec"><h2>كشف الحساب</h2></div>
+          <div className="fx-table">
+            <table>
+              <thead><tr><th>التاريخ</th><th>البيان</th><th>المبلغ</th><th>الرصيد</th></tr></thead>
+              <tbody>
+                {c.ledger.map((g) => (
+                  <tr key={g.id}>
+                    <td>{dateTime(g.created_at)}</td>
+                    <td>{KIND[g.kind]}{g.method === "cheque" ? ` (شيك ${g.cheque_no || ""})` : ""}{g.note ? ` · ${g.note}` : ""}</td>
+                    <td style={{ color: g.amount < 0 ? "var(--fx-ok)" : "inherit" }}>{money(g.amount)}</td>
+                    <td>{money(g.balance_after)}</td>
+                  </tr>
+                ))}
+                {c.ledger.length === 0 && <tr><td colSpan={4} className="fx-muted">ما في حركات.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+function PaymentSheet({ c, onClose, onSaved }) {
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [chequeNo, setChequeNo] = useState("");
+  const [chequeDate, setChequeDate] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  return (
+    <Sheet title={`دفعة من ${c.name}`} onClose={onClose}>
+      <div className="fx-stack">
+        <p className="fx-muted" style={{ margin: 0 }}>عليه هلأ {money(c.balance)} د.أ</p>
+        <label className="fx-field">المبلغ (دينار)<input className="fx-input" type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
+        <div className="fx-chips">
+          {[["cash", "كاش"], ["cheque", "شيك"], ["transfer", "تحويل / كليك"]].map(([k, l]) => <button key={k} className={`fx-chip ${method === k ? "on" : ""}`} onClick={() => setMethod(k)}>{l}</button>)}
+        </div>
+        {method === "cheque" && (
+          <div className="fx-grid2">
+            <label className="fx-field">رقم الشيك<input className="fx-input" value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
+            <label className="fx-field">تاريخ الصرف<input className="fx-input" type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)} /></label>
+          </div>
+        )}
+        <label className="fx-field">ملاحظة<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <Err msg={err} />
+        <Act className="fx-btn pri block" disabled={!(Number(amount) > 0)} onClick={async () => {
+          setErr("");
+          try {
+            await fapi.payment(c.id, { amount, method, cheque_no: chequeNo, cheque_date: chequeDate, note });
+            const m = await fapi.messages({ customer: c.id });
+            onSaved({ message_ids: m.filter((x) => x.kind === "payment" && !x.sent_at).slice(0, 1).map((x) => x.id) });
+          } catch (e) { setErr(e.message); }
+        }}>سجّل الدفعة {Number(amount) > 0 ? `(${num(amount)})` : ""}</Act>
+      </div>
+    </Sheet>
+  );
+}

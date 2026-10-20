@@ -105,3 +105,6 @@ UPDATE platform.tenants t SET paid_ever = true
 WHERE NOT t.paid_ever AND EXISTS (SELECT 1 FROM platform.payments p WHERE p.tenant_id = t.id AND p.status = 'approved');
 -- نسخ العرض (ديمو) بترجع لأولها كل يوم
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS demo_reset_on DATE;
+
+-- الباقة: shop = محل مي (الافتراضي)، factory = مصنع
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS plan VARCHAR(10) NOT NULL DEFAULT 'shop';

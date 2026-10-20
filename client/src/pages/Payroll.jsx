@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiPlus, FiChevronRight, FiChevronLeft, FiZap } from "react-icons/fi";
-import { api } from "../api.js";
+import { api, request } from "../api.js";
+import { readShop } from "../shop.js";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import EmployeeForm from "../components/EmployeeForm.jsx";
 
@@ -113,6 +114,8 @@ export default function Payroll() {
         </div>
       )}
 
+      {readShop()?.plan === "factory" && data && <SocialSecurityCard editable={editable} onDone={() => load(date)} />}
+
       {editable && data && data.totals.unmarked > 0 && (
         <button className="btn-secondary" style={{ marginBottom: 10 }} onClick={markAllPresent}>سجّل الباقيين حاضرين ({data.totals.unmarked})</button>
       )}
@@ -185,6 +188,34 @@ export default function Payroll() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+
+// الضمان الاجتماعي (باقة المصانع): حصة الموظف بتنخصم من راتبه مرة بالشهر بكبسة
+function SocialSecurityCard({ editable, onDone }) {
+  const [ss, setSs] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => request("/payroll/social-security").then(setSs).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!ss || ss.employees.length === 0) return null;
+  const pending = ss.employees.filter((e) => e.deducted == null);
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+        <b>الضمان الاجتماعي · {ss.month}</b>
+        <span className="tabular-num">{ss.total.toFixed(2)} JD</span>
+      </div>
+      <div className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 4 }}>
+        {ss.employees.length} موظف مشترك · حصة الموظف {ss.rate}% · {pending.length ? `لسا ما انخصم عن ${pending.length}` : "انخصم عن الكل هالشهر"}
+      </div>
+      {editable && pending.length > 0 && (
+        <button className="btn-secondary" style={{ marginTop: 10 }} disabled={busy} onClick={async () => {
+          setBusy(true);
+          try { await request("/payroll/social-security", { method: "POST", body: { month: ss.month } }); await load(); onDone(); } finally { setBusy(false); }
+        }}>اخصم الضمان لهالشهر</button>
       )}
     </div>
   );

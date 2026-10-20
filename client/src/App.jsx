@@ -50,6 +50,10 @@ const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
 const MessageTemplates = lazy(() => import("./pages/MessageTemplates.jsx"));
 const Swot = lazy(() => import("./pages/Swot.jsx"));
 const TripReplay = lazy(() => import("./pages/TripReplay.jsx"));
+// موج للمصانع: تطبيق منفصل بالكامل للمشتركين اللي باقتهم «مصنع»
+const FactoryApp = lazy(() => import("./factory/FactoryApp.jsx"));
+const FactoryTrack = lazy(() => import("./factory/Track.jsx"));
+const FactoryLoginGate = lazy(() => import("./factory/LoginGate.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
 function prefetchCommonPages() {
@@ -123,6 +127,14 @@ export default function App() {
       </Suspense>
     );
   }
+  // صفحة متابعة الطلبات والفاتورة لزبون المصنع (بدون تسجيل دخول)
+  if (window.location.pathname.startsWith("/t/")) {
+    return (
+      <Suspense fallback={<SplashScreen />}>
+        <FactoryTrack path={window.location.pathname.slice(3)} />
+      </Suspense>
+    );
+  }
   return <MainApp />;
 }
 
@@ -142,7 +154,8 @@ function MainApp() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("darkMode") === "true");
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+    // المصانع دايمًا فاتح
+    document.documentElement.setAttribute("data-theme", darkMode && readShop()?.plan !== "factory" ? "dark" : "light");
     localStorage.setItem("darkMode", darkMode ? "true" : "false");
   }, [darkMode]);
 
@@ -310,6 +323,14 @@ function MainApp() {
   }
 
   if (!user) {
+    // موظفين المصنع: شاشة دخول بشعار المصنع (من الرابط /m/<رقم المصنع> أو من آخر دخول على هالتلفون)
+    if (/^\/m\/\d+/.test(window.location.pathname) || localStorage.getItem("fx_login")) {
+      return (
+        <Suspense fallback={<SplashScreen />}>
+          <FactoryLoginGate onLoggedIn={saveUser} fallback={<Login onLoggedIn={saveUser} />} />
+        </Suspense>
+      );
+    }
     return <Login onLoggedIn={saveUser} />;
   }
 
@@ -332,6 +353,19 @@ function MainApp() {
               </Routes>
             </Suspense>
           </div>
+        </UserContext.Provider>
+      </ShopContext.Provider>
+    );
+  }
+
+  // باقة المصانع: واجهة خاصة بالمصنع (فاتحة وبشعار المصنع) — المحلات ما بتشوف منها إشي
+  if (shop?.plan === "factory") {
+    return (
+      <ShopContext.Provider value={shop}>
+        <UserContext.Provider value={user}>
+          <Suspense fallback={<SplashScreen />}>
+            <FactoryApp user={user} shop={shop} onLogout={handleLogout} onRefresh={refreshMe} />
+          </Suspense>
         </UserContext.Provider>
       </ShopContext.Provider>
     );
