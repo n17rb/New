@@ -13,7 +13,7 @@ export default function Stock() {
   const tabs = [
     ["stock", "اليوم"],
     canStock || boss ? ["load", "تحميل السيارات"] : null,
-    canProd || boss ? ["prod", "المكنات والمواد"] : null,
+    canProd || boss ? ["prod", "المكنات"] : null,
     ["log", "السجل"],
   ].filter(Boolean);
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || tabs[0][0];
@@ -340,7 +340,7 @@ function Production() {
   const [stock, downs] = data || [];
   return (
     <>
-      <Tip id="prod2">إذا وقفت ماكنة اكبس «ماكنة وقفت»، ولما ترجع سجّل كم خرب. المواد الخام بتنخصم لحالها مع كل إنتاج.</Tip>
+      <Tip id="prod2">إذا وقفت ماكنة اكبس «ماكنة وقفت»، ولما ترجع سجّل كم خرب.</Tip>
       {edit && <button className="fx-btn danger block" onClick={() => setSheet({ kind: "down" })}><FiPower /> ماكنة وقفت</button>}
       <Err msg={error} />
       {!data && !error && <Loading />}
@@ -357,19 +357,6 @@ function Production() {
               ))}
             </div>
           )}
-          <div className="fx-sec"><h2>المواد الخام</h2></div>
-          <div className="fx-list">
-            {stock.materials.length === 0 && <div className="fx-item"><span className="fx-muted">ضيف المواد الخام من الإعدادات.</span></div>}
-            {stock.materials.map((m) => (
-              <div key={m.id} className="fx-item">
-                <span className="t"><b>{m.name}</b><span>الحد الأدنى {num(m.min_level)} {m.unit}</span></span>
-                <span className="end">
-                  <b className="fx-num" style={{ color: m.balance <= m.min_level ? "var(--fx-crit)" : "inherit" }}>{num(m.balance)} {m.unit}</b>
-                  {edit && <button className="fx-link" onClick={() => setSheet({ kind: "mat", m })}>استلام</button>}
-                </span>
-              </div>
-            ))}
-          </div>
           <div className="fx-sec"><h2>آخر الأعطال</h2></div>
           <div className="fx-list">
             {downs.length === 0 && <div className="fx-item"><span className="fx-muted">ما في أعطال مسجّلة.</span></div>}
@@ -384,7 +371,6 @@ function Production() {
       )}
       {sheet?.kind === "down" && <DownSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "up" && <UpSheet d={sheet.d} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
-      {sheet?.kind === "mat" && <MaterialSheet m={sheet.m} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
     </>
   );
 }
@@ -460,23 +446,6 @@ function UpSheet({ d, onClose, onDone }) {
           fx.toast(`وقفت ${r.minutes} دقيقة${r.damaged ? ` · تالف ${r.damaged}` : ""}`);
           onDone();
         }}>احفظ</Act>
-      </div>
-    </Sheet>
-  );
-}
-
-function MaterialSheet({ m, onClose, onDone }) {
-  const fx = useFx();
-  const [qty, setQty] = useState("");
-  const [cost, setCost] = useState("");
-  return (
-    <Sheet title={`استلام ${m.name}`} onClose={onClose}>
-      <div className="fx-stack">
-        <div className="fx-grid2">
-          <label className="fx-field">الكمية ({m.unit})<input className="fx-input" type="number" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} /></label>
-          <label className="fx-field">الكلفة (اختياري)<input className="fx-input" type="number" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></label>
-        </div>
-        <Act className="fx-btn pri block" disabled={!(Number(qty) > 0)} onClick={async () => { await fapi.receiveMaterial(m.id, { qty, cost }); fx.toast("انضاف للرصيد"); onDone(); }}>احفظ</Act>
       </div>
     </Sheet>
   );

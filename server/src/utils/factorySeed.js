@@ -35,25 +35,6 @@ export async function seedFactoryBasics({ sample = false, ownerUsername, passwor
     P[key] = (await query("INSERT INTO f_products (name, per_carton, price, min_stock, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id", [name, per, price, min, sort])).rows[0].id;
   }
 
-  // المواد الخام ووصفة كل منتج
-  const M = {};
-  for (const [key, name, unit, bal, min] of [
-    ["cups", "كاسات فاضية", "حبة", 180000, 40000],
-    ["preforms", "عبوات فاضية (بريفورم)", "حبة", 60000, 15000],
-    ["caps", "أغطية", "حبة", 70000, 15000],
-    ["foil", "ورق ختم الكاسات", "رول", 40, 8],
-    ["box", "كراتين", "حبة", 9000, 2000],
-    ["shrink", "نايلون تغليف", "كغ", 600, 100],
-  ]) {
-    M[key] = (await query("INSERT INTO f_materials (name, unit, balance, min_level) VALUES ($1,$2,$3,$4) RETURNING id", [name, unit, bal, min])).rows[0].id;
-  }
-  const recipe = async (p, m, q) => query("INSERT INTO f_recipes (product_id, material_id, qty_per_carton) VALUES ($1,$2,$3)", [P[p], M[m], q]);
-  await recipe("k1", "cups", 48); await recipe("k1", "foil", 0.01); await recipe("k1", "box", 1);
-  await recipe("k2", "cups", 48); await recipe("k2", "foil", 0.01); await recipe("k2", "box", 1);
-  for (const [p, n] of [["p250", 24], ["p600", 20], ["p1500", 6]]) {
-    await recipe(p, "preforms", n); await recipe(p, "caps", n); await recipe(p, "shrink", 0.05);
-  }
-
   for (const n of ["ماكنة الكاسات", "ماكنة الشرنك 600", "ماكنة الشرنك 250 و1500"]) {
     await query("INSERT INTO f_machines (name) VALUES ($1)", [n]);
   }

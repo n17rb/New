@@ -97,16 +97,6 @@ router.post("/stock/production", editProd, async (req, res) => {
   if (!pid || !(qty > 0)) return bad(res, "اختار المنتج واكتب عدد الكراتين.");
   const shift = ["صبحي", "مسائي", "ليلي"].includes(req.body?.shift) ? req.body.shift : null;
   await query("INSERT INTO f_stock_moves (product_id, kind, qty, shift, machine_id, created_by) VALUES ($1,'production',$2,$3,$4,$5)", [pid, qty, shift, req.body?.machine_id || null, req.user.id]);
-  // خصم المواد الخام حسب «وصفة» المنتج
-  const recipe = (await query("SELECT r.*, m.name, m.balance, m.min_level FROM f_recipes r JOIN f_materials m ON m.id = r.material_id WHERE r.product_id = $1", [pid])).rows;
-  for (const r of recipe) {
-    const use = round2(Number(r.qty_per_carton) * qty);
-    const after = (await query("UPDATE f_materials SET balance = balance - $1 WHERE id = $2 RETURNING balance, min_level, name", [use, r.material_id])).rows[0];
-    await query("INSERT INTO f_material_moves (material_id, kind, qty, note, created_by) VALUES ($1,'use',$2,$3,$4)", [r.material_id, -use, `إنتاج ${qty} كرتونة`, req.user.id]);
-    if (Number(after.balance) <= Number(after.min_level)) {
-      await alert({ level: "warn", kind: "material_low", ref: r.material_id, title: `${after.name} قرب يخلص`, body: `الرصيد ${Number(after.balance).toLocaleString("en-US")} — اطلب من المورد قبل ما يوقف الإنتاج.`, dedupe: true });
-    }
-  }
   res.status(201).json({ ok: true });
 });
 

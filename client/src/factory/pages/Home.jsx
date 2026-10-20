@@ -13,7 +13,7 @@ export function AlertCard({ a, onClose }) {
   const go = {
     expense: "/f/money?tab=expenses", cash_short: "/f/money", returned: "/f/money", late: "/f/trips", tracking: "/f/trips",
     breakdown: "/f/trips", delay: "/f/trips", fuel_night: "/f/reports", km_mismatch: "/f/reports", carton_short: "/f/money?tab=drivers",
-    material_low: "/f/stock?tab=prod",
+    material_low: "/f/stock",
     license30: "/f/settings?tab=vehicles", license7: "/f/settings?tab=vehicles", license0: "/f/settings?tab=vehicles",
     insurance30: "/f/settings?tab=vehicles", insurance7: "/f/settings?tab=vehicles", insurance0: "/f/settings?tab=vehicles", downtime: "/f/stock?tab=prod", credit: "/f/money?tab=debts", failed: "/f/orders",
   }[a.kind];

@@ -9,7 +9,7 @@ const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: 
 
 export default function Settings() {
   const [params, setParams] = useSearchParams();
-  const tabs = [["brand", "المصنع"], ["products", "المنتجات"], ["vehicles", "السيارات"], ["lines", "الخطوط"], ["bonus", "البونص"], ["machines", "المكنات والمواد"]];
+  const tabs = [["brand", "المصنع"], ["products", "المنتجات"], ["vehicles", "السيارات"], ["lines", "الخطوط"], ["bonus", "البونص"], ["machines", "المكنات"]];
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || "brand";
   return (
     <div className="fx-page">
@@ -117,8 +117,8 @@ export function SampleCard() {
         <>
           <span className="fx-muted">فيه {info.customers} زبون تجريبي و{info.orders} طلب و{info.employees} موظف تجريبي.</span>
           <div className="fx-card soft" style={{ fontSize: 13.5 }}>
-            <b>بينمسح:</b> الزباين التجريبيين وطلباتهم وحساباتهم، والرحلات تبعتهم، وأرصدة المستودع والمواد الخام الوهمية، والموظفين التجريبيين (حساباتهم بتنطفي)، والتنبيهات.<br />
-            <b>بيضل:</b> المنتجات وصورها، السيارات، الخطوط، المكنات، المواد الخام (برصيد صفر)، البونص، الشعار{info.real_customers ? `، و${info.real_customers} زبون حقيقي ضفتهم` : ""}.
+            <b>بينمسح:</b> الزباين التجريبيين وطلباتهم وحساباتهم، والرحلات تبعتهم، وأرصدة المستودع الوهمية، والموظفين التجريبيين (حساباتهم بتنطفي)، والتنبيهات.<br />
+            <b>بيضل:</b> المنتجات وصورها، السيارات، الخطوط، المكنات، البونص، الشعار{info.real_customers ? `، و${info.real_customers} زبون حقيقي ضفتهم` : ""}.
           </div>
           <label className="fx-field">اكتب «امسح» للتأكيد<input className="fx-input" value={typed} onChange={(e) => setTyped(e.target.value)} /></label>
           <Act className="fx-btn danger block" disabled={typed.trim() !== "امسح"} onClick={async () => {
@@ -159,7 +159,6 @@ export function Products() {
 function ProductSheet({ p, onClose }) {
   const fx = useFx();
   const [f, setF] = useState({ name: p.name || "", per_carton: p.per_carton || "", price: p.price ?? "", min_stock: p.min_stock || "", active: p.active !== false, sort_order: p.sort_order || 0 });
-  const [recipe, setRecipe] = useState(() => Object.fromEntries((p.recipe || []).map((r) => [r.material_id, r.qty])));
   const [err, setErr] = useState("");
   const [img, setImg] = useState(p.image_url || null);
   const [file, setFile] = useState(null);
@@ -184,19 +183,7 @@ function ProductSheet({ p, onClose }) {
         </div>
         <label className="fx-field">الحد الأدنى بالمستودع (تنبيه)<input className="fx-input" type="number" inputMode="numeric" value={f.min_stock} onChange={set("min_stock")} /></label>
         {p.id && <label className="fx-row"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> المنتج شغال</label>}
-        {fx.boot.materials.length > 0 && (
-          <details>
-            <summary className="fx-link">المواد الخام لكل كرتونة (بتنخصم لحالها مع الإنتاج)</summary>
-            <div className="fx-stack" style={{ marginTop: 8 }}>
-              {fx.boot.materials.map((m) => (
-                <label key={m.id} className="fx-row" style={{ flexWrap: "nowrap" }}>
-                  <span className="fx-grow">{m.name} <span className="fx-muted">({m.unit})</span></span>
-                  <input className="fx-input" style={{ width: 110 }} type="number" inputMode="decimal" value={recipe[m.id] ?? ""} onChange={(e) => setRecipe({ ...recipe, [m.id]: e.target.value })} placeholder="—" />
-                </label>
-              ))}
-            </div>
-          </details>
-        )}
+
         <Err msg={err} />
         <Act className="fx-btn pri block" onClick={async () => {
           setErr("");
@@ -204,7 +191,6 @@ function ProductSheet({ p, onClose }) {
             const saved = await fapi.saveProduct({ ...f, id: p.id });
             if (file === "remove") await fapi.removeProductImage(saved.id);
             else if (file) await fapi.productImage(saved.id, file);
-            await fapi.saveRecipe(saved.id, Object.entries(recipe).filter(([, q]) => Number(q) > 0).map(([material_id, qty]) => ({ material_id: Number(material_id), qty: Number(qty) })));
             await refresh(fx);
             fx.toast("انحفظ المنتج");
             onClose();
@@ -338,26 +324,16 @@ function LineSheet({ l, onClose }) {
 export function Machines() {
   const fx = useFx();
   const [mName, setMName] = useState("");
-  const [mat, setMat] = useState({ name: "", unit: "حبة", min_level: "" });
   return (
     <div className="fx-stack">
-      <Tip id="machines">المكنات عشان تسجّلوا أعطالها وتالفها. المواد الخام عشان تنخصم مع الإنتاج وتنبّهكم قبل ما تخلص.</Tip>
+      <Tip id="machines">المكنات عشان تسجّلوا أعطالها وكم خرب بسببها.</Tip>
       <div className="fx-sec"><h2>المكنات</h2></div>
       <div className="fx-list">{fx.boot.machines.map((m) => <div key={m.id} className="fx-item"><span className="t"><b>{m.name}</b></span></div>)}</div>
       <div className="fx-row" style={{ flexWrap: "nowrap" }}>
         <input className="fx-input" value={mName} onChange={(e) => setMName(e.target.value)} placeholder="اسم الماكنة" />
         <Act className="fx-btn pri" disabled={!mName.trim()} onClick={async () => { await fapi.saveMachine({ name: mName }); setMName(""); await refresh(fx); }}>ضيف</Act>
       </div>
-      <div className="fx-sec"><h2>المواد الخام</h2></div>
-      <div className="fx-list">{fx.boot.materials.map((m) => <div key={m.id} className="fx-item"><span className="t"><b>{m.name}</b><span>الرصيد {num(m.balance)} {m.unit} · الحد الأدنى {num(m.min_level)}</span></span></div>)}</div>
-      <div className="fx-grid2">
-        <input className="fx-input" value={mat.name} onChange={(e) => setMat({ ...mat, name: e.target.value })} placeholder="اسم المادة (مثلًا: أغطية)" />
-        <input className="fx-input" value={mat.unit} onChange={(e) => setMat({ ...mat, unit: e.target.value })} placeholder="الوحدة" />
-      </div>
-      <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-        <input className="fx-input" type="number" inputMode="decimal" value={mat.min_level} onChange={(e) => setMat({ ...mat, min_level: e.target.value })} placeholder="الحد الأدنى للتنبيه" />
-        <Act className="fx-btn pri" disabled={!mat.name.trim()} onClick={async () => { await fapi.saveMaterial(mat); setMat({ name: "", unit: "حبة", min_level: "" }); await refresh(fx); }}>ضيف</Act>
-      </div>
+
     </div>
   );
 }
