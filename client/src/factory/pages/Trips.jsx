@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { FiMapPin, FiArrowUp, FiArrowDown, FiClock, FiChevronLeft } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
+import { FiMapPin, FiArrowUp, FiArrowDown, FiClock, FiChevronLeft, FiMap } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, TRIP_STATUS, SendMessages, Reload, money, num, time, date, dateTime, today } from "../ui.jsx";
 import { TransferSheet, itemsLine } from "./Orders.jsx";
@@ -7,6 +8,7 @@ import { StopSheet, deliveredCartons } from "./StopSheet.jsx";
 
 export default function Trips() {
   const fx = useFx();
+  const nav = useNavigate();
   const dispatch = fx.can("f_dispatch", "edit");
   const [day, setDay] = useState("");
   const { data, error, reload } = useLoad(() => fapi.trips(day ? { date: day } : {}), [day]);
@@ -18,6 +20,7 @@ export default function Trips() {
       <div className="fx-row" style={{ justifyContent: "space-between" }}>
         <h1 className="fx-h1">الرحلات</h1>
         <div className="fx-row">
+          <button className="fx-btn sm sky" onClick={() => nav("/f/live")}><FiMap /> الخريطة</button>
           <input className="fx-input" style={{ width: 150 }} type="date" value={day || today()} onChange={(e) => setDay(e.target.value === today() ? "" : e.target.value)} aria-label="اليوم" />
           <Reload onClick={reload} />
         </div>

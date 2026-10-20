@@ -97,7 +97,7 @@ export default function Home() {
             {h.alerts.slice(0, 4).map((a) => <AlertCard key={a.id} a={a} onClose={close} />)}
           </div>
 
-          <div className="fx-sec"><h2>السيارات هلأ</h2><button className="fx-link" onClick={() => nav("/f/trips")}>الرحلات</button></div>
+          <div className="fx-sec"><h2>السيارات هلأ</h2><button className="fx-link" onClick={() => nav("/f/live")}>🗺 شوفها على الخريطة</button></div>
           <div className="fx-list">
             {h.vehicles.length === 0 && <div className="fx-item"><span className="fx-muted">ما في سيارات — ضيفها من الإعدادات.</span></div>}
             {h.vehicles.map((v) => {

@@ -268,6 +268,13 @@ export async function loadTrips(where, params = []) {
   });
 }
 
+// إشعار على تلفون سائق الرحلة (طلب جديد، نقل، ترتيب)
+async function notifyDriver(tripId, title, body) {
+  if (!tripId) return;
+  const t = (await query("SELECT driver_id FROM f_trips WHERE id = $1", [tripId])).rows[0];
+  if (t?.driver_id) sendPushToUser(t.driver_id, { title, body, url: "/f/drive", tag: `ft-${tripId}` }).catch(() => {});
+}
+
 // رحلة لسا ما تحمّلت وصارت فاضية (كل طلباتها انتقلت أو تأجلت) بتنلغى لحالها
 async function dropIfEmpty(tripId) {
   if (!tripId) return;
@@ -384,6 +391,11 @@ router.post("/trips", dispatch, async (req, res) => {
       data: { order: o.id, day: dayWord(date), eta: o.eta_at, driver: pv.vehicle.driver_name || "السائق", vehicle: pv.vehicle.name, track }, userId: req.user.id,
     }));
   }
+  {
+    const cartons = orders.reduce((a, o) => a + o.cartons, 0);
+    const names = orders.slice(0, 3).map((o) => o.customer_name).join("، ") + (orders.length > 3 ? ` و${orders.length - 3} غيرهم` : "");
+    await notifyDriver(tripId, pv.existing_trip_id ? `انضافلك ${orders.length} طلب 🚚` : `عندك رحلة جديدة 🚚`, `${names} · ${cartons} كرتونة. افتح «رحلتي» تشوف الترتيب.`);
+  }
   if (pv.over > 0) await alert({ level: "warn", kind: "overload", ref: tripId, title: `${pv.vehicle.name} محمّلة فوق سعتها`, body: `${pv.load} كرتونة والسعة ${pv.vehicle.capacity}.`, dedupe: true });
   await logActivity({ userId: req.user.id, action: "F_BUILD_TRIP", recordType: "f_trip", recordId: tripId, newValue: { vehicle: pv.vehicle.id, orders: orderIds } });
   res.status(201).json({ trip_id: tripId, message_ids: msgIds });
@@ -400,6 +412,7 @@ router.put("/trips/:id/stops", dispatch, async (req, res) => {
   for (const id of ids) await query("UPDATE f_orders SET stop_seq = $1 WHERE id = $2 AND trip_id = $3", [++seq, id, req.params.id]);
   const t = (await query("SELECT status FROM f_trips WHERE id = $1", [req.params.id])).rows[0];
   await recomputeEta(Number(req.params.id), { fromNow: t?.status === "active" });
+  await notifyDriver(Number(req.params.id), "تغيّر ترتيب الوقفات", "افتح «رحلتي» تشوف الترتيب الجديد.");
   res.json({ ok: true });
 });
 
@@ -455,6 +468,8 @@ router.post("/orders/:id/transfer", dispatch, async (req, res) => {
   const track = await ensureTrackToken(o.customer_id);
   const msg = await queueMessage({ customerId: o.customer_id, orderId: o.id, kind: "transfer", data: { order: o.id, driver: target.driver_name || "السائق", vehicle: target.name, track }, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_TRANSFER_ORDER", recordType: "f_order", recordId: o.id, newValue: { from: o.vehicle_id, to: target.id, reason } });
+  await notifyDriver(tt.id, `انضافلك طلب: ${o.customer_name} 🚚`, `${o.cartons} كرتونة${o.city ? ` · ${o.city}` : ""}. افتح «رحلتي».`);
+  if (fromTrip) await notifyDriver(fromTrip, `انشال طلب ${o.customer_name} منك`, `انتقل لـ${target.name}.${loaded ? " الكراتين اللي معك إله لازم تنتقل." : ""}`);
   res.json({ ok: true, trip_id: tt.id, message_ids: [msg], cartons_loaded: loaded });
 });
 
