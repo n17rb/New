@@ -224,7 +224,11 @@ export function Vehicles() {
         {fx.boot.vehicles.map((v) => (
           <button key={v.id} className="fx-item" onClick={() => setEdit(v)}>
             <span className="t"><b>{v.name}{v.plate ? ` · ${v.plate}` : ""}</b><span>{v.driver_name || "بدون سائق"} · {v.governorate || "—"} · حمولة {num(v.capacity)}</span></span>
-            <span className={`fx-pill ${v.status === "active" ? "ok" : v.status === "workshop" ? "warn" : ""}`}>{VSTATUS[v.status]}</span>
+            <span className="end">
+              <span className={`fx-pill ${v.status === "active" ? "ok" : v.status === "workshop" ? "warn" : ""}`}>{VSTATUS[v.status]}</span>
+              <DocPill label="الترخيص" date={v.license_expires} />
+              <DocPill label="التأمين" date={v.insurance_expires} />
+            </span>
           </button>
         ))}
       </div>
@@ -233,9 +237,17 @@ export function Vehicles() {
   );
 }
 
+// شارة الترخيص/التأمين: بتبيّن بس إذا قرب يخلص أو خلص
+function DocPill({ label, date }) {
+  if (!date) return null;
+  const days = Math.round((new Date(`${date}T12:00:00`) - new Date(new Date().toLocaleDateString("en-CA") + "T12:00:00")) / 86400000);
+  if (days > 30) return null;
+  return <span className={`fx-pill ${days <= 7 ? "crit" : "warn"}`}>{days < 0 ? `${label} منتهي` : days === 0 ? `${label} اليوم` : `${label} بعد ${days} يوم`}</span>;
+}
+
 function VehicleSheet({ v, onClose }) {
   const fx = useFx();
-  const [f, setF] = useState({ name: v.name || "", plate: v.plate || "", capacity: v.capacity || 700, driver_id: v.driver_id || "", governorate: v.governorate || "", status: v.status || "active" });
+  const [f, setF] = useState({ name: v.name || "", plate: v.plate || "", capacity: v.capacity || 700, driver_id: v.driver_id || "", governorate: v.governorate || "", status: v.status || "active", license_expires: v.license_expires || "", insurance_expires: v.insurance_expires || "" });
   const [err, setErr] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
@@ -256,6 +268,11 @@ function VehicleSheet({ v, onClose }) {
           </select>
           {fx.boot.drivers.length === 0 && <small>ما في حسابات سائقين. ضيفهم من «حسابات الموظفين» بدور «سائق».</small>}
         </label>
+        <div className="fx-grid2">
+          <label className="fx-field">الترخيص بيخلص<input className="fx-input" type="date" value={f.license_expires} onChange={set("license_expires")} /></label>
+          <label className="fx-field">التأمين بيخلص<input className="fx-input" type="date" value={f.insurance_expires} onChange={set("insurance_expires")} /></label>
+        </div>
+        <small className="fx-muted">بيوصلك تنبيه قبل ٣٠ يوم، وتنبيه أحمر قبل ٧ أيام ويوم ما يخلص. لما تجدّده عدّل التاريخ هون.</small>
         <div className="fx-chips">{Object.entries(VSTATUS).map(([k, l]) => <button key={k} className={`fx-chip ${f.status === k ? "on" : ""}`} onClick={() => setF({ ...f, status: k })}>{l}</button>)}</div>
         <Err msg={err} />
         <Act className="fx-btn pri block" onClick={async () => {

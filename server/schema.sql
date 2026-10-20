@@ -938,3 +938,7 @@ CREATE TABLE IF NOT EXISTS f_bonus_rules (
 ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS bonus_manual BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS delivered_bonus INTEGER;
+
+-- ترخيص وتأمين السيارات: تنبيه للمدير قبل ما يخلصوا
+ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS license_expires DATE;
+ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS insurance_expires DATE;
