@@ -3,6 +3,7 @@ import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, Fi
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
+import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
 import { FiGift } from "react-icons/fi";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
@@ -17,7 +18,9 @@ export default function Orders() {
   const [sheet, setSheet] = useState(null);
   const [msgs, setMsgs] = useState(null);
 
-  const open = data || [];
+  const [region, setRegion] = useState(null);
+  const all = data || [];
+  const open = all.filter((o) => matchRegion(o, region));
   const free = open.filter((o) => !o.trip_id && ["new", "delayed"].includes(o.status));
   const assigned = open.filter((o) => o.trip_id);
   const selCartons = sel.reduce((s, id) => s + (open.find((o) => o.id === id)?.cartons || 0), 0);
@@ -69,6 +72,8 @@ export default function Orders() {
             </button>
           </div>
 
+          {all.length > 0 && <RegionFilter items={all} value={region} onChange={(r) => { setRegion(r); setSel([]); }} noun="طلب" />}
+
           {cur === "free" && (
             <>
               {dispatch && free.length > 0 && (
@@ -114,7 +119,7 @@ export default function Orders() {
             <div className="fx-clist">
               {!done && <Loading />}
               {done && done.length === 0 && <div className="fx-empty-soft">ما خلص إشي آخر ٣ أيام.</div>}
-              {done?.map((o) => (
+              {done?.filter((o) => matchRegion(o, region)).map((o) => (
                 <div key={o.id} className="fx-crow">
                   <button className="fx-plain fx-crow-main" onClick={() => setSheet({ kind: "info", o })}>
                     <span className="t">

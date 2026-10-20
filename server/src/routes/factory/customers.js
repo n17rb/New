@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
+import { inferRegion, validRegion } from "../../utils/jordanRegions.js";
 import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand } from "./lib.js";
 
 // ============================================================
@@ -11,6 +12,13 @@ const view = needAny(["f_customers"], ["f_orders"], ["f_dispatch"], ["f_money"],
 const edit = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"]);
 const editOrFleet = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"], ["f_fleet", "edit"]);
 const str = (v, n = 150) => (v == null || v === "" ? null : String(v).trim().slice(0, n));
+
+// الزباين القدام اللي ما إلهم محافظة/لواء: منطلعهم من اسم المنطقة
+export function withRegion(c) {
+  if (c.governorate) return c;
+  const r = inferRegion(c.city);
+  return { ...c, governorate: r.governorate, district: r.district };
+}
 
 function phoneClean(p) {
   const d = String(p || "").replace(/[^\d]/g, "");
@@ -33,7 +41,7 @@ router.get("/customers", view, async (req, res) => {
     where += ` AND c.line_id = $${params.length}`;
   }
   const r = await query(
-    `SELECT c.id, c.seq_no, c.photo_url, c.name, c.contact_name, c.phone, c.address, c.city, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.balance, c.is_sample,
+    `SELECT c.id, c.seq_no, c.photo_url, c.name, c.contact_name, c.phone, c.address, c.governorate, c.district, c.city, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.balance, c.is_sample,
             l.name AS line_name, l.vehicle_id,
             (SELECT COUNT(*)::int FROM f_orders o WHERE o.customer_id = c.id AND o.status IN ('new','assigned','onway','delayed')) AS open_orders,
             (SELECT MAX(created_at) FROM f_orders o WHERE o.customer_id = c.id) AS last_order_at,
@@ -43,7 +51,7 @@ router.get("/customers", view, async (req, res) => {
     params
   );
   const showMoney = can(req.user, "f_money") || can(req.user, "f_customers") || can(req.user, "f_home");
-  res.json(r.rows.map((c) => ({ ...c, balance: showMoney ? Number(c.balance) : undefined, credit_limit: Number(c.credit_limit) })));
+  res.json(r.rows.map((c) => ({ ...withRegion(c), balance: showMoney ? Number(c.balance) : undefined, credit_limit: Number(c.credit_limit) })));
 });
 
 router.get("/customers/:id", view, async (req, res) => {
@@ -68,7 +76,7 @@ router.get("/customers/:id", view, async (req, res) => {
     query("SELECT * FROM f_messages WHERE customer_id = $1 ORDER BY id DESC LIMIT 30", [c.id]),
   ]);
   res.json({
-    ...c,
+    ...withRegion(c),
     balance: Number(c.balance),
     credit_limit: Number(c.credit_limit),
     prices: prices.rows.map((p) => ({ product_id: p.product_id, price: Number(p.price) })),
@@ -137,7 +145,10 @@ async function cleanCustomer(b) {
   }
   const photo_url = str(b.photo_url, 500);
   if (photo_url && !/^https:\/\//i.test(photo_url)) throw new Error("الصورة غير صحيحة.");
+  let region = validRegion(b.governorate, b.district);
+  if (!region.governorate) region = inferRegion(b.city);
   return {
+    governorate: region.governorate, district: region.district,
     seq_no, photo_url, maps_url,
     name, contact_name: str(b.contact_name, 100), phone: phoneClean(b.phone), city: str(b.city, 60), address: str(b.address, 300),
     line_id: b.line_id ? Number(b.line_id) : null, lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null,
@@ -168,9 +179,9 @@ router.post("/customers", edit, async (req, res) => {
       if (taken) { await client.query("ROLLBACK"); return bad(res, `الرقم ${c.seq_no} مستخدم للزبون «${taken.name}». اختار رقم ثاني أو خلّيه فاضي.`); }
     } else c.seq_no = await nextSeq(client);
     const r = await client.query(
-      `INSERT INTO f_customers (name, contact_name, phone, city, address, line_id, lat, lng, kind, pay_terms, credit_limit, notes, created_by, seq_no, photo_url, maps_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.user.id, c.seq_no, c.photo_url, c.maps_url]
+      `INSERT INTO f_customers (name, contact_name, phone, city, address, line_id, lat, lng, kind, pay_terms, credit_limit, notes, created_by, seq_no, photo_url, maps_url, governorate, district)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.user.id, c.seq_no, c.photo_url, c.maps_url, c.governorate, c.district]
     );
     const id = r.rows[0].id;
     if (can(req.user, "f_customers", "edit")) await savePrices(client, id, req.body?.prices);
@@ -200,8 +211,8 @@ router.put("/customers/:id", need("f_customers", "edit"), async (req, res) => {
     }
     const r = await client.query(
       `UPDATE f_customers SET name=$1, contact_name=$2, phone=$3, city=$4, address=$5, line_id=$6, lat=$7, lng=$8, kind=$9,
-         pay_terms=$10, credit_limit=$11, notes=$12, seq_no=COALESCE($14, seq_no), photo_url=$15, maps_url=$16 WHERE id=$13 RETURNING *`,
-      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.params.id, c.seq_no, c.photo_url, c.maps_url]
+         pay_terms=$10, credit_limit=$11, notes=$12, seq_no=COALESCE($14, seq_no), photo_url=$15, maps_url=$16, governorate=$17, district=$18 WHERE id=$13 RETURNING *`,
+      [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.params.id, c.seq_no, c.photo_url, c.maps_url, c.governorate, c.district]
     );
     if (!r.rows[0]) { await client.query("ROLLBACK"); return bad(res, "الزبون غير موجود.", 404); }
     await savePrices(client, r.rows[0].id, req.body?.prices);

@@ -4,6 +4,7 @@ import { can } from "../../permissions.js";
 import { planStops, sortNearest, km, pointOf } from "../../utils/factoryGeo.js";
 import { canAction } from "../../permissions.js";
 import { sendPushToUser } from "../../utils/push.js";
+import { inferRegion } from "../../utils/jordanRegions.js";
 import {
   need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint,
 } from "./lib.js";
@@ -29,7 +30,7 @@ function dayWord(date) {
 export async function loadOrders(where, params = []) {
   const r = await query(
     `SELECT o.*, to_char(o.due_date, 'YYYY-MM-DD') AS due_date,
-            c.name AS customer_name, c.seq_no, c.photo_url, c.maps_url, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
+            c.name AS customer_name, c.seq_no, c.photo_url, c.maps_url, c.governorate, c.district, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
             t.vehicle_id, t.status AS trip_status, t.load_confirmed_at AS trip_loaded_at, t.driver_id, v.name AS vehicle_name, u.full_name AS driver_name,
             cb.full_name AS created_by_name, eb.full_name AS edited_by_name
      FROM f_orders o JOIN f_customers c ON c.id = o.customer_id
@@ -51,8 +52,10 @@ export async function loadOrders(where, params = []) {
   }
   return r.rows.map((o) => {
     const its = byOrder.get(o.id) || [];
+    const reg = o.governorate ? null : inferRegion(o.city);
     return {
       ...o,
+      ...(reg ? { governorate: reg.governorate, district: reg.district } : {}),
       total: Number(o.total), cash_paid: Number(o.cash_paid), delivered_total: o.delivered_total == null ? null : Number(o.delivered_total),
       customer_balance: Number(o.customer_balance), credit_limit: Number(o.credit_limit),
       items: its, cartons: its.reduce((s, i) => s + i.qty + (i.bonus_qty || 0), 0), bonus: its.reduce((s, i) => s + (i.bonus_qty || 0), 0),
