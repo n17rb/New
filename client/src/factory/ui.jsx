@@ -59,7 +59,12 @@ export function Sheet({ title, onClose, children }) {
 }
 
 // شرح قصير بأول مرة بيفتح فيها الشاشة
-export function Tip({ id, children }) {
+// الشروحات الزرقا انشالت من كل الشاشات (كانت زحمة كلام) — الشرح صار بزر «المساعد» بس
+export function Tip() {
+  return null;
+}
+
+export function OldTip({ id, children }) {
   const key = `fx-tip-${id}`;
   const [hidden, setHidden] = useState(() => {
     try { return localStorage.getItem(key) === "1"; } catch { return false; }

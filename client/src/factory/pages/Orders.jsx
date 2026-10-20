@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle, FiEdit2, FiX } from "react-icons/fi";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle, FiEdit2, FiX, FiTruck, FiChevronLeft } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
@@ -32,64 +32,98 @@ export default function Orders() {
     if (result?.message_ids?.length) setMsgs(result.message_ids);
   }
 
+  const [tab, setTab] = useState(null);
+  const cur = tab || (free.length || !assigned.length ? "free" : "cars");
+  useEffect(() => { if (cur === "done" && !done) fapi.orders({ scope: "done" }).then(setDone).catch(() => {}); }, [cur, done]);
+  // الطلبات اللي على السيارات، مجمّعة لكل سيارة
+  const byCar = useMemo(() => {
+    const m = new Map();
+    for (const o of assigned) {
+      const k = o.trip_id;
+      if (!m.has(k)) m.set(k, { trip_id: k, vehicle_name: o.vehicle_name, driver_name: o.driver_name, trip_status: o.trip_status, orders: [] });
+      m.get(k).orders.push(o);
+    }
+    return [...m.values()];
+  }, [assigned]);
+
   return (
     <div className="fx-page">
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1">الطلبات</h1>
-        {editOrders && <button className="fx-btn pri sm" data-hl="new-order" onClick={() => setSheet({ kind: "new" })}><FiPlus /> طلب جديد</button>}
+      <div className="fx-chead">
+        <h1>الطلبات</h1>
+        {editOrders && <button className="fx-cadd" data-hl="new-order" onClick={() => setSheet({ kind: "new" })}><FiPlus /> طلب جديد</button>}
       </div>
-      <Tip id="orders">{dispatch ? "علّم على أكثر من طلب واكبس «رحلة جديدة» عشان تخصصهم لسيارة وحدة. الطلب اللي على سيارة بتنقله لسائق ثاني من «نقل»." : "سجّل طلبات الزباين هون، ومسؤول الحركة بيوزعها على السيارات."}</Tip>
       <Err msg={error} />
       {!data && !error && <Loading />}
 
       {data && (
         <>
-          <div className="fx-sec"><h2>جديدة ({free.length})</h2>{dispatch && free.length > 1 && <button className="fx-link" onClick={() => setSel(sel.length === free.length ? [] : free.map((o) => o.id))}>{sel.length === free.length ? "إلغاء التحديد" : "حدد الكل"}</button>}</div>
-          <div className="fx-list" data-hl="orders-list">
-            {free.length === 0 && <div className="fx-item"><span className="fx-muted">كل الطلبات موزّعة على السيارات.</span></div>}
-            {free.map((o) => (
-              <OrderRow key={o.id} o={o} selectable={dispatch} on={sel.includes(o.id)} onToggle={() => toggle(o.id)} onInfo={() => setSheet({ kind: "info", o })} />
-            ))}
+          <div className="fx-steps" role="tablist">
+            <button role="tab" aria-selected={cur === "free"} className={cur === "free" ? "on" : ""} onClick={() => setTab("free")}>
+              <i>1</i><span>جديدة</span>{free.length > 0 && <b>{free.length}</b>}
+            </button>
+            <button role="tab" aria-selected={cur === "cars"} className={cur === "cars" ? "on" : ""} onClick={() => setTab("cars")}>
+              <i>2</i><span>بالسيارات</span>{assigned.length > 0 && <b>{assigned.length}</b>}
+            </button>
+            <button role="tab" aria-selected={cur === "done" } className={cur === "done" ? "on" : ""} onClick={() => setTab("done")}>
+              <i>3</i><span>خلصت</span>
+            </button>
           </div>
 
-          <div className="fx-sec"><h2>على السيارات ({assigned.length})</h2></div>
-          <div className="fx-list" data-hl="assigned-list">
-            {assigned.length === 0 && <div className="fx-item"><span className="fx-muted">ولا طلب على سيارة لسا.</span></div>}
-            {assigned.map((o) => (
-              <div key={o.id} className="fx-item">
-                <span className="t">
-                  <b>{o.customer_name}</b>
-                  <span>{o.city} · {itemsLine(o)}</span>
-                  <span className="fx-row" style={{ gap: 6 }}>
-                    <StatusPill map={ORDER_STATUS} value={o.status} />
-                    <span className="fx-pill">{o.vehicle_name} · {o.driver_name || "بدون سائق"}</span>
-                    {o.eta_at && <span className="fx-pill">يوصل {time(o.eta_at)}</span>}
-                  </span>
-                </span>
-                <span className="end">
-                  {dispatch && <button className="fx-btn sm" onClick={() => setSheet({ kind: "move", o })}><FiShuffle /> نقل</button>}
-                  <button className="fx-link" onClick={() => setSheet({ kind: "info", o })}>تفاصيل</button>
-                </span>
+          {cur === "free" && (
+            <>
+              {dispatch && free.length > 0 && (
+                <div className="fx-hint-line">
+                  <span>اختار الطلبات وحطها على سيارة</span>
+                  {free.length > 1 && <button className="fx-link" onClick={() => setSel(sel.length === free.length ? [] : free.map((o) => o.id))}>{sel.length === free.length ? "إلغاء" : "اختار الكل"}</button>}
+                </div>
+              )}
+              <div className="fx-clist" data-hl="orders-list">
+                {free.length === 0 && <div className="fx-empty-soft">ما في طلبات بدها سيارة 👌</div>}
+                {free.map((o) => (
+                  <OrderRow key={o.id} o={o} selectable={dispatch} on={sel.includes(o.id)} onToggle={() => toggle(o.id)} onInfo={() => setSheet({ kind: "info", o })} />
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
 
-          <div className="fx-sec"><h2>خلصت آخر ٣ أيام</h2>{!done && <button className="fx-link" onClick={() => fapi.orders({ scope: "done" }).then(setDone)}>اعرض</button>}</div>
-          {done && (
-            <div className="fx-list">
-              {done.length === 0 && <div className="fx-item"><span className="fx-muted">ولا إشي.</span></div>}
-              {done.map((o) => (
-                <div key={o.id} className="fx-item">
-                  <button className="t fx-plain" onClick={() => setSheet({ kind: "info", o })}>
-                    <b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
-                    <span>{itemsLine(o)}{o.fail_reason ? ` · ${o.fail_reason}` : ""}</span>
-                    {o.status === "delivered" && <span className="fx-ok-line">{o.driver_name || o.vehicle_name || "السائق"} سلّم {time(o.delivered_at)} · كاش {money(o.cash_paid)}</span>}
+          {cur === "cars" && (
+            <div className="fx-stack" data-hl="assigned-list">
+              {byCar.length === 0 && <div className="fx-empty-soft">ولا طلب على سيارة لسا.</div>}
+              {byCar.map((g) => (
+                <section key={g.trip_id} className="fx-cargroup">
+                  <div className="h">
+                    <span className="fx-cav"><FiTruck /></span>
+                    <span className="t"><b>{g.driver_name || "بدون سائق"}</b><small>{g.vehicle_name} · {g.trip_status === "active" ? "بالطريق" : "لسا ما طلعت"} · {g.orders.length} طلب</small></span>
+                  </div>
+                  {g.orders.map((o) => (
+                    <div key={o.id} className="row">
+                      <button className="fx-plain t" onClick={() => setSheet({ kind: "info", o })}>
+                        <b>{o.customer_name}</b>
+                        <small>{num(o.cartons)} كرتونة{o.eta_at ? ` · يوصل ${time(o.eta_at)}` : ""}</small>
+                      </button>
+                      <StatusPill map={ORDER_STATUS} value={o.status} />
+                      {dispatch && <button className="fx-link" onClick={() => setSheet({ kind: "move", o })}>نقل</button>}
+                    </div>
+                  ))}
+                </section>
+              ))}
+            </div>
+          )}
+
+          {cur === "done" && (
+            <div className="fx-clist">
+              {!done && <Loading />}
+              {done && done.length === 0 && <div className="fx-empty-soft">ما خلص إشي آخر ٣ أيام.</div>}
+              {done?.map((o) => (
+                <div key={o.id} className="fx-crow">
+                  <button className="fx-plain fx-crow-main" onClick={() => setSheet({ kind: "info", o })}>
+                    <span className="t">
+                      <b>{o.customer_name}</b>
+                      <small>{o.status === "delivered" ? `${o.driver_name || "السائق"} سلّم ${time(o.delivered_at)} · كاش ${money(o.cash_paid)}` : o.fail_reason || itemsLine(o)}</small>
+                    </span>
                   </button>
-                  <span className="end">
-                    <StatusPill map={ORDER_STATUS} value={o.status} />
-                    <button className="fx-link" onClick={() => setSheet({ kind: "info", o })}>التفاصيل</button>
-                    {o.status === "failed" && dispatch && <Act className="fx-link" onClick={async () => { await fapi.reopenOrder(o.id); fx.toast("رجع للطلبات الجديدة"); setDone(null); reload(); }}>رجّعه للتوزيع</Act>}
-                  </span>
+                  <StatusPill map={ORDER_STATUS} value={o.status} />
+                  {o.status === "failed" && dispatch && <Act className="fx-link" onClick={async () => { await fapi.reopenOrder(o.id); fx.toast("رجع للطلبات الجديدة"); setDone(null); reload(); }}>رجّعه</Act>}
                 </div>
               ))}
             </div>
@@ -99,9 +133,9 @@ export default function Orders() {
 
       {dispatch && sel.length > 0 && (
         <div className="fx-selbar">
-          <span className="fx-grow">محدد <b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة</span>
+          <span className="fx-grow"><b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة</span>
           <button className="fx-btn sm" onClick={() => setSel([])}>إلغاء</button>
-          <button className="fx-btn pri sm" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}>رحلة جديدة</button>
+          <button className="fx-btn pri" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}><FiTruck /> حطها على سيارة</button>
         </div>
       )}
 
@@ -122,22 +156,25 @@ export function itemsLine(o) {
 
 function OrderRow({ o, selectable, on, onToggle, onInfo }) {
   return (
-    <div className={`fx-item ${on ? "on" : ""}`}>
+    <div className={`fx-crow ${on ? "sel" : ""}`}>
       {selectable && (
-        <button className="fx-check" style={{ cursor: "pointer", background: on ? "var(--fx-navy)" : "none" }} onClick={onToggle} role="checkbox" aria-checked={on} aria-label={`اختار ${o.customer_name}`}>
+        <button className={`fx-check2 ${on ? "on" : ""}`} onClick={onToggle} role="checkbox" aria-checked={on} aria-label={`اختار ${o.customer_name}`}>
           {on && <FiCheck />}
         </button>
       )}
-      <button className="t" style={{ background: "none", border: 0, textAlign: "start", font: "inherit", color: "inherit", cursor: "pointer", padding: 0 }} onClick={selectable ? onToggle : onInfo}>
-        <b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
-        <span>{o.city || "بدون مدينة"} · {itemsLine(o)}</span>
-        <span className="fx-row" style={{ gap: 6 }}>
-          {o.urgent && <span className="fx-pill crit">مستعجل</span>}
-          {o.status === "delayed" && <span className="fx-pill warn">مؤجل{o.delay_reason ? `: ${o.delay_reason}` : ""}</span>}
-          <span className="fx-pill">{date(o.due_date)}</span>
+      <button className="fx-plain fx-crow-main" onClick={selectable ? onToggle : onInfo}>
+        <span className="t">
+          <b>{o.customer_name}</b>
+          <small>{[o.city, `${num(o.cartons)} كرتونة`].filter(Boolean).join(" · ")}{o.due_date && o.due_date !== today() ? ` · ${date(o.due_date)}` : ""}</small>
+          {(o.urgent || o.status === "delayed") && (
+            <span className="tags">
+              {o.urgent && <i className="d bad">مستعجل</i>}
+              {o.status === "delayed" && <i className="d">مؤجل</i>}
+            </span>
+          )}
         </span>
       </button>
-      <button className="fx-icon-btn" onClick={onInfo} aria-label="تفاصيل"><FiInfo /></button>
+      <button className="fx-icon-btn sm" onClick={onInfo} aria-label="تفاصيل"><FiChevronLeft /></button>
     </div>
   );
 }
@@ -437,10 +474,16 @@ function OrderInfo({ o, onClose, onEdit, onChanged }) {
 }
 
 // ---------- بناء رحلة: الطلبات المحددة على سيارة وحدة ----------
-function TripBuilder({ orderIds, onClose, onSaved }) {
+function TripBuilder({ orderIds, orders, onClose, onSaved }) {
   const fx = useFx();
   const vehicles = fx.boot.vehicles.filter((v) => v.status === "active");
-  const [vehicle, setVehicle] = useState(() => vehicles.find((v) => v.driver_id)?.id || vehicles[0]?.id);
+  // بنختار لحالنا أصغر سيارة إلها سائق وبتساع الحمولة
+  const [vehicle, setVehicle] = useState(() => {
+    const need = (orders || []).filter((o) => orderIds.includes(o.id)).reduce((a, o) => a + (o.cartons || 0), 0);
+    const withDriver = vehicles.filter((v) => v.driver_id);
+    const fits = withDriver.filter((v) => v.capacity >= need).sort((a, b) => a.capacity - b.capacity);
+    return (fits[0] || [...withDriver].sort((a, b) => b.capacity - a.capacity)[0] || vehicles[0])?.id;
+  });
   const [ids, setIds] = useState(orderIds);
   const [day, setDay] = useState(today());
   const [depart, setDepart] = useState("08:00");
@@ -448,21 +491,24 @@ function TripBuilder({ orderIds, onClose, onSaved }) {
   const [err, setErr] = useState("");
   const [force, setForce] = useState(false);
 
-  async function preview(sort = false) {
+  const firstSort = useRef(true);
+  async function preview(sort = false, quiet = false) {
     if (!vehicle) return;
     try {
       const r = await fapi.previewTrip({ vehicle_id: vehicle, order_ids: ids, sort, date: day, depart_time: depart });
       setPv(r);
       if (sort) {
-        setIds(r.stops.map((s) => s.id));
-        fx.toast("ترتبت من الأقرب للأبعد");
+        const next = r.stops.map((s) => s.id);
+        if (next.join(",") !== ids.join(",")) setIds(next);
+        if (!quiet) fx.toast("ترتبت من الأقرب للأبعد");
       }
       setErr("");
     } catch (e) {
       setErr(e.message);
     }
   }
-  useEffect(() => { preview(false); }, [vehicle, ids.join(","), day, depart]); // eslint-disable-line react-hooks/exhaustive-deps
+  // أول مرة بنرتبهم لحالهم من الأقرب للأبعد
+  useEffect(() => { const first = firstSort.current; firstSort.current = false; preview(first, true); }, [vehicle, ids.join(","), day, depart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function move(i, d) {
     setIds((xs) => {
@@ -477,7 +523,7 @@ function TripBuilder({ orderIds, onClose, onSaved }) {
   }
   const over = pv && pv.over > 0;
   return (
-    <Sheet title="رحلة جديدة" onClose={onClose}>
+    <Sheet title="حطها على سيارة" onClose={onClose}>
       <div className="fx-stack">
         <div className="fx-field">اليوم
           <div className="fx-chips">
