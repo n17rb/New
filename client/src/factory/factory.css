@@ -425,3 +425,32 @@ a.fx-pill { text-decoration: none; }
 .fx-due .fx-chip { padding: 10px 20px; font-size: 15px; font-weight: 700; }
 .fx-due input { padding: 10px 12px; border-radius: 999px; }
 .fx-prod .pic svg > rect:first-child { fill: transparent; }
+
+/* نماذج مقسّمة: كل قسم بطاقة برقم وأيقونة وشرح (نفس ستايل التصاميم) */
+.fx-form { gap: 14px; }
+.fx-sec-card { background: #fff; border: 1px solid var(--fx-line, #e3edf5); border-radius: 20px; padding: 16px; box-shadow: 0 4px 16px rgba(4, 86, 162, .04); }
+.fx-sec-head { display: flex; align-items: flex-start; gap: 12px; list-style: none; cursor: default; }
+.fx-sec-head::-webkit-details-marker { display: none; }
+.fx-sec-t { flex: 1; display: grid; gap: 4px; }
+.fx-sec-t b { font-size: 17px; color: var(--fx-ink); display: flex; align-items: center; gap: 8px; }
+.fx-sec-t small { color: var(--fx-muted); font-size: 13px; }
+.fx-sec-n { width: 24px; height: 24px; border-radius: 50%; background: #2f6fe4; color: #fff; display: inline-grid; place-items: center; font-size: 13px; font-weight: 800; flex: none; }
+.fx-sec-ic { order: 2; width: 52px; height: 52px; border-radius: 16px; background: var(--fx-sky-soft); color: #2f6fe4; display: grid; place-items: center; flex: none; }
+.fx-sec-ic svg { width: 24px; height: 24px; }
+.fx-sec-more > summary { cursor: pointer; }
+.fx-sec-chev { order: 3; align-self: center; color: var(--fx-muted); transition: transform .2s; }
+.fx-sec-more[open] .fx-sec-chev { transform: rotate(180deg); }
+.fx-iconfield { position: relative; display: flex; align-items: center; gap: 8px; }
+.fx-iconfield > svg { position: absolute; inset-inline-start: 14px; width: 20px; height: 20px; color: var(--fx-muted); pointer-events: none; }
+.fx-iconfield .fx-input { padding-inline-start: 44px; min-height: 52px; border-radius: 14px; }
+.fx-iconfield .end { position: absolute; inset-inline-end: 14px; color: var(--fx-muted); pointer-events: none; display: grid; }
+.fx-seqline { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--fx-muted); font-size: 13.5px; }
+.fx-seqline .fx-input { width: 110px; text-align: center; font-weight: 800; min-height: 42px; }
+.fx-drop { display: grid; justify-items: center; gap: 6px; width: 100%; padding: 22px 12px; border: 1.5px dashed #9cc3ee; border-radius: 16px; background: #f6fafe; color: #2f6fe4; font: inherit; cursor: pointer; }
+.fx-drop svg { width: 30px; height: 30px; }
+.fx-drop b { font-size: 15px; }
+.fx-savebar { position: sticky; bottom: 0; padding: 10px 0 4px; background: linear-gradient(transparent, var(--fx-bg, #f4f8fc) 30%); }
+.fx-savebar .fx-btn { background: #2f6fe4; }
+.fx-sheet:has(.fx-form) { background: var(--fx-bg); }
+.fx-form .fx-btn.pri { background: #2f6fe4; border-color: #2f6fe4; }
+.fx-form .fx-btn.pri:disabled { opacity: .55; }
