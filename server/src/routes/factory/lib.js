@@ -82,7 +82,7 @@ export async function alert({ level = "info", kind = "general", ref = null, titl
 // ترخيص وتأمين السيارات: تنبيه قبل ٣٠ يوم، وتنبيه أحمر قبل ٧ أيام، ويوم ما يخلص
 export async function checkVehicleDocs() {
   const rows = (await query(
-    `SELECT id, name, (license_expires - CURRENT_DATE) AS lic, (insurance_expires - CURRENT_DATE) AS ins,
+    `SELECT id, name, (license_expires - (now() AT TIME ZONE 'Asia/Amman')::date) AS lic, (insurance_expires - (now() AT TIME ZONE 'Asia/Amman')::date) AS ins,
             to_char(license_expires, 'YYYY-MM-DD') AS lic_d, to_char(insurance_expires, 'YYYY-MM-DD') AS ins_d
      FROM f_vehicles WHERE status <> 'inactive' AND (license_expires IS NOT NULL OR insurance_expires IS NOT NULL)`
   )).rows;
