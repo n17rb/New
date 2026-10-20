@@ -61,6 +61,7 @@ const RANK = { none: 0, view: 1, edit: 2 };
 export const TEMPLATES = {
   admin: {
     label: "مساعد مدير",
+    desc: "بيدير الشغل كله تقريبًا: الطلبات، الزباين، الكاش والتقارير.",
     sections: {
       dashboard: "view", customers: "edit", orders: "edit", delivery: "edit", trips: "edit",
       products: "edit", cash: "edit", driver_balances: "edit", reports: "view", settings: "edit",
@@ -70,6 +71,7 @@ export const TEMPLATES = {
   },
   driver: {
     label: "كابتن توصيل",
+    desc: "بيوصّل الطلبات وبيضيف زباين. ما بيشوف الحسابات.",
     sections: {
       dashboard: "none", customers: "edit", orders: "edit", delivery: "edit", trips: "none",
       products: "view", cash: "none", driver_balances: "none", reports: "none", settings: "none",
@@ -79,6 +81,7 @@ export const TEMPLATES = {
   },
   data_entry: {
     label: "موظف إدخال",
+    desc: "بيضيف ويعدّل الزباين بس.",
     sections: {
       dashboard: "none", customers: "edit", orders: "none", delivery: "none", trips: "none",
       products: "view", cash: "none", driver_balances: "none", reports: "none", settings: "none",
@@ -88,6 +91,7 @@ export const TEMPLATES = {
   },
   viewer: {
     label: "متفرج",
+    desc: "بيشوف بس، ما بيقدر يغيّر إشي.",
     sections: {
       dashboard: "view", customers: "view", orders: "view", delivery: "none", trips: "view",
       products: "view", cash: "view", driver_balances: "view", reports: "view", settings: "view",
@@ -102,36 +106,43 @@ const F = (o) => ({ f_home: "none", f_orders: "none", f_dispatch: "none", f_driv
 export const FACTORY_TEMPLATES = {
   admin: {
     label: "مدير",
+    desc: "بيشوف كل إشي وبيعدّل: الطلبات، الرحلات، المستودع، الحسابات.",
     sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", payroll: "edit" }),
     actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true },
   },
   dispatcher: {
     label: "مسؤول الحركة",
+    desc: "بيسجّل الطلبات وبيوزّعها على السيارات وبيتابع الرحلات.",
     sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "view" }),
     actions: { give_credit: true },
   },
   driver: {
     label: "سائق",
+    desc: "بيشوف رحلته بس: الطلبات بالترتيب، التسليم والفاتورة، والديزل والمصاريف. بيقدر يبيع بالدين.",
     sections: F({ f_drive: "edit" }),
     actions: { give_credit: true },
   },
   warehouse: {
     label: "أمين مستودع",
+    desc: "بيأكّد تحميل السيارات وبيستلم المرتجع وبيسجّل التالف والجرد.",
     sections: F({ f_stock: "edit", f_production: "view" }),
     actions: {},
   },
   production: {
     label: "مشرف إنتاج",
+    desc: "بيسجّل الإنتاج وأعطال المكنات.",
     sections: F({ f_production: "edit", f_stock: "view" }),
     actions: {},
   },
   accountant: {
     label: "محاسب",
+    desc: "بيستلم الكاش من السائقين، بيوافق على المصاريف، وبيتابع الديون والرواتب.",
     sections: F({ f_home: "view", f_money: "edit", f_customers: "view", f_reports: "view", payroll: "edit" }),
     actions: { approve_expense: true },
   },
   viewer: {
     label: "متفرج",
+    desc: "بيشوف بس، ما بيقدر يغيّر إشي.",
     sections: F({ f_home: "view", f_orders: "view", f_dispatch: "view", f_customers: "view", f_stock: "view", f_production: "view", f_money: "view", f_fleet: "view", f_reports: "view", payroll: "view" }),
     actions: {},
   },

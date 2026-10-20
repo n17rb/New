@@ -1823,3 +1823,17 @@ input[type="date"]:focus, textarea:focus {
 .sample-banner-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; border: none; background: var(--urgent); color: #fff; border-radius: 12px; padding: 9px 12px; font: inherit; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
 .sample-banner-btn:disabled { opacity: .6; }
 .sample-badge { background: var(--warning-soft); color: var(--warning); font-size: 0.68rem; margin-right: 6px; vertical-align: middle; }
+
+/* الموظفين: «شو شغله؟» كبطاقات بشرح، والتفاصيل مطوية */
+.role-cards { display: grid; gap: 8px; margin-bottom: 10px; }
+.role-card { display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: start; padding: 12px 14px; border-radius: var(--radius-md); border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.role-card .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; margin-top: 2px; }
+.role-card .t { display: grid; gap: 3px; }
+.role-card b { font-size: 1rem; }
+.role-card small { color: var(--text-secondary); font-size: 0.82rem; line-height: 1.6; }
+.role-card.on { border-color: var(--primary); background: var(--primary-soft); }
+.role-card.on .dot { background: var(--primary); border-color: var(--primary); }
+.role-card:disabled { opacity: .5; cursor: default; }
+.perm-advanced { margin: 6px 0 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.perm-advanced > summary { cursor: pointer; font-weight: 700; color: var(--primary); }
+.info-box { background: var(--primary-soft); color: var(--text); border-radius: var(--radius-md); padding: 10px 12px; font-size: 0.85rem; line-height: 1.7; }

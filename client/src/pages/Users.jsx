@@ -6,7 +6,8 @@ import { ROLE_LABELS as SHOP_ROLE_LABELS } from "./More.jsx";
 import { readShop } from "../shop.js";
 
 // المصانع: «سائق» بدل «كابتن توصيل»
-const ROLE_LABELS = readShop()?.plan === "factory" ? { ...SHOP_ROLE_LABELS, driver: "سائق" } : SHOP_ROLE_LABELS;
+const isFactory = readShop()?.plan === "factory";
+const ROLE_LABELS = isFactory ? { ...SHOP_ROLE_LABELS, driver: "سائق" } : SHOP_ROLE_LABELS;
 
 const LEVEL_LABELS = { none: "مخفي", view: "متفرج", edit: "تعديل" };
 
@@ -220,39 +221,38 @@ function UserEditor({ meta, user, onClose, onSaved }) {
         )}
       </div>
 
-      <div className="section-title">نوع الحساب</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
-        {Object.entries(meta.templates).map(([key, t]) => (
-          <button
-            key={key}
-            type="button"
-            className={!isOwnerRole && matchingTemplate === key ? "btn-primary" : "btn-secondary"}
-            style={{ width: "auto", padding: "9px 14px", fontSize: "0.85rem" }}
-            onClick={() => applyTemplate(key)}
-          >
-            {t.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={isOwnerRole ? "btn-primary" : "btn-secondary"}
-          style={{ width: "auto", padding: "9px 14px", fontSize: "0.85rem" }}
-          onClick={() => setIsOwnerRole(true)}
-          disabled={isSelf}
-        >
-          مدير عام
+      <div className="section-title">شو شغله؟</div>
+      <div className="role-cards">
+        {Object.entries(meta.templates).map(([key, t]) => {
+          const on = !isOwnerRole && matchingTemplate === key;
+          return (
+            <button key={key} type="button" className={`role-card ${on ? "on" : ""}`} onClick={() => applyTemplate(key)} aria-pressed={on}>
+              <span className="dot" aria-hidden="true">{on ? "✓" : ""}</span>
+              <span className="t"><b>{t.label}</b>{t.desc && <small>{t.desc}</small>}</span>
+            </button>
+          );
+        })}
+        <button type="button" className={`role-card ${isOwnerRole ? "on" : ""}`} onClick={() => setIsOwnerRole(true)} disabled={isSelf} aria-pressed={isOwnerRole}>
+          <span className="dot" aria-hidden="true">{isOwnerRole ? "✓" : ""}</span>
+          <span className="t"><b>مدير عام</b><small>بيشوف وبيعدّل كل إشي، وبيضيف موظفين ويغيّر صلاحياتهم.</small></span>
         </button>
       </div>
-      <p className="text-secondary" style={{ margin: "0 4px 4px", fontSize: "0.8rem" }}>
-        {isOwnerRole
-          ? "المدير العام بيشوف وبيعدّل كل شي، وبيدير الموظفين."
-          : matchingTemplate
-            ? "اختار قالب وبعدين عدّل أي قسم تحت."
-            : "صلاحيات مخصصة لهذا الموظف."}
-      </p>
+      {!isOwnerRole && !matchingTemplate && (
+        <p className="text-secondary" style={{ margin: "0 4px 8px", fontSize: "0.82rem" }}>صلاحيات مخصصة لهالموظف (غيّرتها من «تخصيص الصلاحيات» تحت).</p>
+      )}
+      {isFactory && !isOwnerRole && matchingTemplate === "driver" && (
+        <div className="info-box" style={{ marginBottom: 10 }}>
+          بعد ما تضيفه: روح <b>الإعدادات ← السيارات</b> واختار سيارته واختاره «سائق» إلها. هيك بتوصله رحلاتها على تلفونه.
+        </div>
+      )}
 
       {!isOwnerRole && (
-        <>
+        <details className="perm-advanced" open={!matchingTemplate}>
+          <summary>تخصيص الصلاحيات (اختياري)</summary>
+          <p className="text-secondary" style={{ margin: "6px 4px 0", fontSize: "0.8rem", lineHeight: 1.7 }}>
+            القالب فوق بيعبّي هدول لحاله، وما بتحتاج تلمسهم. إذا بدك تغيّر إشي:
+            <b> مخفي</b> = ما بيشوف القسم، <b>متفرج</b> = بيشوف بس، <b>تعديل</b> = بيشوف وبيغيّر.
+          </p>
           <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span>الأقسام</span>
             <span style={{ display: "flex", gap: 12, fontWeight: 600 }}>
@@ -303,7 +303,7 @@ function UserEditor({ meta, user, onClose, onSaved }) {
               </label>
             ))}
           </div>
-        </>
+        </details>
       )}
 
       <button className="btn-primary" style={{ marginTop: 8, marginBottom: 10 }} disabled={saving} onClick={handleSave}>
