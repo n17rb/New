@@ -59,6 +59,12 @@ export default function Home() {
         </button>
       )}
 
+      {fx.isOwner && b.counts.sample_customers > 0 && !fx.shop?.is_demo && (
+        <button className="fx-card fx-row" style={{ textAlign: "start", font: "inherit", cursor: "pointer", background: "var(--fx-warn-soft)", border: 0 }} onClick={() => fx.show("/f/settings", "sample-card")}>
+          <span className="fx-grow"><b>هاي داتا تجريبية</b><br /><span className="fx-muted">لما تجهز تبلش بزباينك الحقيقيين، امسحها بكبسة.</span></span>
+          <FiChevronLeft />
+        </button>
+      )}
       <Tip id="home">هاي شاشتك الصبح: حالة المصنع كله بنظرة وحدة. التنبيه الأحمر بدّه تصرّف.</Tip>
       <Err msg={error} />
       {!h && !error && <Loading />}

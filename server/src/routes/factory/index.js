@@ -9,6 +9,7 @@ import stock from "./stock.js";
 import money from "./money.js";
 import reports from "./reports.js";
 import publicRoutes from "./public.js";
+import sample from "./sample.js";
 
 // ============================================================
 // موج للمصانع — كل مسارات المصنع تحت /api/factory
@@ -22,6 +23,7 @@ router.use(driver);
 router.use(stock);
 router.use(money);
 router.use(reports);
+router.use(sample);
 
 export const factoryPublicRouter = publicRoutes;
 export { factoryWatch } from "./reports.js";
