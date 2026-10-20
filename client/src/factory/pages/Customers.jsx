@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart } from "react-icons/fi";
+import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiUser, FiHome, FiNavigation, FiChevronDown, FiSettings, FiSave, FiImage } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { OrderSheet } from "./Orders.jsx";
 import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, LocationPicker, waLink, money, num, date, dateTime } from "../ui.jsx";
@@ -97,77 +97,113 @@ function CustomerEdit({ c, onClose, onSaved }) {
   const [err, setErr] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
-  return (
-    <Sheet title={c ? `تعديل ${c.name}` : "زبون جديد"} onClose={onClose}>
-      <div className="fx-stack">
-        <div className="fx-grid-seq">
-          <label className="fx-field">اسم المحل<input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: بقالة الأمل" /></label>
-          <label className="fx-field">رقم الزبون
-            <input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.seq_no} placeholder="تلقائي" style={{ textAlign: "center", fontWeight: 800 }}
-              onChange={(e) => { seqTouched.current = true; setF({ ...f, seq_no: e.target.value.replace(/[^\d]/g, "") }); }} />
-          </label>
-        </div>
-        <div className="fx-grid2">
-          <label className="fx-field">التلفون<input className="fx-input" inputMode="tel" dir="ltr" value={f.phone} onChange={set("phone")} placeholder="07XXXXXXXX" /></label>
-          <label className="fx-field">المدينة
-            <input className="fx-input" list="fx-cities" value={f.city} onChange={set("city")} />
-            <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
-          </label>
-        </div>
+  const save = async () => {
+    setErr("");
+    try {
+      await fapi.saveCustomer({ ...f, id: c?.id, prices: Object.entries(prices).map(([product_id, price]) => ({ product_id: Number(product_id), price })) });
+      fx.toast("انحفظ الزبون");
+      onSaved();
+    } catch (e) { setErr(e.message); }
+  };
 
-        <label className="fx-field">العنوان<input className="fx-input" value={f.address} onChange={set("address")} placeholder="مثلًا: شارع الجامعة · عمارة 12 · جنب المسجد" /></label>
-        <LocationPicker title="موقع الزبون" hereLabel="أنا عند الزبون هلأ — خذ موقعي" hl="customer-location"
-          lat={f.lat} lng={f.lng} onChange={(p) => { setF((x) => ({ ...x, ...p })); if (p.lat !== "") fx.toast("انحفظ موقع الزبون"); }} />
-        <div className="fx-card fx-stack fx-locbox">
-          <b>صورة العمارة أو المحل</b>
+  return (
+    <Sheet title={c ? `تعديل ${c.name}` : "إضافة زبون جديد"} onClose={onClose}>
+      <div className="fx-stack fx-form">
+        <FormSection n={1} icon={FiUser} title="المعلومات الأساسية" sub="اسم الزبون وتلفونه ووين محله">
+          <IconField icon={FiHome}><input className="fx-input" value={f.name} onChange={set("name")} placeholder="اسم المحل" aria-label="اسم المحل" /></IconField>
+          <div className="fx-grid2">
+            <IconField icon={FiPhone}><input className="fx-input" inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="رقم التلفون" aria-label="رقم التلفون" /></IconField>
+            <IconField icon={FiMapPin} end={<FiChevronDown aria-hidden="true" />}>
+              <input className="fx-input" list="fx-cities" value={f.city} onChange={set("city")} placeholder="المدينة" aria-label="المدينة" />
+              <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
+            </IconField>
+          </div>
+          <IconField icon={FiNavigation}><input className="fx-input" value={f.address} onChange={set("address")} placeholder="العنوان (الشارع، العمارة، جنب...)" aria-label="العنوان" /></IconField>
+          <div className="fx-seqline">
+            <span>رقم الزبون</span>
+            <input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.seq_no} placeholder="تلقائي" aria-label="رقم الزبون"
+              onChange={(e) => { seqTouched.current = true; setF({ ...f, seq_no: e.target.value.replace(/[^\d]/g, "") }); }} />
+          </div>
+        </FormSection>
+
+        <FormSection n={2} icon={FiMapPin} title="الموقع الجغرافي" sub="إذا إنت عند الزبون اكبس الزر، أو الصق رابط موقعه">
+          <LocationPicker bare hereLabel="تحديد موقع الزبون" hl="customer-location"
+            lat={f.lat} lng={f.lng} onChange={(p) => { setF((x) => ({ ...x, ...p })); if (p.lat !== "") fx.toast("انحفظ موقع الزبون"); }} />
+        </FormSection>
+
+        <FormSection n={3} icon={FiCamera} title="صورة المحل (اختيارية)" sub="صورة العمارة أو المحل عشان السائق يعرفه">
           <BuildingPhoto value={f.photo_url} onChange={(u) => setF((x) => ({ ...x, photo_url: u }))} />
-        </div>
-        <details className="fx-more" open={!!c && (c.pay_terms === "credit" || (c.prices || []).length > 0)}>
-          <summary>خيارات زيادة: الدين، الأسعار الخاصة، الملاحظات</summary>
-          <div className="fx-stack" style={{ marginTop: 10 }}>
-        <div className="fx-grid2">
-          <label className="fx-field">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
-          <label className="fx-field">الخط
-            <select value={f.line_id} onChange={set("line_id")}>
-              <option value="">بدون</option>
-              {fx.boot.lines.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="fx-field">طريقة الدفع
-          <div className="fx-chips">
-            <button className={`fx-chip ${f.pay_terms === "cash" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "cash" })}>كاش</button>
-            <button className={`fx-chip ${f.pay_terms === "credit" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "credit" })}>دين (ذمم)</button>
-          </div>
-        </div>
-        {f.pay_terms === "credit" && <label className="fx-field">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
-        {!c && canMoney && <label className="fx-field">رصيد قديم عليه (اختياري)<input className="fx-input" type="number" inputMode="decimal" value={f.opening_balance} onChange={set("opening_balance")} /></label>}
-        {canPrices && fx.boot.products.length > 0 && (
-          <div className="fx-field">أسعار خاصة لهالزبون (فاضي = السعر العادي)
-            <div className="fx-stack" style={{ marginTop: 8 }}>
-              {fx.boot.products.filter((p) => p.active).map((p) => (
-                <label key={p.id} className="fx-row" style={{ flexWrap: "nowrap" }}>
-                  <span className="fx-grow">{p.name} <span className="fx-muted">(العادي {money(p.price)})</span></span>
-                  <input className="fx-input" style={{ width: 110 }} type="number" inputMode="decimal" value={prices[p.id] ?? ""} onChange={(e) => setPrices({ ...prices, [p.id]: e.target.value })} placeholder="—" />
-                </label>
-              ))}
+        </FormSection>
+
+        <details className="fx-sec-card fx-sec-more" open={!!c && (c.pay_terms === "credit" || (c.prices || []).length > 0)}>
+          <summary className="fx-sec-head">
+            <span className="fx-sec-ic"><FiSettings /></span>
+            <span className="fx-sec-t"><b><span className="fx-sec-n">4</span>الإعدادات الإضافية</b><small>الدين، الأسعار الخاصة، الملاحظات (اختيارية)</small></span>
+            <FiChevronDown className="fx-sec-chev" aria-hidden="true" />
+          </summary>
+          <div className="fx-stack" style={{ marginTop: 12 }}>
+            <div className="fx-grid2">
+              <label className="fx-field">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
+              <label className="fx-field">الخط
+                <select value={f.line_id} onChange={set("line_id")}>
+                  <option value="">بدون</option>
+                  {fx.boot.lines.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </label>
             </div>
-          </div>
-        )}
-        <label className="fx-field">ملاحظات<input className="fx-input" value={f.notes} onChange={set("notes")} /></label>
+            <div className="fx-field">طريقة الدفع
+              <div className="fx-chips">
+                <button className={`fx-chip ${f.pay_terms === "cash" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "cash" })}>كاش</button>
+                <button className={`fx-chip ${f.pay_terms === "credit" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "credit" })}>دين (ذمم)</button>
+              </div>
+            </div>
+            {f.pay_terms === "credit" && <label className="fx-field">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
+            {!c && canMoney && <label className="fx-field">رصيد قديم عليه (اختياري)<input className="fx-input" type="number" inputMode="decimal" value={f.opening_balance} onChange={set("opening_balance")} /></label>}
+            {canPrices && fx.boot.products.length > 0 && (
+              <div className="fx-field">أسعار خاصة لهالزبون (فاضي = السعر العادي)
+                <div className="fx-stack" style={{ marginTop: 8 }}>
+                  {fx.boot.products.filter((p) => p.active).map((p) => (
+                    <label key={p.id} className="fx-row" style={{ flexWrap: "nowrap" }}>
+                      <span className="fx-grow">{p.name} <span className="fx-muted">(العادي {money(p.price)})</span></span>
+                      <input className="fx-input" style={{ width: 110 }} type="number" inputMode="decimal" value={prices[p.id] ?? ""} onChange={(e) => setPrices({ ...prices, [p.id]: e.target.value })} placeholder="—" />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <label className="fx-field">ملاحظات<input className="fx-input" value={f.notes} onChange={set("notes")} /></label>
           </div>
         </details>
+
         <Err msg={err} />
-        <Act className="fx-btn pri block" onClick={async () => {
-          setErr("");
-          try {
-            await fapi.saveCustomer({ ...f, id: c?.id, prices: Object.entries(prices).map(([product_id, price]) => ({ product_id: Number(product_id), price })) });
-            fx.toast("انحفظ الزبون");
-            onSaved();
-          } catch (e) { setErr(e.message); }
-        }}>احفظ</Act>
+        <div className="fx-savebar">
+          <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}><FiSave /> حفظ الزبون</Act>
+        </div>
       </div>
     </Sheet>
+  );
+}
+
+// قسم بالنموذج: رقم، عنوان، شرح قصير، وأيقونة
+function FormSection({ n, icon: Icon, title, sub, children }) {
+  return (
+    <section className="fx-sec-card">
+      <div className="fx-sec-head">
+        <span className="fx-sec-ic"><Icon /></span>
+        <span className="fx-sec-t"><b><span className="fx-sec-n">{n}</span>{title}</b>{sub && <small>{sub}</small>}</span>
+      </div>
+      <div className="fx-stack" style={{ marginTop: 12 }}>{children}</div>
+    </section>
+  );
+}
+
+function IconField({ icon: Icon, end, children }) {
+  return (
+    <div className="fx-iconfield">
+      <Icon aria-hidden="true" />
+      {children}
+      {end && <span className="end">{end}</span>}
+    </div>
   );
 }
 
@@ -186,16 +222,19 @@ function BuildingPhoto({ value, onChange }) {
   }
   return (
     <div className="fx-stack" style={{ gap: 8 }}>
-      {value && (
+      {value ? (
         <div className="fx-building-wrap">
-          <img className="fx-building" src={value} alt="صورة العمارة" />
-          <button className="fx-icon-btn sm" aria-label="امسح الصورة" onClick={() => onChange("")}><FiX /></button>
+          <img className="fx-building" src={value} alt="صورة المحل" />
+          <button type="button" className="fx-icon-btn sm" aria-label="امسح الصورة" onClick={() => onChange("")}><FiX /></button>
         </div>
+      ) : (
+        <button type="button" className="fx-drop" disabled={busy} onClick={() => cam.current?.click()}>
+          <FiImage aria-hidden="true" />
+          <b>{busy ? "عم بنرفع الصورة..." : "اضغط لتصوير المحل"}</b>
+        </button>
       )}
-      <div className="fx-grid2">
-        <button className="fx-btn" disabled={busy} onClick={() => cam.current?.click()}><FiCamera /> {busy ? "عم بنرفع..." : value ? "صوّر من جديد" : "صوّر العمارة"}</button>
-        <button className="fx-btn" disabled={busy} onClick={() => gal.current?.click()}>من المعرض</button>
-      </div>
+      <button type="button" className="fx-link" disabled={busy} onClick={() => gal.current?.click()} style={{ justifySelf: "center" }}>{value ? "غيّر الصورة من المعرض" : "أو اختار من المعرض"}</button>
+      {value && <button type="button" className="fx-link" disabled={busy} onClick={() => cam.current?.click()} style={{ justifySelf: "center" }}>صوّر من جديد</button>}
       <input ref={cam} type="file" accept="image/*" capture="environment" hidden onChange={pick} />
       <input ref={gal} type="file" accept="image/*" hidden onChange={pick} />
     </div>

@@ -236,7 +236,7 @@ export function getLocation(timeout = 8000, maxAge = 60000) {
 }
 
 // تثبيت موقع: «أنا هون هلأ» أو لصق رابط خرائط جوجل / واتساب
-export function LocationPicker({ lat, lng, onChange, hereLabel = "أنا هون هلأ — خذ موقعي", title = "الموقع", hl }) {
+export function LocationPicker({ lat, lng, onChange, hereLabel = "أنا هون هلأ — خذ موقعي", title = "الموقع", hl, bare = false }) {
   const fx = useFx();
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState("");
@@ -257,24 +257,29 @@ export function LocationPicker({ lat, lng, onChange, hereLabel = "أنا هون 
     if (!loc) { setBusy(""); return fx.toast("ما قدرنا نجيب الموقع — شغّل الموقع (GPS) بالتلفون."); }
     try { await onChange({ ...loc, maps_url: `https://www.google.com/maps?q=${loc.lat},${loc.lng}` }); } finally { setBusy(""); }
   }
+  const status = has
+    ? <span className="fx-row" style={{ gap: 6 }}>
+        <a className="fx-pill ok" href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer"><FiCheck /> الموقع محفوظ — شوفه</a>
+        <button type="button" className="fx-icon-btn sm" aria-label="امسح الموقع" onClick={() => onChange({ lat: "", lng: "", maps_url: "" })}><FiX /></button>
+      </span>
+    : <span className="fx-pill warn">لسا بدون موقع</span>;
+  const body = (
+    <>
+      <button type="button" className={`fx-btn ${bare ? "pri fx-big" : "sky"} block`} onClick={here} disabled={!!busy}><FiMapPin /> {busy === "gps" ? "عم بنجيب موقعك..." : hereLabel}</button>
+      <div className="fx-iconfield">
+        <FiLink aria-hidden="true" />
+        <input className="fx-input" value={link} onChange={(e) => setLink(e.target.value)}
+          onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/https?:\/\//.test(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
+          placeholder="أو الصق رابط الموقع (اختياري)" />
+        {link.trim() && <button type="button" className="fx-btn sm" disabled={!!busy} onClick={() => fromLink(link)}>{busy === "link" ? "..." : "ثبّت"}</button>}
+      </div>
+    </>
+  );
+  if (bare) return <div className="fx-stack" data-hl={hl}>{body}<div>{status}</div></div>;
   return (
     <div className="fx-card fx-stack fx-locbox" data-hl={hl}>
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <b>{title}</b>
-        {has
-          ? <span className="fx-row" style={{ gap: 6 }}>
-              <a className="fx-pill ok" href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer"><FiCheck /> محفوظ — شوفه</a>
-              <button type="button" className="fx-icon-btn sm" aria-label="امسح الموقع" onClick={() => onChange({ lat: "", lng: "", maps_url: "" })}><FiX /></button>
-            </span>
-          : <span className="fx-pill warn">بدون موقع</span>}
-      </div>
-      <button type="button" className="fx-btn sky block" onClick={here} disabled={!!busy}><FiMapPin /> {busy === "gps" ? "عم بنجيب موقعك..." : hereLabel}</button>
-      <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-        <input className="fx-input" dir="ltr" value={link} onChange={(e) => setLink(e.target.value)}
-          onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/https?:\/\//.test(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
-          placeholder="أو الصق رابط الموقع هون" />
-        <button type="button" className="fx-btn sm" disabled={!link.trim() || !!busy} onClick={() => fromLink(link)}><FiLink /> {busy === "link" ? "..." : "ثبّت"}</button>
-      </div>
+      <div className="fx-row" style={{ justifyContent: "space-between" }}><b>{title}</b>{status}</div>
+      {body}
       <small className="fx-muted">الرابط من خرائط جوجل: افتح المكان ← مشاركة ← نسخ الرابط. أو أي رابط موقع وصلك على واتساب.</small>
     </div>
   );
