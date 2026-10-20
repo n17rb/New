@@ -957,3 +957,19 @@ ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 -- منطقة الزبون: المحافظة واللواء (city ضلت للمنطقة/البلدة نفسها، مثلًا «الشجرة»)
 ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS governorate VARCHAR(40);
 ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS district VARCHAR(60);
+
+-- طلبات ثابتة: زبون بياخذ نفس الطلب كل كم يوم، والنظام بيضيفه لحاله
+CREATE TABLE IF NOT EXISTS f_recurring (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES f_customers(id) ON DELETE CASCADE,
+  every_days INTEGER NOT NULL CHECK (every_days BETWEEN 1 AND 365),
+  items JSONB NOT NULL,
+  next_date DATE NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true,
+  notes TEXT,
+  last_order_id INTEGER,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_recurring_next ON f_recurring(next_date) WHERE active;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS recurring_id INTEGER REFERENCES f_recurring(id) ON DELETE SET NULL;

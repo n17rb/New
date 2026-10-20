@@ -171,8 +171,9 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
         <span className="t">
           <b>{o.customer_name}</b>
           <small>{[o.city, `${num(o.cartons)} كرتونة`].filter(Boolean).join(" · ")}{o.due_date && o.due_date !== today() ? ` · ${date(o.due_date)}` : ""}</small>
-          {(o.urgent || o.status === "delayed") && (
+          {(o.urgent || o.status === "delayed" || o.recurring_id) && (
             <span className="tags">
+              {o.recurring_id && <i className="o">🔁 طلب ثابت</i>}
               {o.urgent && <i className="d bad">مستعجل</i>}
               {o.status === "delayed" && <i className="d">مؤجل</i>}
             </span>
@@ -340,7 +341,7 @@ function sizeLabel(name = "") {
 
 // اختيار المنتجات بالصور، والكمية بأزرار سريعة (المصانع بتطلب مئات الكراتين)
 const QUICK = [50, 100, 200, 300, 500];
-function ProductPicker({ products, items, setItems, customerId }) {
+export function ProductPicker({ products, items, setItems, customerId, noBonus = false }) {
   const fx = useFx();
   const canBonus = fx.canAction("give_bonus");
   const setBonus = (id, patch) => setItems((xs) => xs.map((x) => (x.product_id === id ? { ...x, ...patch } : x)));
@@ -385,7 +386,7 @@ function ProductPicker({ products, items, setItems, customerId }) {
               </div>
             </div>
             <div className="fx-chips">{QUICK.map((n) => <button key={n} type="button" className={`fx-chip ${q === n ? "on" : ""}`} onClick={() => setQty(p.id, n)}>{n}</button>)}</div>
-            <BonusLine p={p} q={q} it={it} auto={bonusPreview(fx.boot.bonus_rules, customerId, p.id, q)} canBonus={canBonus} onChange={(patch) => setBonus(p.id, patch)} />
+            {!noBonus && <BonusLine p={p} q={q} it={it} auto={bonusPreview(fx.boot.bonus_rules, customerId, p.id, q)} canBonus={canBonus} onChange={(patch) => setBonus(p.id, patch)} />}
           </div>
         );
       })}

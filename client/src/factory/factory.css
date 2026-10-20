@@ -596,3 +596,15 @@ a.fx-pill { text-decoration: none; }
 .fx-push small { font-size: 12.5px; color: var(--fx-muted); line-height: 1.6; }
 .fx-push small.m { color: var(--fx-navy); }
 .fx-push.off { border-color: var(--fx-navy); }
+
+/* الطلبات الثابتة */
+.fx-rec { background: #fff; border: 1px solid var(--fx-line); border-radius: 16px; padding: 12px 14px; display: grid; gap: 8px; }
+.fx-rec .h { display: flex; align-items: center; gap: 8px; }
+.fx-rec .h svg { color: var(--fx-navy); }
+.fx-rec .h b { flex: 1; }
+.fx-rec-row { display: flex; align-items: center; gap: 6px; width: 100%; }
+.fx-rec-row .t { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.fx-rec-row .t span { font-size: 14px; }
+.fx-rec-row small { color: var(--fx-muted); font-size: 12.5px; }
+.fx-rec-row.off { opacity: .55; }
+.fx-crow .fx-rec-row { padding: 2px 0; }
