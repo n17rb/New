@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query, setRequestTenant } from "../db.js";
 import { signToken, requireAuth, isPlatformAdmin } from "../middleware/auth.js";
-import { findTenantIdByUsername, getTenant, tenantAccess, getPlatformSettings } from "../utils/tenants.js";
+import { findTenantIdByUsername, getTenant, tenantAccess, getPlatformSettings, normalizeUsername } from "../utils/tenants.js";
 import { effectivePermissions, permissionsMeta } from "../permissions.js";
 
 const router = Router();
@@ -20,7 +20,7 @@ router.post("/login", async (req, res) => {
   if (!tenant) return res.status(401).json({ error: "اسم المستخدم أو كلمة المرور غير صحيحة." });
   setRequestTenant(tenant);
 
-  const result = await query("SELECT * FROM users WHERE lower(username) = lower($1)", [username.trim()]);
+  const result = await query("SELECT * FROM users WHERE lower(username) = lower($1)", [normalizeUsername(username)]);
   const user = result.rows[0];
 
   if (!user) {

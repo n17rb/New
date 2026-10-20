@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { FiUserPlus, FiChevronLeft, FiArrowRight, FiTrash2 } from "react-icons/fi";
+import { FiUserPlus, FiChevronLeft, FiArrowRight, FiTrash2, FiMessageCircle, FiCheckCircle } from "react-icons/fi";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
 import { ROLE_LABELS as SHOP_ROLE_LABELS } from "./More.jsx";
-import { readShop } from "../shop.js";
+import { readShop, whatsappNumber } from "../shop.js";
 
 // المصانع: «سائق» بدل «كابتن توصيل»
 const ROLE_LABELS = readShop()?.plan === "factory" ? { ...SHOP_ROLE_LABELS, driver: "سائق" } : SHOP_ROLE_LABELS;
@@ -108,6 +108,7 @@ function UserEditor({ meta, user, onClose, onSaved }) {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [done, setDone] = useState(null);
 
   // القالب اللي بيطابق الصلاحيات الحالية (لو في)
   const matchingTemplate = useMemo(() => {
@@ -166,7 +167,9 @@ function UserEditor({ meta, user, onClose, onSaved }) {
     try {
       if (isNew) await api.createUser(body);
       else await api.updateUser(user.id, body);
-      onSaved();
+      // انعمل حساب أو تغيّرت كلمة السر: منعرض زر يبعتله الدخول على واتساب
+      if (password) { setSaving(false); setDone({ name: fullName.trim(), username: username.trim(), password, isNew }); }
+      else onSaved();
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -186,6 +189,8 @@ function UserEditor({ meta, user, onClose, onSaved }) {
     }
   }
 
+  if (done) return <SendLogin done={done} onFinish={onSaved} />;
+
   return (
     <>
       <button className="btn-danger-text icon-row" style={{ color: "var(--text-secondary)", marginBottom: 6 }} onClick={onClose}>
@@ -202,7 +207,7 @@ function UserEditor({ meta, user, onClose, onSaved }) {
         <div className="field-row">
           <div className="field">
             <label htmlFor="u-user">اسم المستخدم</label>
-            <input id="u-user" value={username} onChange={(e) => setUsername(e.target.value)} dir="ltr" autoComplete="off" />
+            <input id="u-user" value={username} onChange={(e) => setUsername(e.target.value)} dir="ltr" autoComplete="off" placeholder="مثلاً رقم تلفونه 07XXXXXXXX" />
           </div>
           <div className="field">
             <label htmlFor="u-pass">{isNew ? "كلمة المرور" : "كلمة مرور جديدة"}</label>
@@ -314,6 +319,49 @@ function UserEditor({ meta, user, onClose, onSaved }) {
           <FiTrash2 aria-hidden="true" /> حذف الحساب
         </button>
       )}
+    </>
+  );
+}
+
+// بعد ما ينعمل الحساب: رسالة واتساب للموظف فيها رابط الدخول واسم المستخدم وكلمة السر
+function SendLogin({ done, onFinish }) {
+  const shop = readShop();
+  // نفس ترتيب السيرفر: «+962 79…» بتصير «079…»
+  const digits = done.username.replace(/[٠-٩]/g, (x) => String("٠١٢٣٤٥٦٧٨٩".indexOf(x))).replace(/\D/g, "").replace(/^00962/, "0").replace(/^962/, "0").replace(/^7(?=\d{8}$)/, "07");
+  const looksPhone = /^07\d{8}$/.test(digits) && !/[a-z]/i.test(done.username);
+  const loginName = looksPhone ? digits : done.username.toLowerCase();
+  const [phone, setPhone] = useState(looksPhone ? digits : "");
+  const link = shop?.plan === "factory" && shop?.id ? `${window.location.origin}/m/${shop.id}` : window.location.origin;
+  const appName = shop?.brand?.name || shop?.name || "موج";
+  const text = [
+    `أهلاً ${done.name} 👋`,
+    done.isNew ? `انعملّك حساب على تطبيق ${appName}.` : `تغيّرت كلمة السر لحسابك على تطبيق ${appName}.`,
+    ``,
+    `رابط الدخول: ${link}`,
+    `اسم المستخدم: ${loginName}`,
+    `كلمة السر: ${done.password}`,
+    ``,
+    `افتح الرابط من تلفونك، ومن قائمة المتصفح اختار «إضافة للشاشة الرئيسية» عشان يصير عندك التطبيق.`,
+  ].join("\n");
+  const wa = phone.replace(/\D/g, "").length >= 9 ? `https://wa.me/${whatsappNumber(phone.replace(/\D/g, "").replace(/^7/, "07"))}?text=${encodeURIComponent(text)}` : null;
+  return (
+    <>
+      <div className="card" style={{ textAlign: "center" }}>
+        <FiCheckCircle style={{ width: 44, height: 44, color: "var(--success)" }} aria-hidden="true" />
+        <h1 className="title-lg" style={{ margin: "8px 0 4px" }}>{done.isNew ? "انعمل الحساب" : "تغيّرت كلمة السر"}</h1>
+        <p className="text-secondary" style={{ margin: 0 }}>ابعت للموظف معلومات الدخول على واتساب.</p>
+      </div>
+      <div className="card">
+        <div className="field">
+          <label htmlFor="u-wa">رقم تلفون الموظف (واتساب)</label>
+          <input id="u-wa" value={phone} onChange={(e) => setPhone(e.target.value)} dir="ltr" inputMode="tel" placeholder="07XXXXXXXX" />
+        </div>
+        <pre className="text-secondary" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: "0.85rem", background: "var(--bg)", padding: 10, borderRadius: 10, margin: "0 0 12px" }}>{text}</pre>
+        <a className="btn-primary icon-row" style={{ justifyContent: "center", textDecoration: "none", background: "var(--whatsapp)", opacity: wa ? 1 : 0.5, pointerEvents: wa ? "auto" : "none" }} href={wa || undefined} target="_blank" rel="noreferrer">
+          <FiMessageCircle aria-hidden="true" /> ابعتله على واتساب
+        </a>
+      </div>
+      <button className="btn-secondary" style={{ marginBottom: 12 }} onClick={onFinish}>تم</button>
     </>
   );
 }
