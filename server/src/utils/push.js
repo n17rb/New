@@ -56,12 +56,12 @@ export function isPushAvailable() {
 }
 
 // يبعث إشعار لكل أجهزة المستخدم. الاشتراكات المنتهية بتنحذف لحالها.
-export async function sendPushToUser(userId, { title = "موج", body, url = "/notifications", tag } = {}) {
+export async function sendPushToUser(userId, { title = "موج", body, url = "/notifications", tag, icon } = {}) {
   if (!webpush || !userId || !body) return;
   await getVapidPublicKey();
 
   const subs = await query("SELECT * FROM push_subscriptions WHERE user_id = $1", [userId]);
-  const payload = JSON.stringify({ title, body, url, tag: tag || `n-${Date.now()}` });
+  const payload = JSON.stringify({ title, body, url, tag: tag || `n-${Date.now()}`, ...(icon ? { icon } : {}) });
 
   await Promise.all(
     subs.rows.map(async (s) => {

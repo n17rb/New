@@ -69,14 +69,32 @@ export async function alert({ level = "info", kind = "general", ref = null, titl
     "INSERT INTO f_alerts (level, kind, ref_id, title, body) VALUES ($1,$2,$3,$4,$5) RETURNING id",
     [level, kind, ref, String(title).slice(0, 200), body]
   );
-  if (level === "crit" || level === "warn") {
+  // كل تنبيه بيوصل إشعار على تلفون الإدارة (زي إشعارات إنستا)
+  const icon = level === "crit" ? "🔴 " : level === "warn" ? "🟠 " : "";
+  await pushManagers({ title: `${icon}${title}`, body: body || title, url: "/f/alerts", tag: `fa-${r.rows[0].id}`, approvers: kind === "expense" });
+  return r.rows[0].id;
+}
+
+// إشعار لكل اللي بيشوفوا لوحة المصنع (أو اللي بيوافقوا على المصاريف)
+export async function pushManagers({ title, body, url = "/", tag, approvers = false, except = null }) {
+  try {
+    const b = await brand();
     const users = await query("SELECT id, role, permissions, can_discount, can_delete_customer, can_edit_product_price, can_cancel_order FROM users WHERE status = 'active'");
     for (const u of users.rows) {
-      const wants = kind === "expense" ? canAction(u, "approve_expense") : can(u, "f_home", "view");
-      if (wants) sendPushToUser(u.id, { title, body, url: "/f/alerts", tag: `fa-${r.rows[0].id}` }).catch(() => {});
+      if (except && u.id === except) continue;
+      const wants = approvers ? canAction(u, "approve_expense") : can(u, "f_home", "view");
+      if (wants) sendPushToUser(u.id, { title, body, url, tag, icon: b.icon || undefined }).catch(() => {});
     }
-  }
-  return r.rows[0].id;
+  } catch { /* الإشعار ما بيوقف الشغل */ }
+}
+
+// إشعار لموظف واحد (السائق مثلًا) بأيقونة المصنع
+export async function pushTo(userId, { title, body, url = "/", tag }) {
+  if (!userId) return;
+  try {
+    const b = await brand();
+    sendPushToUser(userId, { title, body, url, tag, icon: b.icon || undefined }).catch(() => {});
+  } catch { /* تجاهل */ }
 }
 
 // ترخيص وتأمين السيارات: تنبيه قبل ٣٠ يوم، وتنبيه أحمر قبل ٧ أيام، ويوم ما يخلص

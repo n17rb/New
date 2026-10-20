@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, logActivity } from "../../db.js";
 import { canAction } from "../../permissions.js";
-import { need, needAny, bad, round2, alert, closeAlerts, jordanDate } from "./lib.js";
+import { need, needAny, bad, round2, alert, closeAlerts, jordanDate, pushTo } from "./lib.js";
 import { loadTrips } from "./orders.js";
 import { maybeClose, expectedReturns } from "./stock.js";
 
@@ -68,6 +68,11 @@ async function reviewExpense(req, res, approve) {
     await query("INSERT INTO f_driver_ledger (driver_id, kind, amount, trip_id, note, created_by) VALUES ($1,'shortage',$2,$3,$4,$5)", [e.driver_id, Number(e.amount), e.trip_id, `مصروف ${e.kind} مرفوض`, req.user.id]);
   }
   await closeAlerts("expense", e.id, req.user.id);
+  await pushTo(e.driver_id, {
+    title: approve ? `✅ انقبل مصروف ${e.kind}` : `❌ انرفض مصروف ${e.kind}`,
+    body: approve ? `${Number(e.amount).toFixed(2)} د.أ انخصمت من الكاش اللي معك.` : `${Number(e.amount).toFixed(2)} د.أ — لازم تسلّمهم مع الكاش. راجع الإدارة.`,
+    url: "/f/drive", tag: `fe-${e.id}`,
+  });
   res.json({ ok: true });
 }
 router.post("/money/expenses/:id/approve", (req, res) => reviewExpense(req, res, true));
