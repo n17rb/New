@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiUser, FiHome, FiNavigation, FiChevronDown, FiSettings, FiSave, FiImage } from "react-icons/fi";
+import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiImage } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { OrderSheet } from "./Orders.jsx";
-import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, LocationPicker, waLink, money, num, date, dateTime } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime } from "../ui.jsx";
 
 const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع", adjust: "تعديل", opening: "رصيد افتتاحي" };
 
@@ -107,107 +107,128 @@ function CustomerEdit({ c, onClose, onSaved }) {
   };
 
   return (
-    <Sheet title={c ? `تعديل ${c.name}` : "إضافة زبون جديد"} onClose={onClose}>
-      <div className="fx-stack fx-form">
-        <FormSection n={1} icon={FiUser} title="المعلومات الأساسية" sub="اسم الزبون وتلفونه ووين محله">
-          <IconField icon={FiHome}><input className="fx-input" value={f.name} onChange={set("name")} placeholder="اسم المحل" aria-label="اسم المحل" /></IconField>
-          <div className="fx-grid2">
-            <IconField icon={FiPhone}><input className="fx-input" inputMode="tel" value={f.phone} onChange={set("phone")} placeholder="رقم التلفون" aria-label="رقم التلفون" /></IconField>
-            <IconField icon={FiMapPin} end={<FiChevronDown aria-hidden="true" />}>
-              <input className="fx-input" list="fx-cities" value={f.city} onChange={set("city")} placeholder="المدينة" aria-label="المدينة" />
-              <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
-            </IconField>
-          </div>
-          <IconField icon={FiNavigation}><input className="fx-input" value={f.address} onChange={set("address")} placeholder="العنوان (الشارع، العمارة، جنب...)" aria-label="العنوان" /></IconField>
-          <div className="fx-seqline">
-            <span>رقم الزبون</span>
-            <input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.seq_no} placeholder="تلقائي" aria-label="رقم الزبون"
-              onChange={(e) => { seqTouched.current = true; setF({ ...f, seq_no: e.target.value.replace(/[^\d]/g, "") }); }} />
-          </div>
-        </FormSection>
+    <Sheet title={c ? `تعديل ${c.name}` : "زبون جديد"} onClose={onClose}>
+      <div className="fx-stack fx-simple">
+        <label className="fx-sf">اسم المحل
+          <input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: بقالة الأمل" />
+        </label>
+        <label className="fx-sf">رقم التلفون
+          <input className="fx-input" inputMode="tel" dir="ltr" value={f.phone} onChange={set("phone")} placeholder="07XXXXXXXX" />
+        </label>
+        <label className="fx-sf">المنطقة
+          <input className="fx-input" list="fx-cities" value={f.city} onChange={set("city")} placeholder="مثلًا: إربد" />
+          <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
+        </label>
 
-        <FormSection n={2} icon={FiMapPin} title="الموقع الجغرافي" sub="إذا إنت عند الزبون اكبس الزر، أو الصق رابط موقعه">
-          <LocationPicker bare hereLabel="تحديد موقع الزبون" hl="customer-location"
-            lat={f.lat} lng={f.lng} onChange={(p) => { setF((x) => ({ ...x, ...p })); if (p.lat !== "") fx.toast("انحفظ موقع الزبون"); }} />
-        </FormSection>
+        <div className="fx-sf">الموقع
+          <SimpleLocation f={f} setF={setF} />
+        </div>
 
-        <FormSection n={3} icon={FiCamera} title="صورة المحل (اختيارية)" sub="صورة العمارة أو المحل عشان السائق يعرفه">
+        <div className="fx-sf"><span>صورة المحل <span className="opt">(اختياري)</span></span>
           <BuildingPhoto value={f.photo_url} onChange={(u) => setF((x) => ({ ...x, photo_url: u }))} />
-        </FormSection>
+        </div>
 
-        <details className="fx-sec-card fx-sec-more" open={!!c && (c.pay_terms === "credit" || (c.prices || []).length > 0)}>
-          <summary className="fx-sec-head">
-            <span className="fx-sec-ic"><FiSettings /></span>
-            <span className="fx-sec-t"><b><span className="fx-sec-n">4</span>الإعدادات الإضافية</b><small>الدين، الأسعار الخاصة، الملاحظات (اختيارية)</small></span>
-            <FiChevronDown className="fx-sec-chev" aria-hidden="true" />
-          </summary>
+        <details className="fx-sf-more" open={!!c && (c.pay_terms === "credit" || (c.prices || []).length > 0)}>
+          <summary>تفاصيل زيادة <span className="opt">(العنوان، رقم الزبون، الدين...)</span></summary>
           <div className="fx-stack" style={{ marginTop: 12 }}>
-            <div className="fx-grid2">
-              <label className="fx-field">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
-              <label className="fx-field">الخط
+            <label className="fx-sf">العنوان بالتفصيل<input className="fx-input" value={f.address} onChange={set("address")} placeholder="الشارع، العمارة، جنب..." /></label>
+            <label className="fx-sf">رقم الزبون
+              <input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.seq_no} placeholder="تلقائي"
+                onChange={(e) => { seqTouched.current = true; setF({ ...f, seq_no: e.target.value.replace(/[^\d]/g, "") }); }} />
+            </label>
+            <label className="fx-sf">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
+            {fx.boot.lines.length > 0 && (
+              <label className="fx-sf">الخط
                 <select value={f.line_id} onChange={set("line_id")}>
                   <option value="">بدون</option>
                   {fx.boot.lines.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               </label>
-            </div>
-            <div className="fx-field">طريقة الدفع
+            )}
+            <div className="fx-sf">طريقة الدفع
               <div className="fx-chips">
                 <button className={`fx-chip ${f.pay_terms === "cash" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "cash" })}>كاش</button>
                 <button className={`fx-chip ${f.pay_terms === "credit" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "credit" })}>دين (ذمم)</button>
               </div>
             </div>
-            {f.pay_terms === "credit" && <label className="fx-field">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
-            {!c && canMoney && <label className="fx-field">رصيد قديم عليه (اختياري)<input className="fx-input" type="number" inputMode="decimal" value={f.opening_balance} onChange={set("opening_balance")} /></label>}
+            {f.pay_terms === "credit" && <label className="fx-sf">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
+            {!c && canMoney && <label className="fx-sf">رصيد قديم عليه<input className="fx-input" type="number" inputMode="decimal" value={f.opening_balance} onChange={set("opening_balance")} /></label>}
             {canPrices && fx.boot.products.length > 0 && (
-              <div className="fx-field">أسعار خاصة لهالزبون (فاضي = السعر العادي)
-                <div className="fx-stack" style={{ marginTop: 8 }}>
+              <div className="fx-sf"><span>أسعار خاصة <span className="opt">(فاضي = السعر العادي)</span></span>
+                <div className="fx-stack" style={{ marginTop: 6 }}>
                   {fx.boot.products.filter((p) => p.active).map((p) => (
-                    <label key={p.id} className="fx-row" style={{ flexWrap: "nowrap" }}>
-                      <span className="fx-grow">{p.name} <span className="fx-muted">(العادي {money(p.price)})</span></span>
-                      <input className="fx-input" style={{ width: 110 }} type="number" inputMode="decimal" value={prices[p.id] ?? ""} onChange={(e) => setPrices({ ...prices, [p.id]: e.target.value })} placeholder="—" />
+                    <label key={p.id} className="fx-row" style={{ flexWrap: "nowrap", fontWeight: 400 }}>
+                      <span className="fx-grow">{p.name} <span className="fx-muted">({money(p.price)})</span></span>
+                      <input className="fx-input" style={{ width: 100 }} type="number" inputMode="decimal" value={prices[p.id] ?? ""} onChange={(e) => setPrices({ ...prices, [p.id]: e.target.value })} placeholder="—" />
                     </label>
                   ))}
                 </div>
               </div>
             )}
-            <label className="fx-field">ملاحظات<input className="fx-input" value={f.notes} onChange={set("notes")} /></label>
+            <label className="fx-sf">ملاحظات<input className="fx-input" value={f.notes} onChange={set("notes")} /></label>
           </div>
         </details>
 
         <Err msg={err} />
-        <div className="fx-savebar">
-          <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}><FiSave /> حفظ الزبون</Act>
-        </div>
+        <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}>احفظ الزبون</Act>
       </div>
     </Sheet>
   );
 }
 
-// قسم بالنموذج: رقم، عنوان، شرح قصير، وأيقونة
-function FormSection({ n, icon: Icon, title, sub, children }) {
-  return (
-    <section className="fx-sec-card">
-      <div className="fx-sec-head">
-        <span className="fx-sec-ic"><Icon /></span>
-        <span className="fx-sec-t"><b><span className="fx-sec-n">{n}</span>{title}</b>{sub && <small>{sub}</small>}</span>
+// الموقع بكبستين: «أنا عنده هلأ» أو «الصق رابط» (خانة الرابط بتطلع بس لما تحتاجها)
+function SimpleLocation({ f, setF }) {
+  const fx = useFx();
+  const [busy, setBusy] = useState("");
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [link, setLink] = useState("");
+  const has = f.lat !== "" && f.lat != null;
+  async function here() {
+    setBusy("gps");
+    const loc = await getLocation(12000, 0);
+    setBusy("");
+    if (!loc) return fx.toast("ما قدرنا نجيب الموقع — شغّل الموقع (GPS) بالتلفون.");
+    setF((x) => ({ ...x, lat: loc.lat, lng: loc.lng, maps_url: `https://www.google.com/maps?q=${loc.lat},${loc.lng}` }));
+  }
+  async function fromLink(raw) {
+    const url = String(raw || "").trim().match(/https?:\/\/\S+/)?.[0];
+    if (!url) return fx.toast("الصق رابط الموقع (بيبلّش بـ https://)");
+    setBusy("link");
+    try {
+      const p = await fapi.resolveMapLink(url);
+      setF((x) => ({ ...x, lat: p.lat, lng: p.lng, maps_url: url }));
+      setLink(""); setLinkOpen(false);
+    } catch (e) { fx.toast(e.message); } finally { setBusy(""); }
+  }
+  if (has) {
+    return (
+      <div className="fx-loc-ok">
+        <FiCheck aria-hidden="true" />
+        <span className="fx-grow">الموقع محفوظ</span>
+        <a href={`https://www.google.com/maps?q=${f.lat},${f.lng}`} target="_blank" rel="noreferrer">شوفه</a>
+        <button type="button" onClick={() => setF((x) => ({ ...x, lat: "", lng: "", maps_url: "" }))}>غيّره</button>
       </div>
-      <div className="fx-stack" style={{ marginTop: 12 }}>{children}</div>
-    </section>
-  );
-}
-
-function IconField({ icon: Icon, end, children }) {
+    );
+  }
   return (
-    <div className="fx-iconfield">
-      <Icon aria-hidden="true" />
-      {children}
-      {end && <span className="end">{end}</span>}
+    <div className="fx-stack" style={{ gap: 8 }}>
+      <div className="fx-grid2">
+        <button type="button" className="fx-soft-btn" onClick={here} disabled={!!busy}><FiMapPin /> {busy === "gps" ? "لحظة..." : "أنا عنده هلأ"}</button>
+        <button type="button" className={`fx-soft-btn ${linkOpen ? "on" : ""}`} onClick={() => setLinkOpen(!linkOpen)} disabled={!!busy}><FiLink /> الصق رابط</button>
+      </div>
+      {linkOpen && (
+        <div className="fx-row" style={{ flexWrap: "nowrap" }}>
+          <input className="fx-input" dir="ltr" autoFocus value={link} onChange={(e) => setLink(e.target.value)}
+            onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/https?:\/\//.test(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
+            placeholder="https://maps.app.goo.gl/..." />
+          <button type="button" className="fx-btn sm pri" disabled={!link.trim() || !!busy} onClick={() => fromLink(link)}>{busy === "link" ? "..." : "ثبّت"}</button>
+        </div>
+      )}
     </div>
   );
 }
 
-// صورة العمارة أو المحل: بتصوّر من الكاميرا، أو بتختار من المعرض
+// صورة المحل: كبسة وحدة بتفتح الكاميرا، أو من المعرض
 function BuildingPhoto({ value, onChange }) {
   const fx = useFx();
   const cam = useRef(null);
@@ -221,20 +242,19 @@ function BuildingPhoto({ value, onChange }) {
     try { onChange((await fapi.upload(file, "building")).url); } catch (err) { fx.toast(err.message); } finally { setBusy(false); }
   }
   return (
-    <div className="fx-stack" style={{ gap: 8 }}>
+    <div>
       {value ? (
-        <div className="fx-building-wrap">
-          <img className="fx-building" src={value} alt="صورة المحل" />
-          <button type="button" className="fx-icon-btn sm" aria-label="امسح الصورة" onClick={() => onChange("")}><FiX /></button>
+        <div className="fx-photo-row">
+          <img src={value} alt="صورة المحل" />
+          <button type="button" onClick={() => cam.current?.click()} disabled={busy}>{busy ? "لحظة..." : "صوّر من جديد"}</button>
+          <button type="button" onClick={() => onChange("")}>شيلها</button>
         </div>
       ) : (
-        <button type="button" className="fx-drop" disabled={busy} onClick={() => cam.current?.click()}>
-          <FiImage aria-hidden="true" />
-          <b>{busy ? "عم بنرفع الصورة..." : "اضغط لتصوير المحل"}</b>
-        </button>
+        <div className="fx-grid2">
+          <button type="button" className="fx-soft-btn" disabled={busy} onClick={() => cam.current?.click()}><FiCamera /> {busy ? "لحظة..." : "صوّر"}</button>
+          <button type="button" className="fx-soft-btn" disabled={busy} onClick={() => gal.current?.click()}><FiImage /> من المعرض</button>
+        </div>
       )}
-      <button type="button" className="fx-link" disabled={busy} onClick={() => gal.current?.click()} style={{ justifySelf: "center" }}>{value ? "غيّر الصورة من المعرض" : "أو اختار من المعرض"}</button>
-      {value && <button type="button" className="fx-link" disabled={busy} onClick={() => cam.current?.click()} style={{ justifySelf: "center" }}>صوّر من جديد</button>}
       <input ref={cam} type="file" accept="image/*" capture="environment" hidden onChange={pick} />
       <input ref={gal} type="file" accept="image/*" hidden onChange={pick} />
     </div>
