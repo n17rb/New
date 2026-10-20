@@ -492,3 +492,21 @@ a.fx-pill { text-decoration: none; }
 .fx-dup-row .t { flex: 1; display: grid; gap: 2px; min-width: 0; }
 .fx-dup-row small { color: var(--fx-muted); font-size: 12.5px; }
 .fx-stepper.big button, .fx-stepper.big input { width: auto; }
+
+/* نموذج بسيط: خانات تحت بعض، عنوان صغير فوق كل خانة، بدون بطاقات */
+.fx-simple { gap: 16px; }
+.fx-sf { display: grid; gap: 6px; font-size: 14px; font-weight: 700; color: var(--fx-ink); }
+.fx-sf .opt { font-weight: 400; color: var(--fx-muted); font-size: 12.5px; }
+.fx-sf .fx-input, .fx-sf select { min-height: 50px; border-radius: 14px; font-weight: 400; }
+.fx-soft-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border-radius: 14px; border: 1px solid var(--fx-line); background: #fff; color: var(--fx-navy); font: inherit; font-weight: 600; font-size: 14.5px; cursor: pointer; }
+.fx-soft-btn svg { width: 18px; height: 18px; }
+.fx-soft-btn.on { border-color: var(--fx-navy); background: var(--fx-sky-soft); }
+.fx-soft-btn:disabled { opacity: .6; }
+.fx-loc-ok { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 14px; border-radius: 14px; background: #e9f7ef; color: #157a43; font-weight: 600; }
+.fx-loc-ok svg { width: 18px; height: 18px; }
+.fx-loc-ok a, .fx-loc-ok button { background: none; border: 0; color: var(--fx-navy); font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer; text-decoration: none; padding: 4px; }
+.fx-photo-row { display: flex; align-items: center; gap: 12px; }
+.fx-photo-row img { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; }
+.fx-photo-row button { background: none; border: 0; color: var(--fx-navy); font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer; }
+.fx-sf-more { border-top: 1px solid var(--fx-line); padding-top: 12px; }
+.fx-sf-more > summary { cursor: pointer; font-weight: 700; color: var(--fx-navy); font-size: 14.5px; }
