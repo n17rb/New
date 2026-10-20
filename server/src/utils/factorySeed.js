@@ -129,7 +129,7 @@ export async function seedFactoryBasics({ sample = false, ownerUsername, passwor
 
   // رصيد المستودع الأول
   for (const [p, q] of [["p250", 900], ["p600", 1600], ["p1500", 700], ["k1", 1100], ["k2", 340]]) {
-    await query("INSERT INTO f_stock_moves (product_id, kind, qty, reason) VALUES ($1,'adjust',$2,'رصيد افتتاحي (تجريبي)')", [P[p], q]);
+    await query("INSERT INTO f_stock_moves (product_id, kind, qty, reason, created_at) VALUES ($1,'adjust',$2,'رصيد افتتاحي (تجريبي)', now() - interval '1 day')", [P[p], q]);
   }
 
   // طلبات جديدة جاهزة للتوزيع

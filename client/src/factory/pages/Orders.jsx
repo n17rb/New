@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today } from "../ui.jsx";
+import { StopSheet } from "./StopSheet.jsx";
 import { FiGift } from "react-icons/fi";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
@@ -79,12 +80,14 @@ export default function Orders() {
               {done.length === 0 && <div className="fx-item"><span className="fx-muted">ولا إشي.</span></div>}
               {done.map((o) => (
                 <div key={o.id} className="fx-item">
-                  <span className="t">
-                    <b>{o.customer_name}</b>
+                  <button className="t fx-plain" onClick={() => setSheet({ kind: "info", o })}>
+                    <b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
                     <span>{itemsLine(o)}{o.fail_reason ? ` · ${o.fail_reason}` : ""}</span>
-                  </span>
+                    {o.status === "delivered" && <span className="fx-ok-line">{o.driver_name || o.vehicle_name || "السائق"} سلّم {time(o.delivered_at)} · كاش {money(o.cash_paid)}</span>}
+                  </button>
                   <span className="end">
                     <StatusPill map={ORDER_STATUS} value={o.status} />
+                    <button className="fx-link" onClick={() => setSheet({ kind: "info", o })}>التفاصيل</button>
                     {o.status === "failed" && dispatch && <Act className="fx-link" onClick={async () => { await fapi.reopenOrder(o.id); fx.toast("رجع للطلبات الجديدة"); setDone(null); reload(); }}>رجّعه للتوزيع</Act>}
                   </span>
                 </div>
@@ -104,7 +107,8 @@ export default function Orders() {
 
       {sheet?.kind === "new" && <OrderSheet onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "edit" && <OrderSheet order={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
-      {sheet?.kind === "info" && <OrderInfo o={sheet.o} onClose={() => setSheet(null)} onEdit={() => setSheet({ kind: "edit", o: sheet.o })} onChanged={after} />}
+      {sheet?.kind === "info" && ["delivered", "failed"].includes(sheet.o.status) && <StopSheet o={sheet.o} onClose={() => setSheet(null)} />}
+      {sheet?.kind === "info" && !["delivered", "failed"].includes(sheet.o.status) && <OrderInfo o={sheet.o} onClose={() => setSheet(null)} onEdit={() => setSheet({ kind: "edit", o: sheet.o })} onChanged={after} />}
       {sheet?.kind === "trip" && <TripBuilder orderIds={sel} orders={open} onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "move" && <TransferSheet o={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
       {msgs && <SendMessages ids={msgs} onClose={() => setMsgs(null)} />}
@@ -125,7 +129,7 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
         </button>
       )}
       <button className="t" style={{ background: "none", border: 0, textAlign: "start", font: "inherit", color: "inherit", cursor: "pointer", padding: 0 }} onClick={selectable ? onToggle : onInfo}>
-        <b>{o.customer_name}</b>
+        <b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
         <span>{o.city || "بدون مدينة"} · {itemsLine(o)}</span>
         <span className="fx-row" style={{ gap: 6 }}>
           {o.urgent && <span className="fx-pill crit">مستعجل</span>}
@@ -302,8 +306,10 @@ function OrderInfo({ o, onClose, onEdit, onChanged }) {
     <Sheet title={`طلب #${o.id}`} onClose={onClose}>
       <div className="fx-stack">
         <div className="fx-card">
-          <div className="fx-kv"><span>الزبون</span><b>{o.customer_name}</b></div>
-          <div className="fx-kv"><span>المدينة</span><b>{o.city || "—"}</b></div>
+          <div className="fx-kv"><span>الزبون</span><b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b></div>
+          <div className="fx-kv"><span>المدينة</span><b>{[o.city, o.address].filter(Boolean).join(" · ") || "—"}</b></div>
+          {o.phone && <div className="fx-kv"><span>التلفون</span><b dir="ltr"><a href={`tel:${o.phone}`}>{o.phone}</a></b></div>}
+          {(o.lat || o.maps_url) && <div className="fx-kv"><span>الموقع</span><b><a className="fx-link" href={o.lat ? `https://www.google.com/maps?q=${o.lat},${o.lng}` : o.maps_url} target="_blank" rel="noreferrer">افتح على الخريطة</a></b></div>}
           {o.items.map((i) => (
             <div key={i.id}>
               <div className="fx-kv"><span>{i.name}</span><b>{num(i.qty)} × {money(i.price)}</b></div>

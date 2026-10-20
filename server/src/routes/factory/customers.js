@@ -9,6 +9,7 @@ import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken,
 const router = Router();
 const view = needAny(["f_customers"], ["f_orders"], ["f_dispatch"], ["f_money"], ["f_drive", "edit"]);
 const edit = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"]);
+const editOrFleet = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"], ["f_fleet", "edit"]);
 const str = (v, n = 150) => (v == null || v === "" ? null : String(v).trim().slice(0, n));
 
 function phoneClean(p) {
@@ -38,7 +39,7 @@ router.get("/customers", view, async (req, res) => {
             (SELECT MAX(created_at) FROM f_orders o WHERE o.customer_id = c.id) AS last_order_at,
             (SELECT MIN(created_at) FROM f_ledger g WHERE g.customer_id = c.id AND g.kind = 'invoice' AND g.created_at > COALESCE((SELECT MAX(created_at) FROM f_ledger p WHERE p.customer_id = c.id AND p.kind = 'payment'), 'epoch')) AS oldest_unpaid_at
      FROM f_customers c LEFT JOIN f_lines l ON l.id = c.line_id
-     WHERE ${where} ORDER BY c.name LIMIT 500`,
+     WHERE ${where} ORDER BY ${q ? "(c.seq_no::text = TRIM(LEADING '#' FROM $2)) DESC, " : ""}c.name LIMIT 500`,
     params
   );
   const showMoney = can(req.user, "f_money") || can(req.user, "f_customers") || can(req.user, "f_home");
@@ -111,7 +112,7 @@ async function nextSeq(client = null) {
 router.get("/customers-next-seq", view, async (req, res) => res.json({ next: await nextSeq() }));
 
 // رابط موقع ملصوق: بنرجّع الإحداثيات عشان الشاشة توري «الموقع محفوظ»
-router.post("/customers-resolve-link", edit, async (req, res) => {
+router.post("/customers-resolve-link", editOrFleet, async (req, res) => {
   const p = await resolveLink(String(req.body?.url || "").trim());
   if (!p) return bad(res, "ما قدرنا نقرأ الموقع من الرابط. افتح الموقع بخرائط جوجل ← مشاركة ← نسخ الرابط، والصقه هون.");
   res.json(p);
