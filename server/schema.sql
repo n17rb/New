@@ -949,3 +949,7 @@ ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS maps_url TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_f_customers_seq ON f_customers(seq_no) WHERE seq_no IS NOT NULL;
 UPDATE f_customers c SET seq_no = s.n FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY id) + COALESCE((SELECT MAX(seq_no) FROM f_customers), 0) AS n FROM f_customers WHERE seq_no IS NULL) s WHERE c.id = s.id;
+
+-- مين عدّل الطلب آخر مرة (تعديل كميات أو إلغاء)
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS edited_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;

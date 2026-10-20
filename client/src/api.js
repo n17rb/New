@@ -87,7 +87,10 @@ export async function request(path, { method = "GET", body, isFormData = false, 
     if (res.status === 402) {
       window.dispatchEvent(new CustomEvent("shop:locked", { detail: data }));
     }
-    throw new Error(data?.error || "حدث خطأ غير متوقع.");
+    const e = new Error(data?.error || "حدث خطأ غير متوقع.");
+    e.status = res.status;
+    e.data = data;
+    throw e;
   }
   if (method === "GET") remember(path, data);
   return data;

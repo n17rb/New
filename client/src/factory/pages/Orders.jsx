@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle } from "react-icons/fi";
+import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle, FiEdit2, FiX } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
@@ -143,17 +143,40 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
 }
 
 // ---------- طلب جديد / تعديل ----------
-export function OrderSheet({ order, customer, onClose, onSaved }) {
+const OPEN_ST = ["new", "assigned", "onway", "delayed"];
+const toItems = (o) => o.items.map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual }));
+
+export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
   const fx = useFx();
   const products = fx.boot.products.filter((p) => p.active);
+  const [order, setOrder] = useState(orderProp || null);
   const [q, setQ] = useState("");
   const [list, setList] = useState([]);
-  const [cust, setCust] = useState(order ? { id: order.customer_id, name: order.customer_name, city: order.city } : customer || null);
-  const [items, setItems] = useState(order ? order.items.map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual })) : []);
-  const [due, setDue] = useState(order?.due_date || today());
-  const [urgent, setUrgent] = useState(!!order?.urgent);
-  const [notes, setNotes] = useState(order?.notes || "");
+  const [cust, setCust] = useState(orderProp ? { id: orderProp.customer_id, name: orderProp.customer_name, city: orderProp.city } : customer || null);
+  const [items, setItems] = useState(orderProp ? toItems(orderProp) : []);
+  const [due, setDue] = useState(orderProp?.due_date || today());
+  const [urgent, setUrgent] = useState(!!orderProp?.urgent);
+  const [notes, setNotes] = useState(orderProp?.notes || "");
   const [err, setErr] = useState("");
+  const [openOrders, setOpenOrders] = useState([]);
+  const [dup, setDup] = useState(null);
+
+  // طلب مفتوح لنفس الزبون؟ (ممكن حدا ثاني سجّله من تلفون ثاني)
+  useEffect(() => {
+    setOpenOrders([]);
+    if (!cust || order) return;
+    fapi.orders({ customer: cust.id }).then((l) => setOpenOrders(l.filter((o) => OPEN_ST.includes(o.status)))).catch(() => {});
+  }, [cust?.id, order]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function editExisting(o) {
+    setOrder(o);
+    setItems(toItems(o));
+    setDue(o.due_date || today());
+    setUrgent(!!o.urgent);
+    setNotes(o.notes || "");
+    setDup(null);
+    setOpenOrders([]);
+  }
 
   useEffect(() => {
     if (cust) return;
@@ -162,13 +185,13 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
   }, [q, cust]);
 
 
-  async function save() {
+  async function save(allowDuplicate = false) {
     setErr("");
-    const body = { customer_id: cust?.id, items: items.filter((i) => i.product_id && Number(i.qty) > 0).map((i) => ({ ...i, bonus_qty: i.bonus_manual ? Number(i.bonus_qty) || 0 : undefined })), due_date: due, urgent, notes };
+    const body = { customer_id: cust?.id, items: items.filter((i) => i.product_id && Number(i.qty) > 0).map((i) => ({ ...i, bonus_qty: i.bonus_manual ? Number(i.bonus_qty) || 0 : undefined })), due_date: due, urgent, notes, allow_duplicate: allowDuplicate };
     try {
       if (order) {
-        await fapi.updateOrder(order.id, body);
-        fx.toast("انحفظ التعديل");
+        const r = await fapi.updateOrder(order.id, body);
+        fx.toast(r.warning ? `انحفظ التعديل · ${r.warning}` : "انحفظ التعديل");
         onSaved();
       } else {
         const r = await fapi.createOrder(body);
@@ -176,13 +199,18 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
         onSaved({ message_ids: [r.message_id] });
       }
     } catch (e) {
-      setErr(e.message);
+      if (e.data?.code === "duplicate") {
+        // ممكن انضاف هلأ من تلفون ثاني: منجيب الطلبات المفتوحة كاملة
+        const l = await fapi.orders({ customer: cust.id }).catch(() => []);
+        setDup(l.filter((o) => OPEN_ST.includes(o.status)));
+      } else setErr(e.message);
     }
   }
 
   return (
     <Sheet title={order ? `تعديل طلب #${order.id}` : "طلب جديد"} onClose={onClose}>
       <div className="fx-stack">
+        {order && order.status === "onway" && <div className="fx-note warn">الطلب مع السائق بالطريق. التعديل بيوصله إشعار، وإذا زدت الكمية لازم تكون معه بالسيارة.</div>}
         {!cust ? (
           <>
             <label className="fx-field">الزبون
@@ -205,6 +233,22 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
           </div>
         )}
 
+        {!order && openOrders.length > 0 && (
+          <div className="fx-dup">
+            <b>⚠️ هالزبون عنده طلب مفتوح</b>
+            {openOrders.map((o) => (
+              <div key={o.id} className="fx-dup-row">
+                <span className="t">
+                  <b>#{o.id} · {itemsLine(o)}</b>
+                  <small>{o.created_by_name ? `سجّله ${o.created_by_name} · ` : ""}{date(o.created_at)} {time(o.created_at)} · {ORDER_STATUS[o.status]?.[0] || o.status}</small>
+                </span>
+                <button className="fx-btn sm pri" onClick={() => editExisting(o)}>عدّله</button>
+              </div>
+            ))}
+            <small className="fx-muted">إذا الزبون غيّر الكمية، عدّل طلبه بدل ما تضيف طلب ثاني.</small>
+          </div>
+        )}
+
         {cust && <ProductPicker products={products} items={items} setItems={setItems} customerId={cust.id} />}
 
         <div className="fx-field">موعد التوصيل
@@ -217,7 +261,25 @@ export function OrderSheet({ order, customer, onClose, onSaved }) {
         <label className="fx-row"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} /> مستعجل</label>
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         <Err msg={err} />
-        <Act className="fx-btn pri block" onClick={save} disabled={!cust || !items.some((i) => Number(i.qty) > 0)}>
+        {dup && (
+          <Sheet title="انتبه: في طلب مفتوح" onClose={() => setDup(null)}>
+            <div className="fx-stack">
+              <p style={{ margin: 0 }}>{cust?.name} عنده طلب مفتوح (ممكن حدا سجّله من تلفون ثاني):</p>
+              {dup.map((o) => (
+                <div key={o.id} className="fx-dup-row card">
+                  <span className="t">
+                    <b>#{o.id} · {itemsLine(o)}</b>
+                    <small>{o.created_by_name ? `سجّله ${o.created_by_name} · ` : ""}{date(o.created_at)} {time(o.created_at)}</small>
+                  </span>
+                  <button className="fx-btn sm pri" onClick={() => editExisting(o)}>عدّله بدل</button>
+                </div>
+              ))}
+              <Act className="fx-btn block" onClick={() => save(true)}>لا، هاد طلب ثاني منفصل — ضيفه</Act>
+              <button className="fx-link" onClick={() => setDup(null)}>رجوع</button>
+            </div>
+          </Sheet>
+        )}
+        <Act className="fx-btn pri block" onClick={() => save(false)} disabled={!cust || !items.some((i) => Number(i.qty) > 0)}>
           {order ? "احفظ" : "سجّل الطلب"}{items.some((i) => Number(i.qty) > 0) ? ` · ${num(items.reduce((t, i) => t + (Number(i.qty) || 0), 0))} كرتونة` : ""}
         </Act>
       </div>
@@ -315,9 +377,31 @@ function BonusLine({ q, it, auto, canBonus, onChange }) {
   );
 }
 
+const CANCEL_REASONS = ["الزبون لغى", "طلب مكرر", "انسجل غلط", "الزبون مسكّر"];
 function OrderInfo({ o, onClose, onEdit, onChanged }) {
   const fx = useFx();
-  const canEdit = (fx.can("f_orders", "edit") || fx.can("f_dispatch", "edit")) && ["new", "assigned", "delayed"].includes(o.status);
+  const dispatch = fx.can("f_dispatch", "edit");
+  const editor = fx.can("f_orders", "edit") || dispatch;
+  const loaded = !!o.trip_loaded_at || o.status === "onway";
+  const canEdit = editor && OPEN_ST.includes(o.status) && (!loaded || dispatch);
+  const canCancel = editor && [...OPEN_ST, "failed"].includes(o.status) && (o.status === "new" || dispatch);
+  const [cancel, setCancel] = useState(false);
+  const [reason, setReason] = useState(CANCEL_REASONS[0]);
+  if (cancel) {
+    return (
+      <Sheet title={`إلغاء طلب #${o.id}`} onClose={() => setCancel(false)}>
+        <div className="fx-stack">
+          <p style={{ margin: 0 }}><b>{o.customer_name}</b> · {itemsLine(o)}</p>
+          <div className="fx-field">ليش انلغى؟
+            <div className="fx-chips">{CANCEL_REASONS.map((r) => <button key={r} className={`fx-chip ${reason === r ? "on" : ""}`} onClick={() => setReason(r)}>{r}</button>)}</div>
+          </div>
+          {loaded && <div className="fx-note warn">الكراتين محمّلة على السيارة: بترجع مع السائق للمستودع، والسائق بيوصله إشعار.</div>}
+          <Act className="fx-btn danger block" onClick={async () => { await fapi.cancelOrder(o.id, reason); fx.toast("انلغى الطلب"); onChanged(); }}>أكّد الإلغاء</Act>
+          <button className="fx-btn block" onClick={() => setCancel(false)}>لا، رجوع</button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <Sheet title={`طلب #${o.id}`} onClose={onClose}>
       <div className="fx-stack">
@@ -335,13 +419,18 @@ function OrderInfo({ o, onClose, onEdit, onChanged }) {
           <div className="fx-kv total"><span>المجموع</span><b>{money(o.total)} د.أ</b></div>
         </div>
         <div className="fx-row"><StatusPill map={ORDER_STATUS} value={o.status} />{o.vehicle_name && <span className="fx-pill">{o.vehicle_name}</span>}{o.eta_at && <span className="fx-pill">يوصل {time(o.eta_at)}</span>}</div>
+        <p className="fx-muted" style={{ margin: 0, fontSize: 13 }}>
+          {o.created_by_name ? `سجّله ${o.created_by_name}` : "انسجل"} {date(o.created_at)} {time(o.created_at)}
+          {o.edited_at ? ` · آخر تعديل ${o.edited_by_name || ""} ${time(o.edited_at)}` : ""}
+        </p>
         {o.notes && <div className="fx-note">{o.notes}</div>}
-        {canEdit && <button className="fx-btn block" onClick={onEdit}>عدّل الطلب</button>}
-        {canEdit && (
-          <Act className="fx-btn danger block" onClick={async () => { await fapi.cancelOrder(o.id, "انلغى من الإدارة"); fx.toast("انلغى الطلب"); onChanged(); }}>
-            إلغاء الطلب
-          </Act>
+        {(canEdit || canCancel) && (
+          <div className="fx-grid2">
+            {canEdit && <button className="fx-btn pri" onClick={onEdit}><FiEdit2 /> عدّل الكميات</button>}
+            {canCancel && <button className="fx-btn danger" onClick={() => setCancel(true)}><FiX /> إلغاء الطلب</button>}
+          </div>
         )}
+        {editor && loaded && !dispatch && <div className="fx-note">الطلب محمّل على السيارة — التعديل والإلغاء من مسؤول الحركة.</div>}
       </div>
     </Sheet>
   );

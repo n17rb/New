@@ -161,6 +161,22 @@ router.get("/stock/loading", viewStock, async (req, res) => {
 });
 
 export function expectedReturns(t) {
+  // بعد التحميل: اللي طلع على السيارة − اللي انسلّم (مع البونص) − اللي تلف بالسيارة
+  if (t.load_confirmed_at && t.loaded_per?.length) {
+    const per = new Map();
+    for (const m of t.loaded_per) per.set(m.product_id, { product_id: m.product_id, name: m.name, qty: (per.get(m.product_id)?.qty || 0) + m.qty });
+    const sub = (pid, name, q) => { if (!q) return; const x = per.get(pid) || { product_id: pid, name, qty: 0 }; x.qty -= q; per.set(pid, x); };
+    for (const o of t.stops) {
+      if (o.status !== "delivered") continue;
+      for (const i of o.items) sub(i.product_id, i.name, (i.delivered_qty ?? i.qty) + (i.delivered_bonus ?? i.bonus_qty ?? 0));
+    }
+    for (const d of t.damaged_per || []) sub(d.product_id, d.name, d.qty);
+    return [...per.values()].filter((x) => x.qty > 0);
+  }
+  return expectedReturnsFromOrders(t);
+}
+
+function expectedReturnsFromOrders(t) {
   const per = new Map();
   const add = (pid, name, q) => {
     if (!q) return;

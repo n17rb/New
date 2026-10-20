@@ -218,10 +218,19 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   return (
     <Sheet title={`تسليم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
-        {o.items.map((i) => (
+        <div className="fx-note sky">الزبون بدّه أقل؟ نزّل العدد هون. الفاتورة بتنحسب على اللي سلّمته، والباقي بيرجع معك للمستودع.</div>
+        {o.items.map((i) => {
+          const got = Number(qty[i.id]);
+          const back = Number.isFinite(got) && got < i.qty ? i.qty - got : 0;
+          return (
           <label key={i.id} className="fx-field">
-            <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} />{i.name} (المطلوب {num(i.qty)})</span>
-            <input className="fx-input" type="number" inputMode="numeric" min="0" max={i.qty} value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} />
+            <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} />{i.name} <span className="fx-muted">(المطلوب {num(i.qty)})</span></span>
+            <div className="fx-stepper big">
+              <button type="button" dir="ltr" onClick={() => setQty({ ...qty, [i.id]: Math.max(0, (Number(qty[i.id]) || 0) - 1) })} aria-label="ناقص">−</button>
+              <input className="fx-input" type="number" inputMode="numeric" min="0" max={i.qty} value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} aria-label={`سلّم من ${i.name}`} />
+              <button type="button" dir="ltr" disabled={(Number(qty[i.id]) || 0) >= i.qty} onClick={() => setQty({ ...qty, [i.id]: Math.min(i.qty, (Number(qty[i.id]) || 0) + 1) })} aria-label="زايد">+</button>
+            </div>
+            {back > 0 && <small style={{ color: "#b06a00", fontWeight: 600 }}>سلّمت {num(got)} بدل {num(i.qty)} · بيرجع معك {num(back)} كرتونة</small>}
             {i.bonus_qty > 0 && (
               <span className="fx-bonus" style={{ marginTop: 6 }}>
                 + بونص ببلاش
@@ -230,7 +239,8 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
               </span>
             )}
           </label>
-        ))}
+          );
+        })}
         {!showDmg ? (
           <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowDmg(true)}>في كراتين تالفة؟</button>
         ) : (
