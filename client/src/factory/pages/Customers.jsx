@@ -25,17 +25,13 @@ export default function Customers() {
 
   return (
     <div className="fx-page">
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <span style={{ display: "grid" }}>
-          <h1 className="fx-h1" style={{ margin: 0 }}>العملاء</h1>
-          {list && <span className="fx-muted">إجمالي العملاء: <b className="fx-num" style={{ color: "var(--fx-ink)" }}>{num(list.length)}</b></span>}
-        </span>
+      <div className="fx-chead">
+        <h1>العملاء {list && <span className="n fx-num">{num(list.length)}</span>}</h1>
+        {canAdd && <button className="fx-cadd" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون</button>}
       </div>
-      {canAdd && <button className="fx-btn pri block fx-big" data-hl="new-customer" onClick={() => setSheet({ kind: "edit", c: null })}><FiPlus /> زبون جديد</button>}
-      <Tip id="customers2">اكبس «طلب جديد» جنب الزبون عشان تسجّله طلب. واكبس على اسمه تشوف حسابه وموقعه.</Tip>
-      <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-        <FiSearch style={{ color: "var(--fx-muted)" }} />
-        <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="اسم، رقم، تلفون، أو مدينة" />
+      <div className="fx-csearch">
+        <FiSearch aria-hidden="true" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر باسم، رقم، أو تلفون" aria-label="بحث" />
       </div>
       {fx.boot.lines.length > 0 && (
         <div className="fx-hscroll">
@@ -47,19 +43,23 @@ export default function Customers() {
       {!list && !error && <Loading />}
       {list && list.length === 0 && <Empty title="ما في زباين" text={q ? "جرّب اسم ثاني." : "ضيف أول زبون من زر «زبون جديد»."} />}
       {list && list.length > 0 && (
-        <div className="fx-list">
+        <div className="fx-clist">
           {list.map((c) => (
-            <div key={c.id} className="fx-item fx-cust-row">
-              <button className="fx-plain fx-cust-main" onClick={() => setSheet({ kind: "view", id: c.id })}>
-                {c.photo_url ? <img className="fx-avatar fx-avatar-img" src={c.photo_url} alt="" loading="lazy" /> : <span className="fx-avatar">{c.name.trim().charAt(0)}</span>}
+            <div key={c.id} className="fx-crow">
+              <button className="fx-plain fx-crow-main" onClick={() => setSheet({ kind: "view", id: c.id })}>
+                {c.photo_url ? <img className="fx-cav img" src={c.photo_url} alt="" loading="lazy" /> : <span className="fx-cav">{c.name.trim().charAt(0)}</span>}
                 <span className="t">
-                  <b style={{ fontSize: 16 }}>{c.name}</b>
-                  <span className="fx-num" dir="ltr" style={{ textAlign: "right" }}>{[c.seq_no ? `#${c.seq_no}` : null, c.phone].filter(Boolean).join(" · ")}</span>
-                  <span>{[c.city, c.address].filter(Boolean).join(" · ") || "بدون عنوان"}{c.open_orders ? ` · ${c.open_orders} طلب مفتوح` : ""}</span>
-                  {c.balance !== undefined && c.balance > 0 && <span style={{ color: c.credit_limit && c.balance > c.credit_limit ? "var(--fx-crit)" : "var(--fx-muted)", fontSize: 12.5 }}>عليه {money(c.balance)} د.أ</span>}
+                  <b>{c.name}</b>
+                  <small>{[c.seq_no ? `#${c.seq_no}` : null, c.city || c.address].filter(Boolean).join(" · ") || "—"}</small>
+                  {(c.open_orders > 0 || (c.balance !== undefined && c.balance > 0)) && (
+                    <span className="tags">
+                      {c.open_orders > 0 && <i className="o">{c.open_orders} طلب مفتوح</i>}
+                      {c.balance !== undefined && c.balance > 0 && <i className={c.credit_limit && c.balance > c.credit_limit ? "d bad" : "d"}>عليه {money(c.balance)}</i>}
+                    </span>
+                  )}
                 </span>
               </button>
-              {canOrder && <button className="fx-order-btn" onClick={() => setSheet({ kind: "order", c })} aria-label={`طلب جديد لـ${c.name}`}><FiShoppingCart /><span>طلب جديد</span></button>}
+              {canOrder && <button className="fx-corder" onClick={() => setSheet({ kind: "order", c })} aria-label={`طلب جديد لـ${c.name}`}><FiShoppingCart /><span>طلب</span></button>}
             </div>
           ))}
         </div>
