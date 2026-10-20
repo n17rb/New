@@ -4,6 +4,7 @@ import { can } from "../../permissions.js";
 import { needAny, round2, jordanDate, alert, checkVehicleDocs, factoryPoint, pushTo } from "./lib.js";
 import { isPushAvailable } from "../../utils/push.js";
 import { loadTrips } from "./orders.js";
+import { runRecurring } from "./recurring.js";
 import { km } from "../../utils/factoryGeo.js";
 import { stockBalances } from "./stock.js";
 
@@ -250,6 +251,7 @@ function machinesFix(rows) {
 // ---------- مراقبة تلقائية كل ١٠ دقايق (السيرفر بيشغلها لكل مصنع) ----------
 export async function factoryWatch() {
   await checkVehicleDocs();
+  await runRecurring().catch((e) => console.error("recurring:", e.message));
   // سائق متأخر عن موعد زبون أكثر من نص ساعة
   const late = (await query(
     `SELECT o.id, o.eta_at, c.name, v.name AS vehicle, u.full_name AS driver

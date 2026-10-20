@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck, FiShoppingCart, FiImage } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { OrderSheet } from "./Orders.jsx";
+import { RecurringCard } from "./Recurring.jsx";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
 import { GOVERNORATES, inferRegion } from "../regions.js";
 import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime } from "../ui.jsx";
@@ -322,6 +323,7 @@ function CustomerView({ id, onClose, onEdit, onChanged, onOrder }) {
             {(c.lat || c.maps_url) ? <a href={c.lat ? `https://www.google.com/maps?q=${c.lat},${c.lng}` : c.maps_url} target="_blank" rel="noreferrer" className="sky"><FiMapPin /><span>الموقع</span></a> : <span className="off"><FiMapPin /><span>بدون موقع</span></span>}
             {canPay && <button onClick={() => setPay(true)}><FiCheck /><span>دفعة</span></button>}
           </div>
+          <RecurringCard customer={c} />
           <div className="fx-card">
             <div className="fx-kv"><span>الرصيد عليه</span><b style={{ color: c.balance > 0 ? "var(--fx-crit)" : "var(--fx-ok)", fontSize: 18 }}>{money(c.balance)} د.أ</b></div>
             {c.pay_terms === "credit" && <div className="fx-kv"><span>سقف الدين</span><b>{money(c.credit_limit)}</b></div>}

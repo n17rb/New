@@ -79,9 +79,9 @@ router.get("/orders", viewOrders, async (req, res) => {
 });
 
 // البونص تلقائي من القواعد، أو يدوي من حساب عنده صلاحية «إعطاء بونص»
-async function buildItems(customerId, rawItems, user) {
+export async function buildItems(customerId, rawItems, user) {
   const items = [];
-  const manualOk = canAction(user, "give_bonus");
+  const manualOk = user ? canAction(user, "give_bonus") : false;
   for (const it of Array.isArray(rawItems) ? rawItems : []) {
     const qty = Math.round(Number(it.qty));
     if (!it.product_id || !(qty > 0)) continue;
@@ -406,6 +406,8 @@ router.post("/trips", dispatch, async (req, res) => {
   }
   if (pv.over > 0) await alert({ level: "warn", kind: "overload", ref: tripId, title: `${pv.vehicle.name} محمّلة فوق سعتها`, body: `${pv.load} كرتونة والسعة ${pv.vehicle.capacity}.`, dedupe: true });
   await logActivity({ userId: req.user.id, action: "F_BUILD_TRIP", recordType: "f_trip", recordId: tripId, newValue: { vehicle: pv.vehicle.id, orders: orderIds } });
+  // طلبات ثابتة لزباين خط هالسيارة بنفس اليوم بتنضاف لحالها
+  await (await import("./recurring.js")).attachPending().catch(() => {});
   res.status(201).json({ trip_id: tripId, message_ids: msgIds });
 });
 
