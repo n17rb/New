@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiPlus, FiMapPin, FiUpload, FiChevronLeft } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, Sheet, Tip, Err, Act, getLocation, money, num } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Act, getLocation, ProductArt, money, num } from "../ui.jsx";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: "موقفة" };
@@ -92,6 +92,7 @@ export function Products() {
         {fx.boot.products.length === 0 && <div className="fx-item"><span className="fx-muted">ما في منتجات لسا.</span></div>}
         {fx.boot.products.map((p) => (
           <button key={p.id} className="fx-item" onClick={() => setEdit(p)}>
+            <ProductArt p={p} size={48} />
             <span className="t"><b>{p.name}{!p.active ? " (موقوف)" : ""}</b><span>{p.per_carton ? `${p.per_carton} حبة بالكرتونة · ` : ""}{money(p.price)} د.أ للكرتونة{p.min_stock ? ` · الحد الأدنى ${num(p.min_stock)}` : ""}</span></span>
             <FiChevronLeft style={{ color: "var(--fx-muted)" }} />
           </button>
@@ -107,10 +108,22 @@ function ProductSheet({ p, onClose }) {
   const [f, setF] = useState({ name: p.name || "", per_carton: p.per_carton || "", price: p.price ?? "", min_stock: p.min_stock || "", active: p.active !== false, sort_order: p.sort_order || 0 });
   const [recipe, setRecipe] = useState(() => Object.fromEntries((p.recipe || []).map((r) => [r.material_id, r.qty])));
   const [err, setErr] = useState("");
+  const [img, setImg] = useState(p.image_url || null);
+  const [file, setFile] = useState(null);
+  const imgRef = useRef(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
     <Sheet title={p.id ? p.name : "منتج جديد"} onClose={onClose}>
       <div className="fx-stack">
+        <div className="fx-row">
+          <ProductArt p={{ name: f.name, image_url: img }} size={84} />
+          <div className="fx-stack" style={{ gap: 6 }}>
+            <button type="button" className="fx-btn sky sm" onClick={() => imgRef.current?.click()}><FiUpload /> {img ? "غيّر الصورة" : "ارفع صورة المنتج"}</button>
+            {img && <button type="button" className="fx-link" onClick={() => { setImg(null); setFile("remove"); }}>شيل الصورة</button>}
+            <small className="fx-muted">الصورة بتطلع للموظف وهو بيسجّل الطلب.</small>
+          </div>
+          <input ref={imgRef} type="file" accept="image/*" hidden onChange={(e) => { const x = e.target.files?.[0]; e.target.value = ""; if (x) { setFile(x); setImg(URL.createObjectURL(x)); } }} />
+        </div>
         <label className="fx-field">الاسم<input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: شرنك 600 مل" /></label>
         <div className="fx-grid2">
           <label className="fx-field">حبة بالكرتونة<input className="fx-input" type="number" inputMode="numeric" value={f.per_carton} onChange={set("per_carton")} /></label>
@@ -136,6 +149,8 @@ function ProductSheet({ p, onClose }) {
           setErr("");
           try {
             const saved = await fapi.saveProduct({ ...f, id: p.id });
+            if (file === "remove") await fapi.removeProductImage(saved.id);
+            else if (file) await fapi.productImage(saved.id, file);
             await fapi.saveRecipe(saved.id, Object.entries(recipe).filter(([, q]) => Number(q) > 0).map(([material_id, qty]) => ({ material_id: Number(material_id), qty: Number(qty) })));
             await refresh(fx);
             fx.toast("انحفظ المنتج");

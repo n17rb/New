@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiAlertTriangle, FiClipboard, FiPlus, FiPower, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, Reload, num, money, time, dateTime, date } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, Reload, ProductArt, num, time, dateTime, date } from "../ui.jsx";
 
 export default function Stock() {
   const fx = useFx();
@@ -55,8 +55,9 @@ function Balances() {
             const short = p.demand > p.balance;
             return (
               <div key={p.id} className="fx-card fx-stack" style={{ gap: 6 }}>
-                <div className="fx-row" style={{ justifyContent: "space-between" }}>
-                  <b>{p.name}</b>
+                <div className="fx-row" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+                  <ProductArt p={fx.boot.products.find((x) => x.id === p.id) || p} size={44} />
+                  <b className="fx-grow">{p.name}</b>
                   <b className="fx-num" style={{ fontSize: 20, color: low ? "var(--fx-crit)" : "var(--fx-navy)" }}>{num(p.balance)}</b>
                 </div>
                 <span className="fx-muted" style={{ fontSize: 12.5 }}>

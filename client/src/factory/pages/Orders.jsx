@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, money, num, time, date, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, money, num, time, date, today } from "../ui.jsx";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
 
@@ -144,7 +144,7 @@ function OrderSheet({ order, onClose, onSaved }) {
   const [q, setQ] = useState("");
   const [list, setList] = useState([]);
   const [cust, setCust] = useState(order ? { id: order.customer_id, name: order.customer_name, city: order.city } : null);
-  const [items, setItems] = useState(order ? order.items.map((i) => ({ product_id: i.product_id, qty: i.qty })) : [{ product_id: products[0]?.id || "", qty: "" }]);
+  const [items, setItems] = useState(order ? order.items.map((i) => ({ product_id: i.product_id, qty: i.qty })) : []);
   const [due, setDue] = useState(order?.due_date || today());
   const [urgent, setUrgent] = useState(!!order?.urgent);
   const [notes, setNotes] = useState(order?.notes || "");
@@ -156,7 +156,6 @@ function OrderSheet({ order, onClose, onSaved }) {
     return () => clearTimeout(t);
   }, [q, cust]);
 
-  const setItem = (i, k, v) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
 
   async function save() {
     setErr("");
@@ -200,16 +199,7 @@ function OrderSheet({ order, onClose, onSaved }) {
           </div>
         )}
 
-        {items.map((it, i) => (
-          <div key={i} className="fx-row" style={{ flexWrap: "nowrap" }}>
-            <select className="fx-grow" value={it.product_id} onChange={(e) => setItem(i, "product_id", Number(e.target.value))} aria-label="المنتج">
-              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <input className="fx-input" style={{ width: 110 }} type="number" inputMode="numeric" min="1" value={it.qty} placeholder="كراتين" onChange={(e) => setItem(i, "qty", e.target.value)} aria-label="عدد الكراتين" />
-            {items.length > 1 && <button className="fx-icon-btn" onClick={() => setItems((xs) => xs.filter((_, j) => j !== i))} aria-label="شيل"><FiTrash2 /></button>}
-          </div>
-        ))}
-        <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setItems((xs) => [...xs, { product_id: products[0]?.id || "", qty: "" }])}>+ منتج ثاني</button>
+        {cust && <ProductPicker products={products} items={items} setItems={setItems} />}
 
         <div className="fx-field">موعد التوصيل
           <div className="fx-chips">
@@ -221,9 +211,56 @@ function OrderSheet({ order, onClose, onSaved }) {
         <label className="fx-row"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} /> مستعجل</label>
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         <Err msg={err} />
-        <Act className="fx-btn pri block" onClick={save} disabled={!cust}>{order ? "احفظ" : "سجّل الطلب"}</Act>
+        <Act className="fx-btn pri block" onClick={save} disabled={!cust || !items.some((i) => Number(i.qty) > 0)}>
+          {order ? "احفظ" : "سجّل الطلب"}{items.some((i) => Number(i.qty) > 0) ? ` · ${num(items.reduce((t, i) => t + (Number(i.qty) || 0), 0))} كرتونة` : ""}
+        </Act>
       </div>
     </Sheet>
+  );
+}
+
+// اختيار المنتجات بالصور، والكمية بأزرار سريعة (المصانع بتطلب مئات الكراتين)
+const QUICK = [50, 100, 200, 300, 500];
+function ProductPicker({ products, items, setItems }) {
+  const pick = (id) => setItems((xs) => (xs.some((x) => x.product_id === id) ? xs.filter((x) => x.product_id !== id) : [...xs, { product_id: id, qty: "" }]));
+  const setQty = (id, q) => setItems((xs) => xs.map((x) => (x.product_id === id ? { ...x, qty: q } : x)));
+  if (!products.length) return <div className="fx-note warn">ما في منتجات. ضيفها من الإعدادات.</div>;
+  return (
+    <>
+      <div className="fx-field">شو بده؟</div>
+      <div className="fx-prods">
+        {products.map((p) => {
+          const it = items.find((x) => x.product_id === p.id);
+          return (
+            <button key={p.id} type="button" className={`fx-prod ${it ? "on" : ""}`} onClick={() => pick(p.id)} aria-pressed={!!it}>
+              {it && <span className="tick">{Number(it.qty) > 0 ? num(it.qty) : "✓"}</span>}
+              <ProductArt p={p} size={64} />
+              <b>{p.name}</b>
+              <small>{p.per_carton ? `${p.per_carton} حبة · ` : ""}{money(p.price)} د.أ</small>
+            </button>
+          );
+        })}
+      </div>
+      {items.map((it) => {
+        const p = products.find((x) => x.id === it.product_id);
+        if (!p) return null;
+        const q = Number(it.qty) || 0;
+        return (
+          <div key={it.product_id} className="fx-qty">
+            <div className="top">
+              <ProductArt p={p} size={44} />
+              <b className="fx-grow">{p.name}</b>
+              <div className="fx-stepper">
+                <button type="button" onClick={() => setQty(p.id, Math.max(0, q - 10))} aria-label="ناقص ١٠" dir="ltr">−10</button>
+                <input className="fx-input" type="number" inputMode="numeric" min="1" value={it.qty} placeholder="0" onChange={(e) => setQty(p.id, e.target.value)} aria-label={`كراتين ${p.name}`} />
+                <button type="button" onClick={() => setQty(p.id, q + 10)} aria-label="زايد ١٠" dir="ltr">+10</button>
+              </div>
+            </div>
+            <div className="fx-chips">{QUICK.map((n) => <button key={n} type="button" className={`fx-chip ${q === n ? "on" : ""}`} onClick={() => setQty(p.id, n)}>{n}</button>)}</div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 

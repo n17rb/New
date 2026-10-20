@@ -18,6 +18,15 @@ async function enter(token, res) {
   return true;
 }
 
+// شاشة دخول المصنع: الاسم والشعار بس (بدون أي بيانات ثانية)
+router.get("/f/brand/:id", async (req, res) => {
+  const t = await getTenant(Number(req.params.id));
+  if (!t || t.status !== "active" || t.plan !== "factory") return res.status(404).json({ error: "غير موجود." });
+  setRequestTenant(t);
+  const b = await brand();
+  res.json({ id: t.id, name: b.name, logo: b.logo, tagline: b.tagline, phone: b.phone });
+});
+
 router.get("/f/track/:token", async (req, res) => {
   if (!(await enter(req.params.token, res))) return;
   const c = (await query("SELECT id, name, city, balance FROM f_customers WHERE track_token = $1 AND active", [req.params.token])).rows[0];

@@ -920,3 +920,6 @@ CREATE INDEX IF NOT EXISTS idx_f_driver_ledger ON f_driver_ledger(driver_id, id 
 -- الضمان الاجتماعي للموظفين (بيظهر بس بباقة المصانع)
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS ss_enrolled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS ss_number VARCHAR(40);
+
+-- صورة المنتج (بتطلع للموظف وهو بيسجّل الطلب)
+ALTER TABLE f_products ADD COLUMN IF NOT EXISTS image_url TEXT;

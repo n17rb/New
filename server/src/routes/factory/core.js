@@ -78,6 +78,19 @@ router.put("/products/:id", edit, async (req, res) => {
   await logActivity({ userId: req.user.id, action: "F_UPDATE_PRODUCT", recordType: "f_product", recordId: r.rows[0].id, newValue: p });
   res.json(r.rows[0]);
 });
+// صورة المنتج
+router.post("/products/:id/image", edit, uploadSingleImage, async (req, res) => {
+  if (!req.file) return bad(res, "اختار صورة.");
+  const url = await saveCompressedImage(req.file.buffer, "product");
+  const r = await query("UPDATE f_products SET image_url = $1 WHERE id = $2 RETURNING *", [url, req.params.id]);
+  if (!r.rows[0]) return bad(res, "المنتج غير موجود.", 404);
+  res.json(r.rows[0]);
+});
+router.delete("/products/:id/image", edit, async (req, res) => {
+  await query("UPDATE f_products SET image_url = NULL WHERE id = $1", [req.params.id]);
+  res.json({ ok: true });
+});
+
 // المواد الخام اللي بتصرفها الكرتونة
 router.put("/products/:id/recipe", edit, async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];

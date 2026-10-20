@@ -5,6 +5,7 @@ import { canUser, canUserAction } from "../auth.jsx";
 import { fapi } from "./fapi.js";
 import { FxContext } from "./ui.jsx";
 import { HelpSheet, Tour } from "./help.jsx";
+import { saveFactoryLogin } from "./FactoryLogin.jsx";
 import "./factory.css";
 
 import Home from "./pages/Home.jsx";
@@ -45,6 +46,11 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
     try { return localStorage.getItem(`fx-tour-${shop?.id}-${user.id}`) ? null : 0; } catch { return null; }
   });
   const toastTimer = useRef(null);
+
+  // الدخول الجاي على هالتلفون بيفتح على شاشة دخول المصنع
+  useEffect(() => {
+    if (shop?.id && shop?.brand && !user.inspecting) saveFactoryLogin({ id: shop.id, name: shop.brand.name, logo: shop.brand.logo, tagline: shop.brand.tagline, phone: shop.brand.phone });
+  }, [shop?.id, shop?.brand?.logo, shop?.brand?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", "light");

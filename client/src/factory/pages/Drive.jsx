@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FiTruck, FiPhone, FiNavigation, FiAlertTriangle, FiPlus, FiMessageCircle, FiCheck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, getLocation, waLink, money, num, time, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -212,7 +212,8 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
     <Sheet title={`تسليم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
         {o.items.map((i) => (
-          <label key={i.id} className="fx-field">{i.name} (المطلوب {num(i.qty)})
+          <label key={i.id} className="fx-field">
+            <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} />{i.name} (المطلوب {num(i.qty)})</span>
             <input className="fx-input" type="number" inputMode="numeric" min="0" max={i.qty} value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} />
           </label>
         ))}

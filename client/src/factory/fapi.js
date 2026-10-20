@@ -22,6 +22,13 @@ export const fapi = {
 
   // إعدادات
   saveProduct: (p) => (p.id ? put(`/products/${p.id}`, p) : post("/products", p)),
+  productImage: (id, file) => {
+    const form = new FormData();
+    form.append("photo", file);
+    return request(`${F}/products/${id}/image`, { method: "POST", body: form, isFormData: true });
+  },
+  removeProductImage: (id) => del(`/products/${id}/image`),
+  brandFor: (id) => request(`/public/f/brand/${Number(id)}`),
   saveRecipe: (id, items) => put(`/products/${id}/recipe`, { items }),
   saveVehicle: (v) => (v.id ? put(`/vehicles/${v.id}`, v) : post("/vehicles", v)),
   saveLine: (l) => (l.id ? put(`/lines/${l.id}`, l) : post("/lines", l)),

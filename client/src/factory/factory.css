@@ -290,3 +290,36 @@ button.fx-item { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .fx * { animation: none !important; transition: none !important; }
 }
+
+/* ---------- المنتجات بالصور ---------- */
+.fx-prod-img { border-radius: 14px; object-fit: cover; flex: none; background: var(--fx-sky-soft); display: block; }
+.fx-prods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fx-prod { border: 1.5px solid var(--fx-line); background: var(--fx-surface); border-radius: 18px; padding: 12px; display: grid; gap: 8px; justify-items: center; text-align: center; font: inherit; color: inherit; cursor: pointer; position: relative; min-width: 0; }
+.fx-prod b { font-size: 14px; line-height: 1.3; }
+.fx-prod small { color: var(--fx-muted); font-size: 12px; }
+.fx-prod.on { border-color: var(--fx-navy); background: var(--fx-sky-soft); box-shadow: 0 6px 18px rgba(4, 86, 162, 0.12); }
+.fx-prod .tick { position: absolute; top: 8px; inset-inline-start: 8px; width: 24px; height: 24px; border-radius: 50%; background: var(--fx-navy); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.fx-qty { display: grid; gap: 8px; background: var(--fx-surface); border: 1px solid var(--fx-line); border-radius: 18px; padding: 12px; }
+.fx-qty .top { display: flex; align-items: center; gap: 10px; }
+.fx-stepper { display: flex; align-items: center; gap: 6px; }
+.fx-stepper button { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--fx-line); background: var(--fx-surface-2); font: inherit; font-weight: 700; font-size: 15px; color: var(--fx-navy); cursor: pointer; }
+.fx-stepper input { width: 96px; text-align: center; font-weight: 700; font-size: 20px; padding: 8px; }
+
+/* ---------- شاشة الدخول ---------- */
+.fx-login { min-height: 100vh; min-height: 100dvh; background: linear-gradient(180deg, #ffffff 0%, #eef6fc 55%, #e2f1fb 100%); display: flex; flex-direction: column; align-items: center; position: relative; overflow: hidden; }
+.fx-login-body { width: 100%; max-width: 420px; padding: calc(48px + env(safe-area-inset-top)) 24px 200px; display: grid; gap: 16px; position: relative; z-index: 1; box-sizing: border-box; }
+.fx-login-logo { display: grid; justify-items: center; gap: 6px; margin-bottom: 18px; }
+.fx-login-logo img { width: min(78%, 280px); height: auto; }
+.fx-login h1 { text-align: center; font-size: 22px; margin: 6px 0 6px; color: var(--fx-ink); }
+.fx-pillfield { display: flex; align-items: center; gap: 10px; background: rgba(255, 255, 255, 0.92); border: 1.5px solid #d6e6f3; border-radius: 999px; padding: 4px 18px; box-shadow: 0 4px 14px rgba(4, 86, 162, 0.05); }
+.fx-pillfield:focus-within { border-color: var(--fx-sky); }
+.fx-pillfield svg { width: 22px; height: 22px; color: var(--fx-navy); flex: none; }
+.fx-pillfield input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 16px; padding: 13px 0; color: var(--fx-ink); outline: none; min-width: 0; }
+.fx-pillfield button { border: 0; background: none; padding: 4px; cursor: pointer; display: grid; place-items: center; color: var(--fx-muted); }
+.fx-login-btn { border: 0; border-radius: 999px; padding: 16px; font: inherit; font-size: 17px; font-weight: 700; color: #fff; background: linear-gradient(90deg, #1b8fe6, #13a7ec); box-shadow: 0 10px 24px rgba(19, 167, 236, 0.32); cursor: pointer; margin-top: 4px; }
+.fx-login-btn:disabled { opacity: 0.6; }
+.fx-login-waves { position: absolute; left: 0; right: 0; bottom: 0; height: 190px; z-index: 0; }
+.fx-login-waves svg { width: 100%; height: 100%; display: block; }
+.fx-login-tag { position: absolute; left: 0; right: 0; bottom: calc(26px + env(safe-area-inset-bottom)); text-align: center; color: #fff; font-size: 17px; font-weight: 600; z-index: 1; }
+.fx-qty .top { flex-wrap: wrap; }
+.fx-qty .fx-stepper { margin-inline-start: auto; }

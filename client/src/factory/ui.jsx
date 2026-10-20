@@ -295,6 +295,32 @@ export function Reload({ onClick }) {
   return <button className="fx-icon-btn" onClick={onClick} aria-label="تحديث"><FiRefreshCw /></button>;
 }
 
+// صورة المنتج، وإذا ما إلها صورة: رسمة بسيطة (كاسة أو عبوة) بألوان المصنع
+export function ProductArt({ p, size = 56 }) {
+  if (p?.image_url) return <img src={p.image_url} alt={p.name} className="fx-prod-img" style={{ width: size, height: size }} />;
+  const cup = /كاس|كوب/.test(p?.name || "");
+  const label = (String(p?.name || "").match(/\d+/) || [""])[0];
+  return (
+    <svg className="fx-prod-img" width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={p?.name}>
+      <rect width="64" height="64" rx="16" fill="#E6F5FD" />
+      {cup ? (
+        <g>
+          <path d="M18 20h28l-3.5 30a3 3 0 0 1-3 2.6H24.5a3 3 0 0 1-3-2.6z" fill="#fff" stroke="#13A7EC" strokeWidth="2.4" />
+          <path d="M20.4 32h23.2l-1.9 17.4a2 2 0 0 1-2 1.8H24.3a2 2 0 0 1-2-1.8z" fill="#13A7EC" opacity=".35" />
+          <rect x="16" y="15" width="32" height="6" rx="3" fill="#0456A2" />
+        </g>
+      ) : (
+        <g>
+          <rect x="27" y="8" width="10" height="6" rx="2" fill="#0456A2" />
+          <path d="M26 14h12v4c4 2 6 5 6 9v24a5 5 0 0 1-5 5H25a5 5 0 0 1-5-5V27c0-4 2-7 6-9z" fill="#fff" stroke="#13A7EC" strokeWidth="2.4" />
+          <path d="M22 34h20v17a3 3 0 0 1-3 3H25a3 3 0 0 1-3-3z" fill="#13A7EC" opacity=".35" />
+        </g>
+      )}
+      {label && <text x="32" y={cup ? 44 : 46} textAnchor="middle" fontSize="9" fontWeight="700" fill="#0456A2" fontFamily="system-ui">{label}</text>}
+    </svg>
+  );
+}
+
 export function HBar({ label, value, max, tone = "", suffix = "" }) {
   return (
     <div className="fx-hbar">

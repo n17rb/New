@@ -36,7 +36,7 @@ export async function loadOrders(where, params = []) {
   );
   if (!r.rows.length) return [];
   const items = await query(
-    `SELECT i.*, p.name, p.per_carton FROM f_order_items i JOIN f_products p ON p.id = i.product_id
+    `SELECT i.*, p.name, p.per_carton, p.image_url FROM f_order_items i JOIN f_products p ON p.id = i.product_id
      WHERE i.order_id = ANY($1::int[]) ORDER BY i.id`,
     [r.rows.map((o) => o.id)]
   );

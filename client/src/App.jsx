@@ -53,6 +53,7 @@ const TripReplay = lazy(() => import("./pages/TripReplay.jsx"));
 // موج للمصانع: تطبيق منفصل بالكامل للمشتركين اللي باقتهم «مصنع»
 const FactoryApp = lazy(() => import("./factory/FactoryApp.jsx"));
 const FactoryTrack = lazy(() => import("./factory/Track.jsx"));
+const FactoryLoginGate = lazy(() => import("./factory/LoginGate.jsx"));
 
 // الصفحات الأكثر استخدامًا بتنحمّل بالخلفية بعد ما يفتح التطبيق، عشان التنقل يكون فوري
 function prefetchCommonPages() {
@@ -322,6 +323,14 @@ function MainApp() {
   }
 
   if (!user) {
+    // موظفين المصنع: شاشة دخول بشعار المصنع (من الرابط /m/<رقم المصنع> أو من آخر دخول على هالتلفون)
+    if (/^\/m\/\d+/.test(window.location.pathname) || localStorage.getItem("fx_login")) {
+      return (
+        <Suspense fallback={<SplashScreen />}>
+          <FactoryLoginGate onLoggedIn={saveUser} fallback={<Login onLoggedIn={saveUser} />} />
+        </Suspense>
+      );
+    }
     return <Login onLoggedIn={saveUser} />;
   }
 
