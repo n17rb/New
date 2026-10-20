@@ -36,7 +36,7 @@ router.get("/f/track/:token", async (req, res) => {
       `SELECT o.id, o.status, o.total, o.delivered_total, o.cash_paid, o.eta_at, o.delivered_at, o.created_at, o.delay_reason, o.invoice_token,
               to_char(o.due_date,'YYYY-MM-DD') AS due_date, t.status AS trip_status, u.full_name AS driver_name, v.name AS vehicle_name,
               (SELECT COUNT(*)::int FROM f_orders o2 WHERE o2.trip_id = o.trip_id AND o2.status = 'onway' AND o2.stop_seq < o.stop_seq) AS stops_before,
-              (SELECT string_agg(i.qty || ' كرتونة ' || p.name, '، ') FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = o.id) AS items
+              (SELECT string_agg(i.qty || ' كرتونة ' || p.name || CASE WHEN i.bonus_qty > 0 THEN ' + ' || i.bonus_qty || ' بونص' ELSE '' END, '، ') FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = o.id) AS items
        FROM f_orders o LEFT JOIN f_trips t ON t.id = o.trip_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id LEFT JOIN users u ON u.id = t.driver_id
        WHERE o.customer_id = $1 AND (o.status IN ('new','assigned','onway','delayed') OR o.updated_at > now() - interval '45 days')
        ORDER BY o.id DESC LIMIT 25`,
@@ -65,7 +65,7 @@ router.get("/f/invoice/:token", async (req, res) => {
   )).rows[0];
   if (!o) return res.status(404).json({ error: "الفاتورة غير موجودة." });
   const items = await query(
-    "SELECT p.name, i.qty, i.delivered_qty, i.damaged_qty, i.price FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = (SELECT id FROM f_orders WHERE invoice_token = $1)",
+    "SELECT p.name, i.qty, i.delivered_qty, i.damaged_qty, i.price, i.bonus_qty, i.delivered_bonus FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = (SELECT id FROM f_orders WHERE invoice_token = $1)",
     [req.params.token]
   );
   res.json({

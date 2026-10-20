@@ -923,3 +923,18 @@ ALTER TABLE employees ADD COLUMN IF NOT EXISTS ss_number VARCHAR(40);
 
 -- صورة المنتج (بتطلع للموظف وهو بيسجّل الطلب)
 ALTER TABLE f_products ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- البونص: كراتين ببلاش مع الطلب (مثلًا كل ١٠٠ كرتونة → ٥ بونص). بتنحمّل وبتتسلّم بس ما بتنحسب بالفاتورة
+CREATE TABLE IF NOT EXISTS f_bonus_rules (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100),
+  product_id INTEGER REFERENCES f_products(id) ON DELETE CASCADE,
+  customer_id INTEGER REFERENCES f_customers(id) ON DELETE CASCADE,
+  every_qty INTEGER NOT NULL CHECK (every_qty > 0),
+  bonus_qty INTEGER NOT NULL CHECK (bonus_qty > 0),
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS bonus_manual BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE f_order_items ADD COLUMN IF NOT EXISTS delivered_bonus INTEGER;

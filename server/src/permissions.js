@@ -51,6 +51,7 @@ export const ACTIONS = [
   { key: "chat_with_admin", label: "مراسلة الإدارة بالشات" },
   { key: "approve_expense", label: "الموافقة على مصاريف السائقين", plan: "factory" },
   { key: "adjust_stock", label: "تعديل رصيد المستودع يدويًا", plan: "factory" },
+  { key: "give_bonus", label: "إعطاء بونص (كراتين ببلاش) يدويًا على الطلب", plan: "factory" },
 ];
 
 export const LEVELS = ["none", "view", "edit"];
@@ -102,7 +103,7 @@ export const FACTORY_TEMPLATES = {
   admin: {
     label: "مدير",
     sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", payroll: "edit" }),
-    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true },
+    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true },
   },
   dispatcher: {
     label: "مسؤول الحركة",

@@ -94,7 +94,7 @@ router.get("/reports", home, async (req, res) => {
       P
     ),
     query(
-      `SELECT p.id, p.name, COALESCE(SUM(i.delivered_qty),0)::int AS cartons, COALESCE(SUM(i.delivered_qty * i.price),0) AS sales
+      `SELECT p.id, p.name, COALESCE(SUM(i.delivered_qty),0)::int AS cartons, COALESCE(SUM(COALESCE(i.delivered_bonus, 0)),0)::int AS bonus, COALESCE(SUM(i.delivered_qty * i.price),0) AS sales
        FROM f_order_items i JOIN f_orders o ON o.id = i.order_id JOIN f_products p ON p.id = i.product_id
        WHERE o.status = 'delivered' AND ${dl} GROUP BY p.id ORDER BY sales DESC`,
       P

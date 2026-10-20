@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { fapi } from "./fapi.js";
 import "./factory.css";
 
@@ -99,7 +99,14 @@ function Invoice({ data }) {
       <div className="fx-table">
         <table>
           <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>المجموع</th></tr></thead>
-          <tbody>{items.map((i, k) => <tr key={k}><td>{i.name}</td><td>{i.delivered_qty ?? i.qty}</td><td>{money(i.price)}</td><td>{money(i.line)}</td></tr>)}</tbody>
+          <tbody>
+            {items.map((i, k) => (
+              <Fragment key={k}>
+                <tr><td>{i.name}</td><td>{i.delivered_qty ?? i.qty}</td><td>{money(i.price)}</td><td>{money(i.line)}</td></tr>
+                {(i.delivered_bonus ?? i.bonus_qty) > 0 && <tr style={{ color: "var(--fx-ok)" }}><td>بونص {i.name}</td><td>{i.delivered_bonus ?? i.bonus_qty}</td><td>ببلاش</td><td>0.00</td></tr>}
+              </Fragment>
+            ))}
+          </tbody>
         </table>
       </div>
       <div className="fx-card">

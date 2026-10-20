@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, money, num, time, date, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today } from "../ui.jsx";
+import { FiGift } from "react-icons/fi";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
 
@@ -112,7 +113,7 @@ export default function Orders() {
 }
 
 export function itemsLine(o) {
-  return o.items.map((i) => `${num(i.qty)} ${i.name}`).join("، ");
+  return o.items.map((i) => `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}`).join("، ");
 }
 
 function OrderRow({ o, selectable, on, onToggle, onInfo }) {
@@ -144,7 +145,7 @@ function OrderSheet({ order, onClose, onSaved }) {
   const [q, setQ] = useState("");
   const [list, setList] = useState([]);
   const [cust, setCust] = useState(order ? { id: order.customer_id, name: order.customer_name, city: order.city } : null);
-  const [items, setItems] = useState(order ? order.items.map((i) => ({ product_id: i.product_id, qty: i.qty })) : []);
+  const [items, setItems] = useState(order ? order.items.map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual })) : []);
   const [due, setDue] = useState(order?.due_date || today());
   const [urgent, setUrgent] = useState(!!order?.urgent);
   const [notes, setNotes] = useState(order?.notes || "");
@@ -159,7 +160,7 @@ function OrderSheet({ order, onClose, onSaved }) {
 
   async function save() {
     setErr("");
-    const body = { customer_id: cust?.id, items: items.filter((i) => i.product_id && Number(i.qty) > 0), due_date: due, urgent, notes };
+    const body = { customer_id: cust?.id, items: items.filter((i) => i.product_id && Number(i.qty) > 0).map((i) => ({ ...i, bonus_qty: i.bonus_manual ? Number(i.bonus_qty) || 0 : undefined })), due_date: due, urgent, notes };
     try {
       if (order) {
         await fapi.updateOrder(order.id, body);
@@ -167,7 +168,7 @@ function OrderSheet({ order, onClose, onSaved }) {
         onSaved();
       } else {
         const r = await fapi.createOrder(body);
-        fx.toast("انسجل الطلب");
+        fx.toast(r.bonus ? `انسجل الطلب · مع ${num(r.bonus)} كرتونة بونص` : "انسجل الطلب");
         onSaved({ message_ids: [r.message_id] });
       }
     } catch (e) {
@@ -199,7 +200,7 @@ function OrderSheet({ order, onClose, onSaved }) {
           </div>
         )}
 
-        {cust && <ProductPicker products={products} items={items} setItems={setItems} />}
+        {cust && <ProductPicker products={products} items={items} setItems={setItems} customerId={cust.id} />}
 
         <div className="fx-field">موعد التوصيل
           <div className="fx-chips">
@@ -221,7 +222,10 @@ function OrderSheet({ order, onClose, onSaved }) {
 
 // اختيار المنتجات بالصور، والكمية بأزرار سريعة (المصانع بتطلب مئات الكراتين)
 const QUICK = [50, 100, 200, 300, 500];
-function ProductPicker({ products, items, setItems }) {
+function ProductPicker({ products, items, setItems, customerId }) {
+  const fx = useFx();
+  const canBonus = fx.canAction("give_bonus");
+  const setBonus = (id, patch) => setItems((xs) => xs.map((x) => (x.product_id === id ? { ...x, ...patch } : x)));
   const pick = (id) => setItems((xs) => (xs.some((x) => x.product_id === id) ? xs.filter((x) => x.product_id !== id) : [...xs, { product_id: id, qty: "" }]));
   const setQty = (id, q) => setItems((xs) => xs.map((x) => (x.product_id === id ? { ...x, qty: q } : x)));
   if (!products.length) return <div className="fx-note warn">ما في منتجات. ضيفها من الإعدادات.</div>;
@@ -257,10 +261,37 @@ function ProductPicker({ products, items, setItems }) {
               </div>
             </div>
             <div className="fx-chips">{QUICK.map((n) => <button key={n} type="button" className={`fx-chip ${q === n ? "on" : ""}`} onClick={() => setQty(p.id, n)}>{n}</button>)}</div>
+            <BonusLine p={p} q={q} it={it} auto={bonusPreview(fx.boot.bonus_rules, customerId, p.id, q)} canBonus={canBonus} onChange={(patch) => setBonus(p.id, patch)} />
           </div>
         );
       })}
     </>
+  );
+}
+
+// سطر البونص تحت الكمية: تلقائي من القواعد، والمدير بيقدر يغيّره
+function BonusLine({ q, it, auto, canBonus, onChange }) {
+  const bonus = it.bonus_manual ? Number(it.bonus_qty) || 0 : auto;
+  if (!q && !it.bonus_manual) return null;
+  return (
+    <div className="fx-bonus">
+      <FiGift aria-hidden="true" />
+      {it.bonus_manual ? (
+        <span className="fx-row" style={{ gap: 6, flexWrap: "nowrap" }}>
+          بونص
+          <input className="fx-input" style={{ width: 80, padding: "6px 8px", textAlign: "center" }} type="number" inputMode="numeric" min="0" value={it.bonus_qty ?? ""} onChange={(e) => onChange({ bonus_qty: e.target.value })} aria-label="البونص" />
+          كرتونة
+        </span>
+      ) : (
+        <span>{bonus ? <>بونص <b>{num(bonus)}</b> كرتونة ببلاش</> : "بدون بونص"}</span>
+      )}
+      {bonus > 0 && <span className="fx-muted" style={{ fontSize: 12 }}>· بيستلم {num(q + bonus)} وبيدفع حق {num(q)}</span>}
+      {canBonus && (
+        <button type="button" className="fx-link" style={{ marginInlineStart: "auto" }} onClick={() => onChange(it.bonus_manual ? { bonus_manual: false, bonus_qty: undefined } : { bonus_manual: true, bonus_qty: auto })}>
+          {it.bonus_manual ? "رجّعه تلقائي" : "عدّل"}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -273,7 +304,12 @@ function OrderInfo({ o, onClose, onEdit, onChanged }) {
         <div className="fx-card">
           <div className="fx-kv"><span>الزبون</span><b>{o.customer_name}</b></div>
           <div className="fx-kv"><span>المدينة</span><b>{o.city || "—"}</b></div>
-          {o.items.map((i) => <div key={i.id} className="fx-kv"><span>{i.name}</span><b>{num(i.qty)} × {money(i.price)}</b></div>)}
+          {o.items.map((i) => (
+            <div key={i.id}>
+              <div className="fx-kv"><span>{i.name}</span><b>{num(i.qty)} × {money(i.price)}</b></div>
+              {i.bonus_qty > 0 && <div className="fx-kv good"><span>+ بونص {i.name}</span><b>{num(i.bonus_qty)} ببلاش</b></div>}
+            </div>
+          ))}
           <div className="fx-kv total"><span>المجموع</span><b>{money(o.total)} د.أ</b></div>
         </div>
         <div className="fx-row"><StatusPill map={ORDER_STATUS} value={o.status} />{o.vehicle_name && <span className="fx-pill">{o.vehicle_name}</span>}{o.eta_at && <span className="fx-pill">يوصل {time(o.eta_at)}</span>}</div>

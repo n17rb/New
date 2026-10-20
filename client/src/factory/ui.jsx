@@ -295,6 +295,17 @@ export function Reload({ onClick }) {
   return <button className="fx-icon-btn" onClick={onClick} aria-label="تحديث"><FiRefreshCw /></button>;
 }
 
+// البونص المتوقع حسب القواعد (نفس حساب السيرفر — للعرض قبل الحفظ)
+export function bonusPreview(rules, customerId, productId, qty) {
+  const q = Number(qty) || 0;
+  if (!q || !rules?.length) return 0;
+  const fits = rules.filter((r) => r.active && (!r.customer_id || r.customer_id === customerId) && (!r.product_id || r.product_id === productId));
+  if (!fits.length) return 0;
+  const rank = (r) => (r.customer_id ? 2 : 0) + (r.product_id ? 1 : 0);
+  const best = fits.sort((a, b) => rank(b) - rank(a) || b.id - a.id)[0];
+  return Math.floor(q / best.every_qty) * best.bonus_qty;
+}
+
 // صورة المنتج، وإذا ما إلها صورة: رسمة بسيطة (كاسة أو عبوة) بألوان المصنع
 export function ProductArt({ p, size = 56 }) {
   if (p?.image_url) return <img src={p.image_url} alt={p.name} className="fx-prod-img" style={{ width: size, height: size }} />;

@@ -159,7 +159,7 @@ function StopCard({ o, n, active, onDeliver, onFail }) {
         <span className="fx-grow" style={{ display: "grid" }}>
           <b>{o.customer_name}</b>
           <span className="fx-muted">{o.city}{o.address ? ` · ${o.address}` : ""}</span>
-          <span className="fx-muted">{o.items.map((i) => `${num(i.qty)} ${i.name}`).join("، ")}{o.eta_at && !closed ? ` · يوصل ${time(o.eta_at)}` : ""}</span>
+          <span className="fx-muted">{o.items.map((i) => `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}`).join("، ")}{o.eta_at && !closed ? ` · يوصل ${time(o.eta_at)}` : ""}</span>
         </span>
       </div>
       {o.status === "delivered" && <div className="fx-note ok">سلّمت · قيمة الفاتورة {money(o.delivered_total)} · كاش {money(o.cash_paid)}</div>}
@@ -181,6 +181,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const fx = useFx();
   const [qty, setQty] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.qty])));
   const [dmg, setDmg] = useState({});
+  const [bon, setBon] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.bonus_qty || 0])));
   const [showDmg, setShowDmg] = useState(false);
   const total = o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0);
   const [cash, setCash] = useState(() => (o.pay_terms === "credit" ? "" : String(Math.round(total * 100) / 100)));
@@ -197,7 +198,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
     const loc = await getLocation(5000);
     try {
       const r = await fapi.deliver(o.id, {
-        items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0 })),
+        items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
         cash: cashN, signature: sig, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
       });
       fx.toast(r.remaining_stops ? `انسجل التسليم. باقي ${r.remaining_stops} وقفات.` : "انسجل التسليم. خلصت كل الوقفات!");
@@ -215,6 +216,13 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
           <label key={i.id} className="fx-field">
             <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} />{i.name} (المطلوب {num(i.qty)})</span>
             <input className="fx-input" type="number" inputMode="numeric" min="0" max={i.qty} value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} />
+            {i.bonus_qty > 0 && (
+              <span className="fx-bonus" style={{ marginTop: 6 }}>
+                + بونص ببلاش
+                <input className="fx-input" style={{ width: 80, padding: "6px 8px", textAlign: "center" }} type="number" inputMode="numeric" min="0" max={i.bonus_qty} value={bon[i.id]} onChange={(e) => setBon({ ...bon, [i.id]: e.target.value })} aria-label={`بونص ${i.name}`} />
+                كرتونة (ما بتنحسب بالفاتورة)
+              </span>
+            )}
           </label>
         ))}
         {!showDmg ? (

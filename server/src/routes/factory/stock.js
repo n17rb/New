@@ -43,7 +43,7 @@ router.get("/stock", viewStock, async (req, res) => {
       [today]
     ),
     query(
-      `SELECT i.product_id, SUM(i.qty)::int AS qty FROM f_orders o JOIN f_order_items i ON i.order_id = o.id
+      `SELECT i.product_id, SUM(i.qty + i.bonus_qty)::int AS qty FROM f_orders o JOIN f_order_items i ON i.order_id = o.id
        WHERE o.status IN ('new','assigned','delayed') AND o.due_date <= $1 GROUP BY i.product_id`,
       [tomorrow]
     ),
@@ -148,7 +148,7 @@ router.get("/stock/loading", viewStock, async (req, res) => {
   const trips = await loadTrips("t.status IN ('planned','active','returned') AND t.trip_date <= $1", [jordanDate()]);
   res.json(trips.map((t) => {
     const per = new Map();
-    for (const o of t.stops.filter((s) => s.status !== "cancelled")) for (const i of o.items) per.set(i.product_id, { product_id: i.product_id, name: i.name, qty: (per.get(i.product_id)?.qty || 0) + i.qty });
+    for (const o of t.stops.filter((s) => s.status !== "cancelled")) for (const i of o.items) per.set(i.product_id, { product_id: i.product_id, name: i.name, qty: (per.get(i.product_id)?.qty || 0) + i.qty + (i.bonus_qty || 0) });
     return {
       id: t.id, vehicle_name: t.vehicle_name, driver_name: t.driver_name, status: t.status, trip_date: t.trip_date, capacity: t.capacity, load: t.load,
       load_confirmed_at: t.load_confirmed_at, items: [...per.values()], extra_items: t.extra_items,
@@ -167,8 +167,9 @@ export function expectedReturns(t) {
   };
   for (const o of t.stops) {
     for (const i of o.items) {
-      if (o.status === "delivered") add(i.product_id, i.name, i.qty - (i.delivered_qty ?? i.qty) - (i.damaged_qty || 0));
-      else if (["failed", "onway", "assigned"].includes(o.status)) add(i.product_id, i.name, i.qty);
+      const b = i.bonus_qty || 0;
+      if (o.status === "delivered") add(i.product_id, i.name, i.qty + b - (i.delivered_qty ?? i.qty) - (i.delivered_bonus ?? b) - (i.damaged_qty || 0));
+      else if (["failed", "onway", "assigned"].includes(o.status)) add(i.product_id, i.name, i.qty + b);
     }
   }
   for (const x of t.extra_items || []) add(x.product_id, x.name, x.qty);

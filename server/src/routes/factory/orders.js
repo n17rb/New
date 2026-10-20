@@ -2,8 +2,9 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
 import { planStops, sortNearest, km, pointOf } from "../../utils/factoryGeo.js";
+import { canAction } from "../../permissions.js";
 import {
-  need, needAny, bad, round2, jordanDate, priceFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint,
+  need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint,
 } from "./lib.js";
 
 // ============================================================
@@ -51,7 +52,7 @@ export async function loadOrders(where, params = []) {
       ...o,
       total: Number(o.total), cash_paid: Number(o.cash_paid), delivered_total: o.delivered_total == null ? null : Number(o.delivered_total),
       customer_balance: Number(o.customer_balance), credit_limit: Number(o.credit_limit),
-      items: its, cartons: its.reduce((s, i) => s + i.qty, 0),
+      items: its, cartons: its.reduce((s, i) => s + i.qty + (i.bonus_qty || 0), 0), bonus: its.reduce((s, i) => s + (i.bonus_qty || 0), 0),
     };
   });
 }
@@ -71,14 +72,18 @@ router.get("/orders", viewOrders, async (req, res) => {
   res.json(await loadOrders(where, params));
 });
 
-async function buildItems(customerId, rawItems) {
+// البونص تلقائي من القواعد، أو يدوي من حساب عنده صلاحية «إعطاء بونص»
+async function buildItems(customerId, rawItems, user) {
   const items = [];
+  const manualOk = canAction(user, "give_bonus");
   for (const it of Array.isArray(rawItems) ? rawItems : []) {
     const qty = Math.round(Number(it.qty));
     if (!it.product_id || !(qty > 0)) continue;
     const p = (await query("SELECT id, name, active FROM f_products WHERE id = $1", [it.product_id])).rows[0];
     if (!p) throw new Error("منتج غير موجود.");
-    items.push({ product_id: p.id, name: p.name, qty, price: await priceFor(customerId, p.id) });
+    const manual = manualOk && it.bonus_qty !== undefined && it.bonus_qty !== null && it.bonus_qty !== "" && it.bonus_manual === true;
+    const bonus = manual ? Math.max(0, Math.round(Number(it.bonus_qty) || 0)) : await bonusFor(customerId, p.id, qty);
+    items.push({ product_id: p.id, name: p.name, qty, bonus, bonus_manual: manual, price: await priceFor(customerId, p.id) });
   }
   if (!items.length) throw new Error("اختار منتج واحد على الأقل مع الكمية.");
   return items;
@@ -88,7 +93,7 @@ router.post("/orders", editOrders, async (req, res) => {
   const b = req.body || {};
   const customer = (await query("SELECT id, name FROM f_customers WHERE id = $1 AND active", [b.customer_id])).rows[0];
   if (!customer) return bad(res, "اختار الزبون.");
-  let items; try { items = await buildItems(customer.id, b.items); } catch (e) { return bad(res, e.message); }
+  let items; try { items = await buildItems(customer.id, b.items, req.user); } catch (e) { return bad(res, e.message); }
   const total = round2(items.reduce((s, i) => s + i.qty * i.price, 0));
   const due = /^\d{4}-\d{2}-\d{2}$/.test(b.due_date || "") ? b.due_date : jordanDate();
   const client = await pool.connect();
@@ -100,7 +105,7 @@ router.post("/orders", editOrders, async (req, res) => {
       [customer.id, due, !!b.urgent, b.notes ? String(b.notes).slice(0, 500) : null, total, req.user.id]
     )).rows[0].id;
     for (const i of items) {
-      await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price) VALUES ($1,$2,$3,$4)", [id, i.product_id, i.qty, i.price]);
+      await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,$6)", [id, i.product_id, i.qty, i.price, i.bonus, i.bonus_manual]);
     }
     await client.query("COMMIT");
   } catch (err) {
@@ -112,17 +117,17 @@ router.post("/orders", editOrders, async (req, res) => {
   const track = await ensureTrackToken(customer.id);
   const msg = await queueMessage({ customerId: customer.id, orderId: id, kind: "received", data: { customer: customer.name, order: id, items: itemsText(items), due: dayWord(due), track }, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CREATE_ORDER", recordType: "f_order", recordId: id, newValue: { customer: customer.id, items, total } });
-  res.status(201).json({ id, total, message_id: msg });
+  res.status(201).json({ id, total, bonus: items.reduce((s, i) => s + i.bonus, 0), message_id: msg });
 });
 
 router.put("/orders/:id", editOrders, async (req, res) => {
   const o = (await query("SELECT * FROM f_orders WHERE id = $1", [req.params.id])).rows[0];
   if (!o) return bad(res, "الطلب غير موجود.", 404);
   if (!["new", "assigned", "delayed"].includes(o.status)) return bad(res, "الطلب طلع مع السائق — ما بينفع يتعدل هلأ.");
-  let items; try { items = await buildItems(o.customer_id, req.body?.items); } catch (e) { return bad(res, e.message); }
+  let items; try { items = await buildItems(o.customer_id, req.body?.items, req.user); } catch (e) { return bad(res, e.message); }
   const total = round2(items.reduce((s, i) => s + i.qty * i.price, 0));
   await query("DELETE FROM f_order_items WHERE order_id = $1", [o.id]);
-  for (const i of items) await query("INSERT INTO f_order_items (order_id, product_id, qty, price) VALUES ($1,$2,$3,$4)", [o.id, i.product_id, i.qty, i.price]);
+  for (const i of items) await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,$6)", [o.id, i.product_id, i.qty, i.price, i.bonus, i.bonus_manual]);
   const due = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.due_date || "") ? req.body.due_date : null;
   await query(
     "UPDATE f_orders SET total = $1, urgent = $2, notes = $3, due_date = COALESCE($4, due_date), updated_at = now() WHERE id = $5",
@@ -250,7 +255,7 @@ async function previewTrip({ vehicleId, orderIds, sort = false, date, departTime
   const factory = await factoryPoint();
   if (sort) stops = sortNearest(factory, stops);
   const existing = (await query(
-    `SELECT t.id, t.extra_cartons, COALESCE((SELECT SUM(i.qty) FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = t.id AND o.status IN ('assigned','onway','delayed') AND NOT (o.id = ANY($3::int[]))), 0)::int AS cartons
+    `SELECT t.id, t.extra_cartons, COALESCE((SELECT SUM(i.qty + i.bonus_qty) FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = t.id AND o.status IN ('assigned','onway','delayed') AND NOT (o.id = ANY($3::int[]))), 0)::int AS cartons
      FROM f_trips t WHERE t.vehicle_id = $1 AND t.trip_date = $2 AND t.status IN ('planned','active') ORDER BY t.id LIMIT 1`,
     [v.id, date, orderIds]
   )).rows[0];

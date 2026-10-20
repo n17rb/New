@@ -103,6 +103,20 @@ export async function priceFor(customerId, productId) {
   return Number(r.rows[0]?.price ?? 0);
 }
 
+// ---------- البونص: أحسن قاعدة بتنطبق (للزبون والمنتج أولًا، بعدين للمنتج، بعدين للكل) ----------
+export async function bonusFor(customerId, productId, qty) {
+  const r = await query(
+    `SELECT every_qty, bonus_qty,
+            (CASE WHEN customer_id IS NOT NULL THEN 2 ELSE 0 END) + (CASE WHEN product_id IS NOT NULL THEN 1 ELSE 0 END) AS rank
+     FROM f_bonus_rules WHERE active AND (customer_id IS NULL OR customer_id = $1) AND (product_id IS NULL OR product_id = $2)
+     ORDER BY rank DESC, id DESC LIMIT 1`,
+    [customerId, productId]
+  );
+  const rule = r.rows[0];
+  if (!rule || !(qty > 0)) return 0;
+  return Math.floor(qty / rule.every_qty) * rule.bonus_qty;
+}
+
 // ---------- رسائل الزباين ----------
 const fmtTime = (iso) => {
   if (!iso) return "";
@@ -164,7 +178,7 @@ export async function queueMessage({ customerId, orderId = null, kind, data, use
 }
 
 export function itemsText(items) {
-  return items.map((i) => `${i.qty} كرتونة ${i.name}`).join("، ");
+  return items.map((i) => `${i.qty} كرتونة ${i.name}${i.bonus ? ` + ${i.bonus} بونص` : ""}`).join("، ");
 }
 
 export function canSeeAllMoney(user) {

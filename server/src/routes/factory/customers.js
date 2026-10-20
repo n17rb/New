@@ -54,7 +54,7 @@ router.get("/customers/:id", view, async (req, res) => {
     query("SELECT cp.product_id, cp.price FROM f_customer_prices cp WHERE cp.customer_id = $1", [c.id]),
     query(
       `SELECT o.id, o.status, o.total, o.delivered_total, o.cash_paid, o.created_at, o.delivered_at, o.eta_at, o.invoice_token,
-              (SELECT string_agg(i.qty || ' ' || p.name, '، ') FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = o.id) AS items
+              (SELECT string_agg(i.qty || ' ' || p.name || CASE WHEN i.bonus_qty > 0 THEN ' +' || i.bonus_qty || ' بونص' ELSE '' END, '، ') FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = o.id) AS items
        FROM f_orders o WHERE o.customer_id = $1 ORDER BY o.id DESC LIMIT 30`,
       [c.id]
     ),

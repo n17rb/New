@@ -38,6 +38,10 @@ router.get("/bootstrap", async (req, res) => {
     settings(["shop_latitude", "shop_longitude", "factory_city", "ss_employee_rate", "f_setup_done"]),
   ]);
   const recipes = await query("SELECT * FROM f_recipes");
+  const bonusRules = await query(
+    `SELECT b.*, p.name AS product_name, c.name AS customer_name FROM f_bonus_rules b
+     LEFT JOIN f_products p ON p.id = b.product_id LEFT JOIN f_customers c ON c.id = b.customer_id ORDER BY b.active DESC, b.id`
+  );
   const driverList = drivers.rows.filter((u) => u.role !== "super_admin" && can(u, "f_drive", "edit")).map(({ permissions, ...u }) => u);
   res.json({
     brand: await brand(),
@@ -48,6 +52,7 @@ router.get("/bootstrap", async (req, res) => {
     materials: materials.rows.map((m) => ({ ...m, balance: Number(m.balance), min_level: Number(m.min_level) })),
     drivers: driverList,
     staff: drivers.rows.map(({ permissions, ...u }) => u),
+    bonus_rules: bonusRules.rows,
     cities: Object.keys(CITIES),
     governorates: GOVERNORATES,
     factory: { point: await factoryPoint(), city: s.factory_city || null, has_location: !!(s.shop_latitude && s.shop_longitude) },
@@ -99,6 +104,28 @@ router.put("/products/:id/recipe", edit, async (req, res) => {
     const q = Number(it.qty);
     if (it.material_id && q > 0) await query("INSERT INTO f_recipes (product_id, material_id, qty_per_carton) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [req.params.id, it.material_id, q]);
   }
+  res.json({ ok: true });
+});
+
+// ---------- قواعد البونص ----------
+function cleanBonus(b) {
+  const every = Math.round(Number(b.every_qty)), bonus = Math.round(Number(b.bonus_qty));
+  if (!(every > 0) || !(bonus > 0)) throw new Error("اكتب «كل كم كرتونة» و«كم بونص».");
+  return { name: str(b.name, 100), product_id: b.product_id ? Number(b.product_id) : null, customer_id: b.customer_id ? Number(b.customer_id) : null, every_qty: every, bonus_qty: bonus, active: b.active !== false };
+}
+router.post("/bonus-rules", edit, async (req, res) => {
+  let x; try { x = cleanBonus(req.body || {}); } catch (e) { return bad(res, e.message); }
+  const r = await query("INSERT INTO f_bonus_rules (name, product_id, customer_id, every_qty, bonus_qty, active) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [x.name, x.product_id, x.customer_id, x.every_qty, x.bonus_qty, x.active]);
+  await logActivity({ userId: req.user.id, action: "F_BONUS_RULE", recordType: "f_bonus", recordId: r.rows[0].id, newValue: x });
+  res.status(201).json(r.rows[0]);
+});
+router.put("/bonus-rules/:id", edit, async (req, res) => {
+  let x; try { x = cleanBonus(req.body || {}); } catch (e) { return bad(res, e.message); }
+  const r = await query("UPDATE f_bonus_rules SET name=$1, product_id=$2, customer_id=$3, every_qty=$4, bonus_qty=$5, active=$6 WHERE id=$7 RETURNING *", [x.name, x.product_id, x.customer_id, x.every_qty, x.bonus_qty, x.active, req.params.id]);
+  res.json(r.rows[0]);
+});
+router.delete("/bonus-rules/:id", edit, async (req, res) => {
+  await query("DELETE FROM f_bonus_rules WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
 

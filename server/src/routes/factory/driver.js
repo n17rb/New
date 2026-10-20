@@ -61,7 +61,7 @@ export async function confirmLoad(tripId, userId, extra = []) {
   if (!t) throw new Error("الرحلة غير موجودة.");
   if (t.load_confirmed_at) return;
   const items = (await query(
-    `SELECT i.product_id, SUM(i.qty)::int AS qty FROM f_orders o JOIN f_order_items i ON i.order_id = o.id
+    `SELECT i.product_id, SUM(i.qty + i.bonus_qty)::int AS qty FROM f_orders o JOIN f_order_items i ON i.order_id = o.id
      WHERE o.trip_id = $1 AND o.status IN ('assigned','onway','delayed') GROUP BY i.product_id`,
     [tripId]
   )).rows;
@@ -153,10 +153,13 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
     const x = byItem.get(it.id) || {};
     const dq = x.delivered_qty == null ? it.qty : Math.round(Number(x.delivered_qty));
     const dmg = Math.max(0, Math.round(Number(x.damaged_qty) || 0));
+    const bonus = it.bonus_qty || 0;
+    const db = x.delivered_bonus == null ? bonus : Math.round(Number(x.delivered_bonus));
     if (!(dq >= 0) || dq > it.qty) return bad(res, `كمية ${it.name} غير صحيحة.`);
-    if (dmg > it.qty - dq) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
-    total += dq * it.price;
-    lines.push({ ...it, dq, dmg });
+    if (!(db >= 0) || db > bonus) return bad(res, `بونص ${it.name} غير صحيح.`);
+    if (dmg > it.qty + bonus - dq - db) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
+    total += dq * it.price; // البونص ببلاش: ما بينحسب بالفاتورة
+    lines.push({ ...it, dq, dmg, db });
   }
   total = round2(total);
   const cash = round2(b.cash);
@@ -178,7 +181,7 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   try {
     await client.query("BEGIN");
     for (const l of lines) {
-      await client.query("UPDATE f_order_items SET delivered_qty = $1, damaged_qty = $2 WHERE id = $3", [l.dq, l.dmg, l.id]);
+      await client.query("UPDATE f_order_items SET delivered_qty = $1, damaged_qty = $2, delivered_bonus = $3 WHERE id = $4", [l.dq, l.dmg, l.db, l.id]);
       if (l.dmg > 0) {
         await client.query(
           "INSERT INTO f_stock_moves (product_id, kind, qty, damage_source, trip_id, vehicle_id, reason, photo_url, created_by) VALUES ($1,'damage',$2,'vehicle',$3,$4,$5,$6,$7)",
@@ -211,7 +214,7 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
     customerId: c.id, orderId: o.id, kind: "delivered",
-    data: { order: o.id, items: itemsText(lines.filter((l) => l.dq > 0).map((l) => ({ qty: l.dq, name: l.name }))), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
+    data: { order: o.id, items: itemsText(lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db }))), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });

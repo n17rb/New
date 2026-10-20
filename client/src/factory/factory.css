@@ -323,3 +323,7 @@ button.fx-item { cursor: pointer; }
 .fx-login-tag { position: absolute; left: 0; right: 0; bottom: calc(26px + env(safe-area-inset-bottom)); text-align: center; color: #fff; font-size: 17px; font-weight: 600; z-index: 1; }
 .fx-qty .top { flex-wrap: wrap; }
 .fx-qty .fx-stepper { margin-inline-start: auto; }
+
+.fx-bonus { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--fx-ok-soft); color: var(--fx-ok); border-radius: 12px; padding: 8px 12px; font-size: 13.5px; }
+.fx-bonus svg { width: 18px; height: 18px; flex: none; }
+.fx-bonus .fx-link { color: var(--fx-ok); }

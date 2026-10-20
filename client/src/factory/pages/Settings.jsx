@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiPlus, FiMapPin, FiUpload, FiChevronLeft } from "react-icons/fi";
+import { FiPlus, FiMapPin, FiUpload, FiChevronLeft, FiGift } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, Sheet, Tip, Err, Act, getLocation, ProductArt, money, num } from "../ui.jsx";
 
@@ -9,7 +9,7 @@ const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: 
 
 export default function Settings() {
   const [params, setParams] = useSearchParams();
-  const tabs = [["brand", "المصنع"], ["products", "المنتجات"], ["vehicles", "السيارات"], ["lines", "الخطوط"], ["machines", "المكنات والمواد"]];
+  const tabs = [["brand", "المصنع"], ["products", "المنتجات"], ["vehicles", "السيارات"], ["lines", "الخطوط"], ["bonus", "البونص"], ["machines", "المكنات والمواد"]];
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || "brand";
   return (
     <div className="fx-page">
@@ -19,6 +19,7 @@ export default function Settings() {
       {tab === "products" && <Products />}
       {tab === "vehicles" && <Vehicles />}
       {tab === "lines" && <Lines />}
+      {tab === "bonus" && <Bonus />}
       {tab === "machines" && <Machines />}
     </div>
   );
@@ -289,5 +290,68 @@ export function Machines() {
         <Act className="fx-btn pri" disabled={!mat.name.trim()} onClick={async () => { await fapi.saveMaterial(mat); setMat({ name: "", unit: "حبة", min_level: "" }); await refresh(fx); }}>ضيف</Act>
       </div>
     </div>
+  );
+}
+
+// ---------- البونص ----------
+export function Bonus() {
+  const fx = useFx();
+  const [edit, setEdit] = useState(null);
+  const rules = fx.boot.bonus_rules || [];
+  return (
+    <div className="fx-stack">
+      <Tip id="bonus">البونص = كراتين ببلاش مع الطلب. مثلًا «كل 100 كرتونة → 5 بونص»: الزبون بيستلم 105 وبيدفع حق 100، والسائق بيحمّلها وبيسلّمها، والفاتورة بتطلع فيها «بونص ببلاش».</Tip>
+      <button className="fx-btn pri" onClick={() => setEdit({})}><FiPlus /> قاعدة بونص جديدة</button>
+      <div className="fx-list">
+        {rules.length === 0 && <div className="fx-item"><span className="fx-muted">ما في بونص لسا.</span></div>}
+        {rules.map((r) => (
+          <button key={r.id} className="fx-item" onClick={() => setEdit(r)}>
+            <span className="fx-avatar" style={{ background: "var(--fx-ok-soft)", color: "var(--fx-ok)" }}><FiGift /></span>
+            <span className="t">
+              <b>كل {num(r.every_qty)} كرتونة ← {num(r.bonus_qty)} بونص</b>
+              <span>{r.product_name || "كل المنتجات"} · {r.customer_name || "كل الزباين"}{r.name ? ` · ${r.name}` : ""}</span>
+            </span>
+            <span className={`fx-pill ${r.active ? "ok" : ""}`}>{r.active ? "شغال" : "موقوف"}</span>
+          </button>
+        ))}
+      </div>
+      <p className="fx-muted" style={{ margin: 0 }}>إذا في أكثر من قاعدة بتنطبق، بتمشي الأدق: الخاصة بالزبون أولًا، بعدين الخاصة بالمنتج. وأي طلب بتقدر تغيّر بونصه يدويًا لما تسجّله.</p>
+      {edit && <BonusSheet r={edit} onClose={() => setEdit(null)} />}
+    </div>
+  );
+}
+
+function BonusSheet({ r, onClose }) {
+  const fx = useFx();
+  const [f, setF] = useState({ name: r.name || "", product_id: r.product_id || "", customer_id: r.customer_id || "", every_qty: r.every_qty || 100, bonus_qty: r.bonus_qty || 5, active: r.active !== false });
+  const [customers, setCustomers] = useState([]);
+  const [err, setErr] = useState("");
+  useEffect(() => { fapi.customers().then(setCustomers).catch(() => {}); }, []);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const ex = Number(f.every_qty) > 0 ? Math.floor(300 / Number(f.every_qty)) * (Number(f.bonus_qty) || 0) : 0;
+  return (
+    <Sheet title={r.id ? "تعديل البونص" : "بونص جديد"} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-grid2">
+          <label className="fx-field">كل كم كرتونة<input className="fx-input" type="number" inputMode="numeric" value={f.every_qty} onChange={set("every_qty")} /></label>
+          <label className="fx-field">كم بونص ببلاش<input className="fx-input" type="number" inputMode="numeric" value={f.bonus_qty} onChange={set("bonus_qty")} /></label>
+        </div>
+        <div className="fx-bonus"><FiGift /> مثال: طلب 300 كرتونة ← بونص {num(ex)} · بيستلم {num(300 + ex)} وبيدفع حق 300</div>
+        <label className="fx-field">على أي منتج
+          <select value={f.product_id} onChange={set("product_id")}><option value="">كل المنتجات</option>{fx.boot.products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        </label>
+        <label className="fx-field">لأي زبون
+          <select value={f.customer_id} onChange={set("customer_id")}><option value="">كل الزباين</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </label>
+        <label className="fx-field">اسم (اختياري)<input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: عرض الصيف" /></label>
+        {r.id && <label className="fx-row"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> القاعدة شغالة</label>}
+        <Err msg={err} />
+        <Act className="fx-btn pri block" onClick={async () => {
+          setErr("");
+          try { await fapi.saveBonus({ ...f, id: r.id }); await refresh(fx); fx.toast("انحفظ البونص"); onClose(); } catch (e) { setErr(e.message); }
+        }}>احفظ</Act>
+        {r.id && <Act className="fx-btn danger block" onClick={async () => { await fapi.deleteBonus(r.id); await refresh(fx); onClose(); }}>احذف</Act>}
+      </div>
+    </Sheet>
   );
 }

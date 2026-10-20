@@ -63,7 +63,7 @@ function Sales({ d }) {
       </div>
       <p className="fx-muted" style={{ margin: 0 }}>الصافي = المبيعات ناقص مصاريف السيارة (ديزل، تصليح...). الرواتب مش محسوبة هون.</p>
       <div className="fx-sec"><h2>حسب المنتج</h2></div>
-      <div className="fx-card fx-stack">{d.by_product.map((p) => <HBar key={p.id} label={`${p.name} · ${num(p.cartons)} كرتونة`} value={Math.round(p.sales)} max={Math.max(1, ...d.by_product.map((x) => x.sales))} tone="navy" />)}</div>
+      <div className="fx-card fx-stack">{d.by_product.map((p) => <HBar key={p.id} label={`${p.name} · ${num(p.cartons)} كرتونة${p.bonus ? ` + ${num(p.bonus)} بونص` : ""}`} value={Math.round(p.sales)} max={Math.max(1, ...d.by_product.map((x) => x.sales))} tone="navy" />)}</div>
       <div className="fx-sec"><h2>حسب المدينة</h2></div>
       <div className="fx-card fx-stack">{d.by_city.map((c) => <HBar key={c.city} label={`${c.city} · ${c.orders} طلب`} value={Math.round(c.sales)} max={maxC} />)}</div>
       <div className="fx-sec"><h2>أكبر ١٠ زباين</h2></div>
