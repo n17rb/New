@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query, logActivity } from "../db.js";
 import { requireAuth, invalidateUserCache } from "../middleware/auth.js";
-import { claimUsername, releaseUsername, findTenantIdByUsername } from "../utils/tenants.js";
+import { claimUsername, releaseUsername, findTenantIdByUsername, normalizeUsername } from "../utils/tenants.js";
 import { requireOwner, sanitizePermissions, effectivePermissions, TEMPLATES, FACTORY_TEMPLATES, ROLES } from "../permissions.js";
 
 const router = Router();
@@ -27,7 +27,8 @@ function cleanRole(role) {
 }
 
 router.post("/", async (req, res) => {
-  const { username, password, full_name, role, permissions } = req.body || {};
+  const { username: rawUsername, password, full_name, role, permissions } = req.body || {};
+  const username = rawUsername ? normalizeUsername(rawUsername) : rawUsername;
 
   if (!username || !password || !full_name) {
     return res.status(400).json({ error: "الرجاء تعبئة الاسم واسم المستخدم وكلمة المرور." });
@@ -76,7 +77,8 @@ async function activeOwnersCount(excludeId) {
 
 router.put("/:id", async (req, res) => {
   const targetId = Number(req.params.id);
-  const { username, full_name, status, password, role, permissions } = req.body || {};
+  const { username: rawUsername, full_name, status, password, role, permissions } = req.body || {};
+  const username = rawUsername ? normalizeUsername(rawUsername) : rawUsername;
 
   const beforeResult = await query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [targetId]);
   const before = beforeResult.rows[0];

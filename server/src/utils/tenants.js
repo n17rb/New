@@ -55,8 +55,14 @@ export function tenantAccess(tenant) {
 }
 
 // ---------- دليل أسماء المستخدمين ----------
+// اسم المستخدم ممكن يكون رقم تلفون الموظف: «+962 79 123 4567» و«٠٧٩١٢٣٤٥٦٧» و«0791234567» كلهم نفس الحساب
 export function normalizeUsername(u) {
-  return String(u || "").trim().toLowerCase();
+  let s = String(u || "").trim().toLowerCase().replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  if (/^[\s\d+()-]+$/.test(s) && s.replace(/\D/g, "").length >= 9) {
+    s = s.replace(/\D/g, "").replace(/^00962/, "0").replace(/^962/, "0");
+    if (/^7\d{8}$/.test(s)) s = `0${s}`;
+  }
+  return s;
 }
 
 export async function findTenantIdByUsername(username) {
