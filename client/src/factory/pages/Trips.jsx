@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { FiMapPin, FiArrowUp, FiArrowDown, FiClock } from "react-icons/fi";
+import { FiMapPin, FiArrowUp, FiArrowDown, FiClock, FiChevronLeft } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, TRIP_STATUS, SendMessages, Reload, money, num, time, date, dateTime, today } from "../ui.jsx";
 import { TransferSheet, itemsLine } from "./Orders.jsx";
+import { StopSheet, deliveredCartons } from "./StopSheet.jsx";
 
 export default function Trips() {
   const fx = useFx();
@@ -27,12 +28,13 @@ export default function Trips() {
       {data && data.length === 0 && <Empty title="ما في رحلات" text="من شاشة الطلبات علّم على الطلبات واكبس «رحلة جديدة»." />}
       <div className="fx-stack" data-hl="trips-list">
         {data?.map((t, i) => (
-          <TripCard key={t.id} t={t} first={i === 0} dispatch={dispatch} onOpen={(kind) => setSheet({ kind, t })} />
+          <TripCard key={t.id} t={t} first={i === 0} dispatch={dispatch} onOpen={(kind, o) => setSheet({ kind, t, o })} />
         ))}
       </div>
 
       {sheet?.kind === "delay" && <DelaySheet t={sheet.t} onClose={() => setSheet(null)} onSaved={(r) => { setSheet(null); reload(); setMsgs(r.message_ids); }} />}
-      {sheet?.kind === "order" && <TripDetail t={sheet.t} onClose={() => setSheet(null)} onChanged={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "order" && <TripDetail t={sheet.t} onClose={() => setSheet(null)} onChanged={() => { setSheet(null); reload(); }} onStop={(o) => setSheet({ kind: "stop", t: sheet.t, o, back: "order" })} />}
+      {sheet?.kind === "stop" && <StopSheet o={sheet.o} t={sheet.t} onClose={() => setSheet(sheet.back ? { kind: sheet.back, t: sheet.t } : null)} />}
       {msgs && <SendMessages ids={msgs} title="رسالة التأخير للزباين" onClose={() => setMsgs(null)} />}
     </div>
   );
@@ -60,16 +62,19 @@ function TripCard({ t, first, dispatch, onOpen }) {
         <div className="fx-row" style={{ justifyContent: "space-between", fontSize: 13 }}><span className="fx-muted">الحمولة</span><b className="fx-num">{num(t.load)} / {num(t.capacity)}</b></div>
         <div className={`fx-bar ${t.load > t.capacity ? "over" : ""}`}><i style={{ width: `${pct}%` }} /></div>
       </div>
+      {t.status !== "planned" && <TripSummary t={t} />}
       <div>
         {t.stops.map((o, i) => (
-          <div key={o.id} className="fx-stop">
+          <button key={o.id} className="fx-stop fx-stop-btn" onClick={() => onOpen("stop", o)}>
             <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{i + 1}</span>
             <span style={{ display: "grid" }}>
-              <b style={{ fontSize: 14 }}>{o.customer_name}</b>
-              <span className="fx-muted">{o.city} · {num(o.cartons)} كرتونة{o.eta_at && !["delivered", "failed"].includes(o.status) ? ` · يوصل ${time(o.eta_at)}` : ""}{o.delivered_at ? ` · سلّم ${time(o.delivered_at)}` : ""}</span>
+              <b style={{ fontSize: 14 }}>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
+              <span className="fx-muted">{o.city} · {num(o.cartons)} كرتونة{o.eta_at && !["delivered", "failed"].includes(o.status) ? ` · يوصل ${time(o.eta_at)}` : ""}</span>
+              {o.status === "delivered" && <span className="fx-ok-line">سلّم {time(o.delivered_at)} · {num(deliveredCartons(o))} كرتونة · فاتورة {money(o.delivered_total)} · كاش {money(o.cash_paid)}</span>}
+              {o.status === "failed" && <span className="fx-crit-line">ما تسلّم: {o.fail_reason}</span>}
             </span>
-            <StatusPill map={ORDER_STATUS} value={o.status} />
-          </div>
+            <span className="fx-row" style={{ gap: 4, flexWrap: "nowrap" }}><StatusPill map={ORDER_STATUS} value={o.status} /><FiChevronLeft aria-hidden="true" className="fx-muted" /></span>
+          </button>
         ))}
       </div>
       {["active", "returned"].includes(t.status) && (
@@ -118,7 +123,7 @@ function DelaySheet({ t, onClose, onSaved }) {
   );
 }
 
-function TripDetail({ t, onClose, onChanged }) {
+function TripDetail({ t, onClose, onChanged, onStop }) {
   const fx = useFx();
   const dispatch = fx.can("f_dispatch", "edit");
   const movable = t.stops.filter((o) => ["assigned", "onway"].includes(o.status));
@@ -160,9 +165,10 @@ function TripDetail({ t, onClose, onChanged }) {
         <div className="fx-list">
           {t.stops.map((o) => (
             <div key={o.id} className="fx-item">
-              <span className="t"><b>{o.customer_name}</b><span>{itemsLine(o)}</span>{o.fail_reason && <span style={{ color: "var(--fx-crit)" }}>{o.fail_reason}</span>}</span>
+              <button className="t fx-plain" onClick={() => onStop(o)}><b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b><span>{itemsLine(o)}</span>{o.fail_reason && <span style={{ color: "var(--fx-crit)" }}>{o.fail_reason}</span>}</button>
               <span className="end">
                 <StatusPill map={ORDER_STATUS} value={o.status} />
+                <button className="fx-link" onClick={() => onStop(o)}>التفاصيل</button>
                 {dispatch && ["assigned", "onway"].includes(o.status) && <button className="fx-link" onClick={() => setMove(o)}>نقل</button>}
               </span>
             </div>
@@ -195,3 +201,23 @@ function TripDetail({ t, onClose, onChanged }) {
     </Sheet>
   );
 }
+
+
+// ملخص الرحلة: سلّم لكم زبون، كم كرتونة، وكم كاش
+function TripSummary({ t }) {
+  const done = t.stops.filter((o) => o.status === "delivered");
+  const failed = t.stops.filter((o) => o.status === "failed").length;
+  const cartons = done.reduce((s, o) => s + deliveredCartons(o), 0);
+  const cash = done.reduce((s, o) => s + (o.cash_paid || 0), 0);
+  const debt = done.reduce((s, o) => s + Math.max(0, (o.delivered_total || 0) - (o.cash_paid || 0)), 0);
+  return (
+    <div className="fx-trip-sum">
+      <div><b className="fx-num">{done.length}/{t.stops.length}</b><span>سلّم</span></div>
+      <div><b className="fx-num">{num(cartons)}</b><span>كرتونة</span></div>
+      <div><b className="fx-num">{money(cash)}</b><span>كاش</span></div>
+      <div><b className="fx-num">{money(debt)}</b><span>دين</span></div>
+      {failed > 0 && <div className="bad"><b className="fx-num">{failed}</b><span>ما تم</span></div>}
+    </div>
+  );
+}
+

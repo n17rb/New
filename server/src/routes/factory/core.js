@@ -227,7 +227,10 @@ router.put("/settings", edit, async (req, res) => {
   await set("brand_phone", b.brand_phone !== undefined ? str(b.brand_phone, 30) : undefined);
   await set("brand_tagline", b.brand_tagline !== undefined ? str(b.brand_tagline, 150) : undefined);
   await set("factory_city", b.factory_city !== undefined ? str(b.factory_city, 60) : undefined);
-  if (b.lat !== undefined && b.lng !== undefined) {
+  if (b.lat === "" || b.lat === null) {
+    await set("shop_latitude", null);
+    await set("shop_longitude", null);
+  } else if (b.lat !== undefined && b.lng !== undefined) {
     const lat = Number(b.lat), lng = Number(b.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return bad(res, "الموقع غير صحيح.");
     await set("shop_latitude", lat);

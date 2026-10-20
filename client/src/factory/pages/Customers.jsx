@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FiPlus, FiSearch, FiMapPin, FiMessageCircle, FiPhone, FiLink, FiEdit2, FiCamera, FiX, FiCheck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, LocationPicker, waLink, money, num, date, dateTime } from "../ui.jsx";
 
 const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع", adjust: "تعديل", opening: "رصيد افتتاحي" };
 
@@ -72,9 +72,6 @@ function CustomerEdit({ c, onClose, onSaved }) {
     credit_limit: c?.credit_limit || "", notes: c?.notes || "", opening_balance: "",
     seq_no: c?.seq_no ?? "", photo_url: c?.photo_url || "", maps_url: c?.maps_url || "",
   }));
-  const [link, setLink] = useState("");
-  const [linkBusy, setLinkBusy] = useState(false);
-  const [locBusy, setLocBusy] = useState(false);
   const seqTouched = useRef(false);
 
   // الرقم الجاي بيتعبّى لحاله
@@ -83,30 +80,6 @@ function CustomerEdit({ c, onClose, onSaved }) {
     fapi.nextCustomerSeq().then((r) => { if (!seqTouched.current) setF((x) => ({ ...x, seq_no: r.next })); }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function applyLink(raw) {
-    const url = (raw || "").trim().match(/https?:\/\/\S+/)?.[0];
-    if (!url) return fx.toast("الصق رابط خرائط جوجل (بيبلّش بـ https://)");
-    setLinkBusy(true);
-    try {
-      const p = await fapi.resolveMapLink(url);
-      setF((x) => ({ ...x, lat: p.lat, lng: p.lng, maps_url: url }));
-      setLink("");
-      fx.toast("انحفظ موقع الزبون من الرابط");
-    } catch (e) { fx.toast(e.message); } finally { setLinkBusy(false); }
-  }
-  const [prices, setPrices] = useState(() => Object.fromEntries((c?.prices || []).map((p) => [p.product_id, p.price])));
-  const [err, setErr] = useState("");
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-
-  async function here() {
-    setLocBusy(true);
-    const loc = await getLocation(12000, 0);
-    setLocBusy(false);
-    if (!loc) return fx.toast("ما قدرنا نجيب الموقع — شغّل الموقع (GPS) بالتلفون.");
-    setF((x) => ({ ...x, lat: loc.lat, lng: loc.lng, maps_url: `https://www.google.com/maps?q=${loc.lat},${loc.lng}` }));
-    fx.toast("انحفظ موقعك الحالي كموقع للزبون");
-  }
-  const hasLoc = f.lat !== "" && f.lat != null;
 
   return (
     <Sheet title={c ? `تعديل ${c.name}` : "زبون جديد"} onClose={onClose}>
@@ -136,19 +109,10 @@ function CustomerEdit({ c, onClose, onSaved }) {
         </div>
         <label className="fx-field">العنوان بالتفصيل<input className="fx-input" value={f.address} onChange={set("address")} placeholder="الشارع، جنب..." /></label>
 
-        <div className="fx-card fx-stack fx-locbox" data-hl="customer-location">
-          <div className="fx-row" style={{ justifyContent: "space-between" }}>
-            <b>موقع الزبون</b>
-            {hasLoc
-              ? <span className="fx-row" style={{ gap: 6 }}><a className="fx-pill ok" href={`https://www.google.com/maps?q=${f.lat},${f.lng}`} target="_blank" rel="noreferrer"><FiCheck /> الموقع محفوظ — شوفه</a>
-                  <button className="fx-icon-btn sm" aria-label="امسح الموقع" onClick={() => setF({ ...f, lat: "", lng: "", maps_url: "" })}><FiX /></button></span>
-              : <span className="fx-pill warn">بدون موقع</span>}
-          </div>
-          <button className="fx-btn sky block" onClick={here} disabled={locBusy}><FiMapPin /> {locBusy ? "عم بنجيب موقعك..." : "أنا عند الزبون هلأ — خذ موقعي"}</button>
-          <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-            <input className="fx-input" dir="ltr" value={link} onChange={(e) => setLink(e.target.value)} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/https?:\/\//.test(t)) { e.preventDefault(); setLink(t); applyLink(t); } }} placeholder="أو الصق رابط الموقع هون" />
-            <Act className="fx-btn sm" disabled={!link.trim() || linkBusy} onClick={() => applyLink(link)}><FiLink /> {linkBusy ? "..." : "ثبّت"}</Act>
-          </div>
+        <LocationPicker title="موقع الزبون" hereLabel="أنا عند الزبون هلأ — خذ موقعي" hl="customer-location"
+          lat={f.lat} lng={f.lng} onChange={(p) => { setF((x) => ({ ...x, ...p })); if (p.lat !== "") fx.toast("انحفظ موقع الزبون"); }} />
+        <div className="fx-card fx-stack fx-locbox">
+          <b>صورة العمارة أو المحل</b>
           <BuildingPhoto value={f.photo_url} onChange={(u) => setF((x) => ({ ...x, photo_url: u }))} />
         </div>
         <div className="fx-field">طريقة الدفع
@@ -177,7 +141,6 @@ function CustomerEdit({ c, onClose, onSaved }) {
         <Act className="fx-btn pri block" onClick={async () => {
           setErr("");
           try {
-            if (link.trim() && !hasLoc) return setErr("ثبّت رابط الموقع الأول (زر «ثبّت»)، أو امسحه.");
             await fapi.saveCustomer({ ...f, id: c?.id, prices: Object.entries(prices).map(([product_id, price]) => ({ product_id: Number(product_id), price })) });
             fx.toast("انحفظ الزبون");
             onSaved();

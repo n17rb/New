@@ -9,20 +9,21 @@ export default function Stock() {
   const [params, setParams] = useSearchParams();
   const canStock = fx.can("f_stock");
   const canProd = fx.can("f_production");
+  const boss = fx.can("f_home");
   const tabs = [
-    canStock || fx.can("f_home") ? ["stock", "المستودع"] : null,
-    canStock || fx.can("f_home") ? ["load", "التحميل والمرتجع"] : null,
-    canProd || fx.can("f_home") ? ["prod", "الإنتاج والمكنات"] : null,
+    ["stock", "اليوم"],
+    canStock || boss ? ["load", "تحميل السيارات"] : null,
+    canProd || boss ? ["prod", "المكنات والمواد"] : null,
     ["log", "السجل"],
   ].filter(Boolean);
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || tabs[0][0];
   return (
     <div className="fx-page">
-      <h1 className="fx-h1">{canStock ? "المستودع" : "الإنتاج"}</h1>
+      <h1 className="fx-h1">{canStock || boss ? "المستودع" : "الإنتاج"}</h1>
       <div className="fx-tabs">
         {tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}
       </div>
-      {tab === "stock" && <Balances />}
+      {tab === "stock" && <Overview />}
       {tab === "load" && <Loading_ />}
       {tab === "prod" && <Production />}
       {tab === "log" && <Log />}
@@ -30,50 +31,112 @@ export default function Stock() {
   );
 }
 
-// ---------- الأرصدة ----------
-function Balances() {
+// ---------- اليوم: أنتجنا، طلع مع السواقين، رجع، وضل بالمستودع ----------
+function Overview() {
   const fx = useFx();
-  const edit = fx.can("f_stock", "edit");
+  const editStock = fx.can("f_stock", "edit");
+  const editProd = fx.can("f_production", "edit");
   const { data, error, reload } = useLoad(() => fapi.stock(), []);
   const [sheet, setSheet] = useState(null);
+  const [pick, setPick] = useState(null);
+  const products = data?.products || [];
+  const shown = pick ? products.filter((p) => p.id === pick) : products;
+  const sum = (f) => shown.reduce((s, p) => s + f(p), 0);
+  const T = {
+    prod: sum((p) => p.today.production),
+    load: sum((p) => p.today.load),
+    ret: sum((p) => p.today.return),
+    dmg: sum((p) => p.today.damage_wh || 0),
+    adj: sum((p) => p.today.adjust || 0),
+    bal: sum((p) => p.balance),
+  };
+  const opening = T.bal - T.prod + T.load - T.ret + T.dmg - T.adj;
+  const pickedName = pick ? products.find((p) => p.id === pick)?.name : "";
+  const done = () => { setSheet(null); reload(); };
   return (
     <>
-      <Tip id="stock">الرصيد بيتحسب لحاله: إنتاج − تحميل + مرتجع − تالف. أي فرق بالجرد بيوصل للمالك.</Tip>
-      <div className="fx-row">
-        {(edit || fx.can("f_production", "edit")) && <button className="fx-btn danger" data-hl="damage-btn" onClick={() => setSheet("damage")}><FiAlertTriangle /> تالف</button>}
-        {edit && <button className="fx-btn sky" onClick={() => setSheet("count")}><FiClipboard /> جرد</button>}
-        {edit && fx.canAction("adjust_stock") && <button className="fx-btn" onClick={() => setSheet("adjust")}>تعديل يدوي</button>}
-        <Reload onClick={reload} />
-      </div>
       <Err msg={error} />
       {!data && !error && <Loading />}
-      {data && data.products.length === 0 && <Empty title="ما في منتجات" text="ضيف المنتجات من الإعدادات." />}
-      {data && data.products.length > 0 && (
-        <div className="fx-stack">
-          {data.products.map((p) => {
-            const low = p.min_stock > 0 && p.balance <= p.min_stock;
-            const short = p.demand > p.balance;
-            return (
-              <div key={p.id} className="fx-card fx-stack" style={{ gap: 6 }}>
-                <div className="fx-row" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-                  <ProductArt p={fx.boot.products.find((x) => x.id === p.id) || p} size={44} />
-                  <b className="fx-grow">{p.name}</b>
-                  <b className="fx-num" style={{ fontSize: 20, color: low ? "var(--fx-crit)" : "var(--fx-navy)" }}>{num(p.balance)}</b>
-                </div>
-                <span className="fx-muted" style={{ fontSize: 12.5 }}>
-                  اليوم: إنتاج {num(p.today.production)} · تحميل {num(p.today.load)} · مرتجع {num(p.today.return)} · تالف {num(p.today.damage)}
-                </span>
-                {short && <div className="fx-note warn">طلبات لبكرا {num(p.demand)} كرتونة والرصيد {num(p.balance)} — لازم تنتجوا {num(p.demand - p.balance)} كمان.</div>}
-                {!short && low && <div className="fx-note crit">تحت الحد الأدنى ({num(p.min_stock)}).</div>}
+      {data && products.length === 0 && <Empty title="ما في منتجات" text="ضيف المنتجات من الإعدادات." />}
+      {data && products.length > 0 && (
+        <>
+          <section className="fx-flow" aria-label="حركة المستودع اليوم">
+            <div className="fx-flow-h">
+              <b>{pick ? pickedName : "كل المنتجات"} · اليوم</b>
+              {pick ? <button className="fx-link" onClick={() => setPick(null)}>الكل</button> : <Reload onClick={reload} />}
+            </div>
+            {opening !== 0 && <FlowRow label="كان بالمستودع الصبح" value={opening} tone="muted" plain />}
+            <FlowRow label="أنتجنا" value={T.prod} sign="+" tone="ok" />
+            <FlowRow label="طلع مع السواقين" value={T.load} sign="−" tone="sky" />
+            {T.ret > 0 && <FlowRow label="رجع من السواقين" value={T.ret} sign="+" tone="ok" />}
+            {T.dmg > 0 && <FlowRow label="تالف بالمستودع" value={T.dmg} sign="−" tone="crit" />}
+            {T.adj !== 0 && <FlowRow label="جرد وتعديل" value={Math.abs(T.adj)} sign={T.adj > 0 ? "+" : "−"} tone="warn" />}
+            <div className="fx-flow-total">
+              <span>ضل بالمستودع</span>
+              <b className="fx-num">{num(T.bal)}</b>
+              <small>كرتونة</small>
+            </div>
+          </section>
+
+          {(editProd || editStock) && (
+            <div className="fx-actions3">
+              {editProd && <button className="fx-bigbtn pri" data-hl="prod-btn" onClick={() => setSheet("prod")}><FiPlus /><span>سجّل إنتاج</span></button>}
+              {(editStock || editProd) && <button className="fx-bigbtn" data-hl="damage-btn" onClick={() => setSheet("damage")}><FiAlertTriangle /><span>تالف</span></button>}
+              {editStock && <button className="fx-bigbtn" onClick={() => setSheet("count")}><FiClipboard /><span>جرد</span></button>}
+            </div>
+          )}
+
+          <div className="fx-sec"><h2>الرصيد لكل منتج</h2><span className="fx-muted" style={{ fontSize: 12 }}>اكبس على منتج لتشوف حركته</span></div>
+          <div className="fx-tiles">
+            {products.map((p) => {
+              const low = p.min_stock > 0 && p.balance <= p.min_stock;
+              const short = p.demand > p.balance;
+              return (
+                <button key={p.id} className={`fx-tile ${pick === p.id ? "on" : ""} ${low || short ? "bad" : ""}`} onClick={() => setPick(pick === p.id ? null : p.id)}>
+                  <ProductArt p={fx.boot.products.find((x) => x.id === p.id) || p} size={40} />
+                  <span className="n">{p.name}</span>
+                  <b className="fx-num">{num(p.balance)}</b>
+                  <small>
+                    {p.today.production ? <span className="up">+{num(p.today.production)}</span> : null}
+                    {p.today.load ? <span className="down">−{num(p.today.load)}</span> : null}
+                    {!p.today.production && !p.today.load ? "ما في حركة اليوم" : null}
+                  </small>
+                  {short ? <em>الطلبات {num(p.demand)} — ناقص {num(p.demand - p.balance)}</em> : low ? <em>تحت الحد ({num(p.min_stock)})</em> : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="fx-sec"><h2>مع السواقين اليوم</h2></div>
+          <div className="fx-list">
+            {data.today_by_vehicle.length === 0 && <div className="fx-item"><span className="fx-muted">ما طلع إشي اليوم لسا.</span></div>}
+            {data.today_by_vehicle.map((v) => (
+              <div key={v.id} className="fx-item">
+                <span className="fx-avatar"><FiTruck /></span>
+                <span className="t"><b>{v.driver_name || "بدون سائق"}</b><span>{v.vehicle_name}{v.returned ? ` · رجّع ${num(v.returned)}` : ""}</span></span>
+                <span className="end"><b className="fx-num" style={{ color: "var(--fx-navy)" }}>{num(v.loaded)}</b><span className="fx-muted" style={{ fontSize: 11.5 }}>كرتونة</span></span>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+          <Tip id="stock2">الحساب لحاله: اللي أنتجته − اللي طلع مع السواقين + اللي رجع = اللي ضل بالمستودع. التحميل بينخصم لما المستودع يأكّد تحميل السيارة.</Tip>
+          {fx.can("f_stock", "edit") && fx.canAction("adjust_stock") && <button className="fx-link" onClick={() => setSheet("adjust")}>تعديل رصيد يدوي</button>}
+        </>
       )}
-      {sheet === "damage" && <DamageSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
-      {sheet === "count" && data && <CountSheet products={data.products} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
-      {sheet === "adjust" && <AdjustSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet === "prod" && <ProdSheet onClose={() => setSheet(null)} onDone={done} />}
+      {sheet === "damage" && <DamageSheet onClose={() => setSheet(null)} onDone={done} />}
+      {sheet === "count" && data && <CountSheet products={data.products} onClose={() => setSheet(null)} onDone={done} />}
+      {sheet === "adjust" && <AdjustSheet onClose={() => setSheet(null)} onDone={done} />}
     </>
+  );
+}
+
+function FlowRow({ label, value, sign = "", tone, plain }) {
+  return (
+    <div className={`fx-flow-row ${tone}`}>
+      <span className="dot" aria-hidden="true">{plain ? "" : sign}</span>
+      <span className="l">{label}</span>
+      <b className="fx-num">{sign && !plain ? `${sign} ` : ""}{num(value)}</b>
+    </div>
   );
 }
 
@@ -277,13 +340,8 @@ function Production() {
   const [stock, downs] = data || [];
   return (
     <>
-      <Tip id="prod">سجّل الإنتاج كل وردية، والمواد الخام بتنخصم لحالها. إذا وقفت ماكنة اكبس «ماكنة وقفت» وبس ترجع سجّل التالف.</Tip>
-      {edit && (
-        <div className="fx-row">
-          <button className="fx-btn pri fx-grow" data-hl="prod-btn" onClick={() => setSheet({ kind: "prod" })}><FiPlus /> سجّل إنتاج</button>
-          <button className="fx-btn danger" onClick={() => setSheet({ kind: "down" })}><FiPower /> ماكنة وقفت</button>
-        </div>
-      )}
+      <Tip id="prod2">إذا وقفت ماكنة اكبس «ماكنة وقفت»، ولما ترجع سجّل كم خرب. المواد الخام بتنخصم لحالها مع كل إنتاج.</Tip>
+      {edit && <button className="fx-btn danger block" onClick={() => setSheet({ kind: "down" })}><FiPower /> ماكنة وقفت</button>}
       <Err msg={error} />
       {!data && !error && <Loading />}
       {data && (
@@ -299,10 +357,6 @@ function Production() {
               ))}
             </div>
           )}
-          <div className="fx-sec"><h2>إنتاج اليوم</h2></div>
-          <div className="fx-card">
-            {stock.products.map((p) => <div key={p.id} className="fx-kv"><span>{p.name}</span><b>{num(p.today.production)}</b></div>)}
-          </div>
           <div className="fx-sec"><h2>المواد الخام</h2></div>
           <div className="fx-list">
             {stock.materials.length === 0 && <div className="fx-item"><span className="fx-muted">ضيف المواد الخام من الإعدادات.</span></div>}
@@ -328,7 +382,6 @@ function Production() {
           </div>
         </>
       )}
-      {sheet?.kind === "prod" && <ProdSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "down" && <DownSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "up" && <UpSheet d={sheet.d} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "mat" && <MaterialSheet m={sheet.m} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
@@ -338,20 +391,33 @@ function Production() {
 
 function ProdSheet({ onClose, onDone }) {
   const fx = useFx();
-  const [product, setProduct] = useState(fx.boot.products[0]?.id || "");
+  const list = fx.boot.products.filter((p) => p.active);
+  const [product, setProduct] = useState(list[0]?.id || "");
   const [qty, setQty] = useState("");
-  const [shift, setShift] = useState("صبحي");
+  const [shift, setShift] = useState(() => { const h = new Date().getHours(); return h < 14 ? "صبحي" : h < 22 ? "مسائي" : "ليلي"; });
   const [machine, setMachine] = useState("");
+  const n = Number(qty) || 0;
+  const name = list.find((p) => p.id === product)?.name || "";
   return (
     <Sheet title="سجّل إنتاج" onClose={onClose}>
       <div className="fx-stack">
-        <div className="fx-chips">{["صبحي", "مسائي", "ليلي"].map((s) => <button key={s} className={`fx-chip ${shift === s ? "on" : ""}`} onClick={() => setShift(s)}>{s}</button>)}</div>
-        <div className="fx-grid2">
-          <select value={product} onChange={(e) => setProduct(e.target.value)} aria-label="المنتج">{fx.boot.products.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-          <input className="fx-input" type="number" inputMode="numeric" placeholder="عدد الكراتين" value={qty} onChange={(e) => setQty(e.target.value)} />
+        <div className="fx-field">شو أنتجتوا؟</div>
+        <div className="fx-pick-grid">
+          {list.map((p) => (
+            <button key={p.id} className={`fx-pick ${product === p.id ? "on" : ""}`} onClick={() => setProduct(p.id)}>
+              <ProductArt p={p} size={44} /><span>{p.name}</span>
+            </button>
+          ))}
         </div>
+        <label className="fx-field">كم كرتونة؟
+          <input className="fx-input fx-qty-big" type="number" inputMode="numeric" placeholder="0" value={qty} onChange={(e) => setQty(e.target.value)} />
+        </label>
+        <div className="fx-chips">{[100, 500, 1000].map((q) => <button key={q} className="fx-chip" onClick={() => setQty(String(n + q))}>+{num(q)}</button>)}{n > 0 && <button className="fx-chip" onClick={() => setQty("")}>صفّر</button>}</div>
+        <div className="fx-chips">{["صبحي", "مسائي", "ليلي"].map((s) => <button key={s} className={`fx-chip ${shift === s ? "on" : ""}`} onClick={() => setShift(s)}>وردية {s}</button>)}</div>
         {fx.boot.machines.length > 0 && <select value={machine} onChange={(e) => setMachine(e.target.value)} aria-label="الماكنة"><option value="">الماكنة (اختياري)</option>{fx.boot.machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>}
-        <Act className="fx-btn pri block" disabled={!(Number(qty) > 0)} onClick={async () => { await fapi.production({ product_id: product, qty, shift, machine_id: machine || null }); fx.toast("انسجل الإنتاج ودخل المستودع"); onDone(); }}>سجّل</Act>
+        <Act className="fx-btn pri block" disabled={!(n > 0) || !product} onClick={async () => { await fapi.production({ product_id: product, qty: n, shift, machine_id: machine || null }); fx.toast(`انضاف ${num(n)} ${name} للمستودع`); onDone(); }}>
+          {n > 0 ? `ضيف ${num(n)} كرتونة ${name} للمستودع` : "اكتب العدد"}
+        </Act>
       </div>
     </Sheet>
   );

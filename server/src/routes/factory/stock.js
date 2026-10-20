@@ -35,7 +35,7 @@ export async function stockBalances() {
 router.get("/stock", viewStock, async (req, res) => {
   const today = jordanDate();
   const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
-  const [bal, todayMoves, demand, materials, openDown] = await Promise.all([
+  const [bal, todayMoves, demand, materials, openDown, byVehicle] = await Promise.all([
     stockBalances(),
     query(
       `SELECT product_id, kind, damage_source, SUM(qty)::int AS qty FROM f_stock_moves
@@ -49,16 +49,29 @@ router.get("/stock", viewStock, async (req, res) => {
     ),
     query("SELECT * FROM f_materials WHERE active ORDER BY id"),
     query("SELECT d.*, m.name AS machine_name FROM f_downtime d JOIN f_machines m ON m.id = d.machine_id WHERE d.ended_at IS NULL ORDER BY d.id"),
+    query(
+      `SELECT v.id, v.name AS vehicle_name, u.full_name AS driver_name,
+              SUM(CASE WHEN m.kind = 'load' THEN m.qty ELSE 0 END)::int AS loaded,
+              SUM(CASE WHEN m.kind = 'return' THEN m.qty ELSE 0 END)::int AS returned
+       FROM f_stock_moves m JOIN f_vehicles v ON v.id = m.vehicle_id LEFT JOIN users u ON u.id = v.driver_id
+       WHERE m.kind IN ('load','return') AND (m.created_at AT TIME ZONE 'Asia/Amman')::date = $1
+       GROUP BY v.id, v.name, u.full_name ORDER BY loaded DESC`,
+      [today]
+    ),
   ]);
   const t = (pid, kind, src) => todayMoves.rows.filter((m) => m.product_id === pid && m.kind === kind && (!src || m.damage_source === src)).reduce((s, m) => s + m.qty, 0);
   res.json({
     products: bal.map((p) => ({
       ...p,
-      today: { production: t(p.id, "production"), load: t(p.id, "load"), return: t(p.id, "return"), damage: t(p.id, "damage") },
+      today: {
+        production: t(p.id, "production"), load: t(p.id, "load"), return: t(p.id, "return"), damage: t(p.id, "damage"),
+        damage_wh: t(p.id, "damage", "warehouse"), adjust: t(p.id, "adjust") + t(p.id, "count"),
+      },
       demand: demand.rows.find((d) => d.product_id === p.id)?.qty || 0,
     })),
     materials: materials.rows.map((m) => ({ ...m, balance: Number(m.balance), min_level: Number(m.min_level) })),
     downtime_open: openDown.rows,
+    today_by_vehicle: byVehicle.rows,
   });
 });
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiPlus, FiMapPin, FiUpload, FiChevronLeft, FiGift } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, Sheet, Tip, Err, Act, getLocation, ProductArt, money, num } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Act, LocationPicker, ProductArt, money, num } from "../ui.jsx";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: "موقفة" };
@@ -70,20 +70,23 @@ export function Brand({ compact = false }) {
         <label className="fx-field">رقم المصنع<input className="fx-input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></label>
         <label className="fx-field">جملة تحت الاسم<input className="fx-input" value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="للمياه الصحية" /></label>
       </div>
-      <div className="fx-field">موقع المصنع (منه بتبلش الرحلات)
-        <div className="fx-row">
-          <input className="fx-input fx-grow" list="fx-cities2" value={city} onChange={(e) => setCity(e.target.value)} placeholder="المدينة" />
-          <datalist id="fx-cities2">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
-          <Act className="fx-btn sky sm" onClick={async () => {
-            const loc = await getLocation();
-            if (!loc) return fx.toast("شغّل الموقع (GPS) بالتلفون وجرّب.");
-            await fapi.saveSettings({ lat: loc.lat, lng: loc.lng });
-            await refresh(fx);
-            fx.toast("انحفظ موقع المصنع");
-          }}><FiMapPin /> أنا بالمصنع هلأ</Act>
-        </div>
-        {fx.boot.factory.has_location ? <small style={{ color: "var(--fx-ok)" }}>موقع المصنع محفوظ</small> : <small>إذا ما حفظت الموقع، منحسب من المدينة.</small>}
-      </div>
+      <label className="fx-field">مدينة المصنع
+        <input className="fx-input" list="fx-cities2" value={city} onChange={(e) => setCity(e.target.value)} placeholder="المدينة" />
+        <datalist id="fx-cities2">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
+      </label>
+      <LocationPicker
+        title="موقع المصنع (منه بتبلش الرحلات)"
+        hereLabel="أنا بالمصنع هلأ — خذ موقعي"
+        hl="factory-location"
+        lat={fx.boot.factory.has_location ? fx.boot.factory.point[0] : ""}
+        lng={fx.boot.factory.has_location ? fx.boot.factory.point[1] : ""}
+        onChange={async (p) => {
+          await fapi.saveSettings({ lat: p.lat, lng: p.lng });
+          await refresh(fx);
+          fx.toast(p.lat === "" ? "انمسح موقع المصنع" : "انحفظ موقع المصنع");
+        }}
+      />
+      {!fx.boot.factory.has_location && <small className="fx-muted">إذا ما حفظت الموقع، منحسب المسافات من المدينة.</small>}
       {!compact && <label className="fx-field">نسبة الضمان الاجتماعي على الموظف (%)<input className="fx-input" type="number" inputMode="decimal" value={ss} onChange={(e) => setSs(e.target.value)} /></label>}
       <Act className="fx-btn pri block" onClick={async () => {
         await fapi.saveSettings({ brand_name: name, brand_phone: phone, brand_tagline: tagline, factory_city: city, ...(compact ? {} : { ss_employee_rate: ss }) });
