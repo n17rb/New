@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fapi } from "./fapi.js";
 import FactoryLogin, { readFactoryLogin, saveFactoryLogin } from "./FactoryLogin.jsx";
+import { applyBrandHead } from "./brandHead.js";
 
 // بيقرر شو يطلع: دخول المصنع بشعاره، أو دخول موج العادي
 export default function LoginGate({ onLoggedIn, fallback }) {
@@ -11,6 +12,7 @@ export default function LoginGate({ onLoggedIn, fallback }) {
     if (!m) return;
     fapi.brandFor(m[1]).then((b) => { saveFactoryLogin(b); setBrand(b); }).catch(() => setFailed(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (brand) applyBrandHead(brand, brand.id); }, [brand]);
   if (failed) return fallback;
   if (!brand) return <div className="fx" style={{ minHeight: "100vh" }} />;
   return (

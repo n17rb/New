@@ -39,6 +39,7 @@ export function Brand({ compact = false }) {
   const [city, setCity] = useState(fx.boot.factory.city || "");
   const [ss, setSs] = useState(fx.boot.ss_rate);
   const fileRef = useRef(null);
+  const iconRef = useRef(null);
   return (
     <div className="fx-stack">
       {!compact && <Tip id="brand">اسم المصنع وشعاره ورقمه بيطلعوا بالتطبيق وعلى الفواتير وبرسائل الزباين.</Tip>}
@@ -51,6 +52,17 @@ export function Brand({ compact = false }) {
           e.target.value = "";
           if (!f) return;
           try { await fapi.uploadLogo(f); await refresh(fx); fx.toast("انحفظ الشعار"); } catch (err) { fx.toast(err.message); }
+        }} />
+      </div>
+      <div className="fx-card fx-row">
+        {b.icon ? <img src={b.icon} alt="الأيقونة" style={{ width: 52, height: 52, borderRadius: 12, objectFit: "cover", border: "1px solid var(--fx-line)" }} /> : <span className="fx-avatar" style={{ width: 52, height: 52 }}>{(b.name || "م").charAt(0)}</span>}
+        <span className="fx-grow" style={{ display: "grid" }}><b style={{ fontSize: 14 }}>أيقونة التطبيق</b><small className="fx-muted">بتطلع على الشاشة الرئيسية لما الموظف يضيف التطبيق. الأحسن صورة مربعة.</small></span>
+        <button className="fx-btn sky sm" onClick={() => iconRef.current?.click()}><FiUpload /> غيّر</button>
+        <input ref={iconRef} type="file" accept="image/*" hidden onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          try { await fapi.uploadIcon(f); await refresh(fx); fx.toast("انحفظت الأيقونة"); } catch (err) { fx.toast(err.message); }
         }} />
       </div>
       <label className="fx-field">اسم المصنع<input className="fx-input" value={name} onChange={(e) => setName(e.target.value)} /></label>

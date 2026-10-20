@@ -6,6 +6,7 @@ import { fapi } from "./fapi.js";
 import { FxContext } from "./ui.jsx";
 import { HelpSheet, Tour } from "./help.jsx";
 import { saveFactoryLogin } from "./FactoryLogin.jsx";
+import { applyBrandHead } from "./brandHead.js";
 import "./factory.css";
 
 import Home from "./pages/Home.jsx";
@@ -49,8 +50,9 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
 
   // الدخول الجاي على هالتلفون بيفتح على شاشة دخول المصنع
   useEffect(() => {
-    if (shop?.id && shop?.brand && !user.inspecting) saveFactoryLogin({ id: shop.id, name: shop.brand.name, logo: shop.brand.logo, tagline: shop.brand.tagline, phone: shop.brand.phone });
-  }, [shop?.id, shop?.brand?.logo, shop?.brand?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (shop?.id && shop?.brand) applyBrandHead(shop.brand, shop.id);
+    if (shop?.id && shop?.brand && !user.inspecting) saveFactoryLogin({ id: shop.id, name: shop.brand.name, logo: shop.brand.logo, icon: shop.brand.icon, tagline: shop.brand.tagline, phone: shop.brand.phone });
+  }, [shop?.id, shop?.brand?.logo, shop?.brand?.name, shop?.brand?.icon]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", "light");
