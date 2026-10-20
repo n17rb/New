@@ -181,24 +181,22 @@ function CustomerEdit({ c, onClose, onSaved }) {
 
 // المحافظة واللواء: بيتعبّوا لحالهم من اسم المنطقة، وبتقدر تغيّرهم
 function RegionPick({ f, setF }) {
-  const [edit, setEdit] = useState(false);
-  const dists = GOVERNORATES[f.governorate] || [];
-  if (!edit) {
-    return (
-      <span className="fx-region-line">
-        {f.governorate ? <>تابعة لـ <b>{f.governorate}{f.district ? ` › ${f.district.replace(/^قصبة /, "")}` : ""}</b></> : "اختار المحافظة واللواء"}
-        <button type="button" className="fx-link" onClick={() => setEdit(true)}>{f.governorate ? "غيّر" : "اختار"}</button>
-      </span>
-    );
-  }
+  const dists = GOVERNORATES[f.governorate] || null;
+  const govOf = (d) => Object.keys(GOVERNORATES).find((g) => GOVERNORATES[g].includes(d)) || "";
   return (
     <div className="fx-grid2">
       <select value={f.governorate} onChange={(e) => setF((x) => ({ ...x, governorate: e.target.value, district: (GOVERNORATES[e.target.value] || [])[0] || "", region_manual: true }))} aria-label="المحافظة">
         <option value="">المحافظة</option>
         {Object.keys(GOVERNORATES).map((g) => <option key={g} value={g}>{g}</option>)}
       </select>
-      <select value={f.district} onChange={(e) => setF((x) => ({ ...x, district: e.target.value, region_manual: true }))} disabled={!dists.length} aria-label="اللواء">
-        {dists.map((d) => <option key={d} value={d}>لواء {d.replace(/^قصبة /, "")}</option>)}
+      {/* اللواء دايمًا ظاهر: إذا اخترته قبل المحافظة، المحافظة بتتعبّى لحالها */}
+      <select value={f.district} onChange={(e) => setF((x) => ({ ...x, district: e.target.value, governorate: x.governorate && GOVERNORATES[x.governorate]?.includes(e.target.value) ? x.governorate : govOf(e.target.value), region_manual: true }))} aria-label="اللواء">
+        <option value="">اللواء</option>
+        {dists
+          ? dists.map((d) => <option key={d} value={d}>لواء {d.replace(/^قصبة /, "")}</option>)
+          : Object.entries(GOVERNORATES).map(([g, ds]) => (
+              <optgroup key={g} label={g}>{ds.map((d) => <option key={d} value={d}>لواء {d.replace(/^قصبة /, "")}</option>)}</optgroup>
+            ))}
       </select>
     </div>
   );
