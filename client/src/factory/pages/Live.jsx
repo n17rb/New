@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { MapContainer, Marker, Polyline, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -36,6 +36,40 @@ function Focus({ point }) {
   return null;
 }
 
+export const LIVE_COLORS = COLORS;
+export const LIVE_LABEL = LABEL;
+
+// الخريطة نفسها: بتنستعمل بشاشة الرحلات وشاشة «وين السيارات»
+export function LiveMap({ data, selected, onSelect, height = "52vh" }) {
+  const withPos = (data?.vehicles || []).filter((v) => v.lat != null);
+  const center = data?.factory || [31.95, 35.93];
+  const chosen = withPos.find((v) => v.id === selected);
+  return (
+    <div className="fx-live-map" style={{ height }}>
+      <MapContainer center={center} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
+        <MapTiles />
+        <Marker position={center} icon={factoryIcon}><Tooltip direction="top">المصنع</Tooltip></Marker>
+        {withPos.map((v) => (
+          <Marker key={v.id} position={[v.lat, v.lng]} icon={carIcon(v, v.id === selected)} eventHandlers={{ click: () => onSelect?.(v.id) }}>
+            <Tooltip direction="top" offset={[0, -16]} permanent={v.state === "moving"}>{v.driver_name || v.name}{v.next?.minutes_away ? ` · ${v.next.minutes_away} د` : ""}</Tooltip>
+          </Marker>
+        ))}
+        {chosen && chosen.route.length > 0 && (
+          <>
+            <Polyline positions={[[chosen.lat, chosen.lng], ...chosen.route.map((s) => [s.lat, s.lng])]} pathOptions={{ color: COLORS[chosen.state] || "#0A66F5", weight: 4, dashArray: "8 8" }} />
+            {chosen.route.map((s, i) => (
+              <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(i + 1)}>
+                <Tooltip direction="top">{i + 1}. {s.customer_name}{s.eta_at ? ` · ${time(s.eta_at)}` : ""}</Tooltip>
+              </Marker>
+            ))}
+          </>
+        )}
+        <Focus point={chosen ? [chosen.lat, chosen.lng] : null} />
+      </MapContainer>
+    </div>
+  );
+}
+
 export default function Live() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
@@ -47,10 +81,6 @@ export default function Live() {
     return () => clearInterval(t);
   }, []);
 
-  const withPos = useMemo(() => (data?.vehicles || []).filter((v) => v.lat != null), [data]);
-  const center = data?.factory || [31.95, 35.93];
-  const chosen = withPos.find((v) => v.id === sel);
-
   return (
     <div className="fx-page" style={{ gap: 12 }}>
       <h1 className="fx-h1" style={{ margin: 0 }}>وين السيارات</h1>
@@ -58,40 +88,15 @@ export default function Live() {
       {!data && !err && <Loading />}
       {data && (
         <>
-          <div className="fx-live-map">
-            <MapContainer center={center} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
-              <MapTiles />
-              <Marker position={center} icon={factoryIcon}><Tooltip direction="top">المصنع</Tooltip></Marker>
-              {withPos.map((v) => (
-                <Marker key={v.id} position={[v.lat, v.lng]} icon={carIcon(v, v.id === sel)} eventHandlers={{ click: () => setSel(v.id) }}>
-                  <Tooltip direction="top" offset={[0, -16]}>{v.name} · {v.driver_name || "بدون سائق"}</Tooltip>
-                </Marker>
-              ))}
-              {chosen && chosen.route.length > 0 && (
-                <>
-                  <Polyline positions={[[chosen.lat, chosen.lng], ...chosen.route.map((s) => [s.lat, s.lng])]} pathOptions={{ color: COLORS[chosen.state] || "#0A66F5", weight: 4, dashArray: "8 8" }} />
-                  {chosen.route.map((s, i) => <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(i + 1)}><Tooltip direction="top">{i + 1}. {s.customer_name}</Tooltip></Marker>)}
-                </>
-              )}
-              <Focus point={chosen ? [chosen.lat, chosen.lng] : null} />
-            </MapContainer>
-          </div>
-          <p className="fx-muted" style={{ margin: 0, fontSize: 12.5 }}>بتتحدّث كل ٣٠ ثانية. السهم بيوري لوين السيارة متجهة. اكبس على سيارة تشوف طريقها ووقفاتها بالترتيب.</p>
-
+          <LiveMap data={data} selected={sel} onSelect={setSel} />
           <div className="fx-clist">
             {data.vehicles.map((v) => (
               <button key={v.id} className={`fx-crow fx-plain fx-live-row ${sel === v.id ? "on" : ""}`} onClick={() => setSel(v.id)} disabled={v.lat == null}>
                 <span className="fx-cav" style={{ background: COLORS[v.state], color: "#fff" }}>{(v.name || "").replace(/\D/g, "") || "•"}</span>
                 <span className="t" style={{ flex: 1, display: "grid", gap: 2, minWidth: 0 }}>
                   <b>{v.driver_name || "بدون سائق"} <span className="fx-muted" style={{ fontWeight: 400, fontSize: 13 }}>· {v.name}</span></b>
-                  <small>
-                    {LABEL[v.state]}
-                    {v.next ? ` · رايح على ${v.next.customer_name}${v.next.eta_at ? ` (${time(v.next.eta_at)})` : ""}` : ""}
-                  </small>
-                  <small>
-                    {v.trip_id ? `${v.done}/${v.stops} وقفات · ${num(v.load)} كرتونة` : "ما عنده رحلة"}
-                    {v.minutes_ago != null ? ` · آخر موقع ${v.minutes_ago < 1 ? "هلأ" : `قبل ${v.minutes_ago} د`}` : " · ما في موقع"}
-                  </small>
+                  <small>{LABEL[v.state]}{v.next ? ` · رايح على ${v.next.customer_name}${v.next.minutes_away ? ` · بعد ${v.next.minutes_away} د` : v.next.eta_at ? ` (${time(v.next.eta_at)})` : ""}` : ""}</small>
+                  <small>{v.trip_id ? `${v.done}/${v.stops} وقفات · ${num(v.load)} كرتونة` : "ما عنده رحلة"}{v.minutes_ago != null ? ` · آخر موقع ${v.minutes_ago < 1 ? "هلأ" : `قبل ${v.minutes_ago} د`}` : " · ما في موقع"}</small>
                 </span>
                 <span className="fx-row" style={{ gap: 6, flexWrap: "nowrap" }}>
                   {v.lat != null && <a className="fx-icon-btn sm" href={`https://www.google.com/maps?q=${v.lat},${v.lng}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} aria-label="افتح بخرائط جوجل"><FiNavigation /></a>}

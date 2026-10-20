@@ -3,6 +3,7 @@ import { query } from "../../db.js";
 import { can } from "../../permissions.js";
 import { needAny, round2, jordanDate, alert, checkVehicleDocs, factoryPoint } from "./lib.js";
 import { loadTrips } from "./orders.js";
+import { km } from "../../utils/factoryGeo.js";
 import { stockBalances } from "./stock.js";
 
 // ============================================================
@@ -89,8 +90,14 @@ router.get("/live", needAny(["f_home"], ["f_dispatch"]), async (req, res) => {
       lat: v.last_lat, lng: v.last_lng, last_seen_at: v.last_seen_at, minutes_ago: mins, heading,
       state: !t ? "idle" : t.status === "active" ? (mins == null || mins > 15 ? "lost" : "moving") : "planned",
       trip_id: t?.id || null, done: t?.done || 0, stops: t?.stops.length || 0, load: t?.load || 0,
-      next: next && { id: next.id, customer_name: next.customer_name, city: next.city, lat: next.lat, lng: next.lng, eta_at: next.eta_at },
-      route: open.filter((o) => o.lat != null).map((o) => ({ id: o.id, customer_name: o.customer_name, lat: o.lat, lng: o.lng })),
+      next: next && {
+        id: next.id, customer_name: next.customer_name, city: next.city, lat: next.lat, lng: next.lng, eta_at: next.eta_at,
+        // كم باقي للزبون الجاي من مكان السيارة هلأ (خط مستقيم × ١.٣ للطرق، بمعدل ٥٠ كم/س)
+        ...(t?.status === "active" && v.last_lat != null && next.lat != null && mins != null && mins <= 15
+          ? (() => { const d = km([v.last_lat, v.last_lng], [next.lat, next.lng]) * 1.3; return { km_away: Math.round(d * 10) / 10, minutes_away: Math.max(1, Math.round((d / 50) * 60)) }; })()
+          : {}),
+      },
+      route: open.filter((o) => o.lat != null).map((o) => ({ id: o.id, customer_name: o.customer_name, lat: o.lat, lng: o.lng, eta_at: o.eta_at })),
     };
   });
   const rank = { moving: 0, lost: 1, planned: 2, idle: 3 };
