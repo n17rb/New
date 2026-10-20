@@ -17,6 +17,7 @@ export const fapi = {
   bootstrap: () => get("/bootstrap"),
   home: () => get("/home"),
   live: () => get("/live"),
+  density: () => get("/density"),
   recurring: (p) => get(`/recurring${qs(p)}`),
   saveRecurring: (r) => (r.id ? put(`/recurring/${r.id}`, r) : post("/recurring", r)),
   deleteRecurring: (id) => del(`/recurring/${id}`),
