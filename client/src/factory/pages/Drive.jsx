@@ -77,6 +77,20 @@ export default function Drive() {
       <Err msg={error} />
       {!data && !error && <Loading />}
 
+      {data?.problems?.map((p) => (
+        <div key={p.id} className="fx-drv-prob">
+          <span>🔧 <b>{p.title.replace(/^.*?:\s*/, "")}</b><small>بلّغت الساعة {time(p.created_at)}</small></span>
+          <Act className="fx-btn ok block" onClick={async () => { await fapi.problemResolve(p.id); fx.toast(p.kind === "breakdown" ? "تمام، الإدارة عرفت إن السيارة رجعت تشتغل" : "تمام، الإدارة عرفت"); reload(); }}>
+            ✓ {p.kind === "breakdown" ? "السيارة رجعت تشتغل" : "انحلت المشكلة"}
+          </Act>
+          <button className="fx-link" onClick={async () => { await fapi.problemResolve(p.id, { mistake: true }); fx.toast("انلغى البلاغ"); reload(); }}>بعتها بالغلط — شيلها</button>
+        </div>
+      ))}
+
+      {data?.unsettled?.map((u) => (
+        <div key={u.id} className="fx-note warn">رحلة {u.vehicle_name} الماضية: لسا عليك تسلّم <b className="fx-num">{money(u.cash_due)}</b> دينار للمحاسب.</div>
+      ))}
+
       {data && !t && (
         <Empty icon={FiTruck} title="ما في رحلة إلك اليوم" text="لما يوزعولك طلبات بتطلع هون، وبيوصلك إشعار." />
       )}

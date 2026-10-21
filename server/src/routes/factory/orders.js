@@ -6,7 +6,7 @@ import { canAction } from "../../permissions.js";
 import { sendPushToUser } from "../../utils/push.js";
 import { inferRegion } from "../../utils/jordanRegions.js";
 import {
-  need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint, pushManagers,
+  need, needAny, bad, round2, jordanDate, priceFor, bonusFor, queueMessage, ensureTrackToken, itemsText, alert, closeAlerts, factoryPoint, pushManagers, pushTo,
 } from "./lib.js";
 
 // ============================================================
@@ -252,7 +252,7 @@ export async function loadTrips(where, params = []) {
   );
   if (!r.rows.length) return [];
   const ids = r.rows.map((t) => t.id);
-  const [orders, exps, extras, moved] = await Promise.all([
+  const [orders, exps, extras, moved, probs] = await Promise.all([
     loadOrders("o.trip_id = ANY($1::int[])", [ids]),
     query("SELECT * FROM f_expenses WHERE trip_id = ANY($1::int[]) ORDER BY id", [ids]),
     query(
@@ -266,6 +266,7 @@ export async function loadTrips(where, params = []) {
        WHERE m.trip_id = ANY($1::int[]) AND (m.kind = 'load' OR (m.kind = 'damage' AND m.damage_source = 'vehicle')) GROUP BY m.trip_id, m.product_id, p.name, m.kind`,
       [ids]
     ),
+    query("SELECT id, ref_id, kind, title, created_at FROM f_alerts WHERE kind IN ('breakdown','problem') AND ref_id = ANY($1::int[]) AND closed_at IS NULL ORDER BY id DESC", [ids]),
   ]);
   const now = Date.now();
   return r.rows.map((t) => {
@@ -287,6 +288,7 @@ export async function loadTrips(where, params = []) {
       stops, expenses, load, collected, expenses_total: expTotal, cash_due: round2(collected - expTotal),
       extra_items: extras.rows.filter((x) => x.trip_id === t.id),
       cancelled_stops, loaded_per, damaged_per,
+      problems: probs.rows.filter((a) => a.ref_id === t.id),
       done: stops.filter((o) => ["delivered", "failed"].includes(o.status)).length,
       late,
       tracking_lost: t.status === "active" && (!t.last_seen_at || now - new Date(t.last_seen_at).getTime() > 15 * 60000),
@@ -528,6 +530,17 @@ router.post("/trips/:id/delay", dispatch, async (req, res) => {
   await alert({ level: "warn", kind: "delay", ref: t.id, title: `تأخير رحلة — ${reason}`, body: `${orders.length} زباين وصلهم رسالة. الموعد الجديد: ${when}.` });
   await closeAlerts("breakdown", t.id, req.user.id);
   res.json({ ok: true, message_ids: msgIds });
+});
+
+// السيارة رجعت تشتغل: بنسكّر بلاغات العطل/المشاكل وبنشيل سبب التأخير
+router.post("/trips/:id/fixed", need("f_dispatch", "edit"), async (req, res) => {
+  const t = (await query("SELECT t.*, v.name AS vehicle_name FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [req.params.id])).rows[0];
+  if (!t) return bad(res, "الرحلة غير موجودة.", 404);
+  await query("UPDATE f_alerts SET closed_at = now(), closed_by = $2 WHERE kind IN ('breakdown','problem') AND ref_id = $1 AND closed_at IS NULL", [t.id, req.user.id]);
+  await query("UPDATE f_trips SET delay_reason = NULL WHERE id = $1", [t.id]);
+  if (t.driver_id) await pushTo(t.driver_id, { title: "✅ تمام، كمّل رحلتك", body: `${req.user.full_name} سكّر بلاغ ${t.vehicle_name}.`, url: "/f/drive", tag: `trip-${t.id}` });
+  await pushManagers({ title: `✅ ${t.vehicle_name} رجعت تشتغل`, body: `سكّرها ${req.user.full_name}.`, url: "/f/trips", tag: `fixed-${t.id}`, except: req.user.id });
+  res.json({ ok: true });
 });
 
 export default router;

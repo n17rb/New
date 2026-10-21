@@ -12,6 +12,7 @@ export default function Trips() {
   const dispatch = fx.can("f_dispatch", "edit");
   const [day, setDay] = useState("");
   const { data, error, reload } = useLoad(() => fapi.trips(day ? { date: day } : {}), [day]);
+  useEffect(() => { const f = () => reload(); window.addEventListener("fx-reload", f); return () => window.removeEventListener("fx-reload", f); }, [reload]);
   const [live, setLive] = useState(null);
   const [sel, setSel] = useState(null);
   const [sheet, setSheet] = useState(null);
@@ -101,6 +102,15 @@ function tripState(t, lv) {
   return ["خلصت", "idle"];
 }
 
+function FixedBtn({ t }) {
+  const fx = useFx();
+  return (
+    <Act className="fx-btn ok sm" onClick={async () => { await fapi.tripFixed(t.id); fx.toast("تمام، انشال العطل"); window.dispatchEvent(new Event("fx-reload")); }}>
+      ✓ رجعت تشتغل
+    </Act>
+  );
+}
+
 function TripCard({ t, lv, color, on, first, dispatch, onOpen, onFocus }) {
   const [label, key] = tripState(t, lv);
   const done = t.stops.filter((o) => ["delivered", "failed"].includes(o.status)).length;
@@ -125,7 +135,13 @@ function TripCard({ t, lv, color, on, first, dispatch, onOpen, onFocus }) {
         </div>
       )}
       {t.late > 0 && <div className="fx-trip-warn">متأخر عن {t.late} زبون</div>}
-      {t.delay_reason && <div className="fx-trip-warn">تأخير: {t.delay_reason}</div>}
+      {t.delay_reason && !t.problems?.length && <div className="fx-trip-warn">تأخير: {t.delay_reason}</div>}
+      {(t.problems?.length > 0 || t.delay_reason === "عطل بالسيارة") && (
+        <div className="fx-trip-prob">
+          <span>🔧 {t.problems?.[0]?.title.replace(/^.*?:\s*/, "") || "عطل بالسيارة"}{t.problems?.[0] && <small> · {time(t.problems[0].created_at)}</small>}</span>
+          {dispatch && <FixedBtn t={t} />}
+        </div>
+      )}
 
       <div className="fx-trip-prog"><span>سلّم {done} من {t.stops.length}</span><div className="fx-bar"><i style={{ width: `${pct}%` }} /></div></div>
 

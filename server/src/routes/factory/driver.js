@@ -26,13 +26,23 @@ router.get("/driver/today", drive, async (req, res) => {
     "t.driver_id = $1 AND t.status IN ('planned','active','returned') AND t.trip_date <= $2",
     [req.user.id, jordanDate()]
   );
-  const trip = trips.find((t) => t.status === "active") || trips.find((t) => t.status === "returned") || trips.sort((a, b) => a.trip_date.localeCompare(b.trip_date))[0] || null;
+  // الرحلة الشغالة أولًا، بعدين الجاية (حتى لو في رحلة راجعة لسا ما انحاسبت)، وآخر إشي الراجعة
+  const byDate = (a, b) => a.trip_date.localeCompare(b.trip_date) || a.id - b.id;
+  const planned = trips.filter((t) => t.status === "planned").sort(byDate);
+  const returned = trips.filter((t) => t.status === "returned").sort(byDate);
+  const trip = trips.find((t) => t.status === "active") || planned[0] || returned[0] || null;
+  // رحلة رجعت ولسا ما سلّم حسابها — بنذكّره فيها فوق
+  const unsettled = returned.filter((t) => t.id !== trip?.id).map((t) => ({ id: t.id, vehicle_name: t.vehicle_name, cash_due: t.cash_due, trip_date: t.trip_date }));
   const custody = Number((await query("SELECT COALESCE(SUM(amount),0) AS s FROM f_driver_ledger WHERE driver_id = $1", [req.user.id])).rows[0].s);
   const lastFuel = trip?.vehicle_id ? (await query(
     "SELECT fuel_end, to_char(returned_at AT TIME ZONE 'Asia/Amman','HH24:MI') AS at FROM f_trips WHERE vehicle_id = $1 AND fuel_end IS NOT NULL AND id <> $2 ORDER BY returned_at DESC LIMIT 1",
     [trip.vehicle_id, trip.id]
   )).rows[0] : null;
-  res.json({ vehicles, trip, custody: round2(custody), fuel_levels: FUEL, last_fuel: lastFuel || null, can_credit: canAction(req.user, "give_credit") });
+  const problems = (await query(
+    "SELECT id, title, kind, created_at FROM f_alerts WHERE user_id = $1 AND kind IN ('breakdown','problem') AND closed_at IS NULL AND created_at > now() - interval '3 days' ORDER BY id DESC",
+    [req.user.id]
+  )).rows;
+  res.json({ problems, unsettled, vehicles, trip, custody: round2(custody), fuel_levels: FUEL, last_fuel: lastFuel || null, can_credit: canAction(req.user, "give_credit") });
 });
 
 // صور وقراءات البداية والنهاية (عداد + ديزل)
@@ -286,7 +296,7 @@ router.post("/driver/problem", drive, async (req, res) => {
   const v = (await query("SELECT v.id, v.name FROM f_vehicles v WHERE v.driver_id = $1 ORDER BY v.id LIMIT 1", [req.user.id])).rows[0];
   const trip = v ? (await query("SELECT id FROM f_trips WHERE vehicle_id = $1 AND status IN ('planned','active') ORDER BY id DESC LIMIT 1", [v.id])).rows[0] : null;
   const where = req.body?.lat ? ` · الموقع: https://maps.google.com/?q=${Number(req.body.lat)},${Number(req.body.lng)}` : "";
-  await alert({
+  const alertId = await alert({
     level: "crit", kind: kind === "عطل بالسيارة" ? "breakdown" : "problem", ref: trip?.id || null,
     title: `${req.user.full_name}${v ? ` (${v.name})` : ""}: ${kind}`,
     body: `${req.body?.note ? String(req.body.note).slice(0, 400) + " · " : ""}${new Date().toLocaleTimeString("ar-JO-u-nu-latn", { timeZone: "Asia/Amman", hour: "numeric", minute: "2-digit" })}${where}${req.body?.photo_url ? " · مع صورة" : ""}`,
@@ -297,7 +307,23 @@ router.post("/driver/problem", drive, async (req, res) => {
       [req.body.product_id, Math.round(Number(req.body.qty)), trip.id, v.id, req.body?.note || "بضاعة مضروبة بالسيارة", req.body?.photo_url || null, req.user.id]
     );
   }
-  res.json({ ok: true, trip_id: trip?.id || null });
+  await query("UPDATE f_alerts SET user_id = $1 WHERE id = $2", [req.user.id, alertId]);
+  res.json({ ok: true, trip_id: trip?.id || null, alert_id: alertId });
+});
+
+// المشكلة انحلت (السيارة رجعت تشتغل) — أو انبعتت بالغلط
+router.post("/driver/problem/:id/resolve", drive, async (req, res) => {
+  const a = (await query("SELECT * FROM f_alerts WHERE id = $1 AND user_id = $2 AND kind IN ('breakdown','problem')", [req.params.id, req.user.id])).rows[0];
+  if (!a) return bad(res, "البلاغ غير موجود.", 404);
+  await query("UPDATE f_alerts SET closed_at = now(), closed_by = $1 WHERE id = $2 AND closed_at IS NULL", [req.user.id, a.id]);
+  if (a.kind === "breakdown" && a.ref_id) await query("UPDATE f_trips SET delay_reason = NULL WHERE id = $1 AND delay_reason = 'عطل بالسيارة'", [a.ref_id]);
+  const mistake = req.body?.mistake === true;
+  await pushManagers({
+    title: mistake ? `↩️ ${req.user.full_name} لغى البلاغ` : `✅ ${req.user.full_name}: انحلت المشكلة`,
+    body: mistake ? `«${a.title}» انبعت بالغلط.` : `${a.kind === "breakdown" ? "السيارة رجعت تشتغل" : "المشكلة انحلت"} وكمّل شغله.`,
+    url: "/f/trips", tag: `fa-${a.id}`,
+  });
+  res.json({ ok: true });
 });
 
 // ---------- المصاريف ----------
