@@ -11,6 +11,7 @@ import { sortNearest } from "../../utils/factoryGeo.js";
 const router = Router();
 const view = needAny(["f_orders"], ["f_dispatch"], ["f_customers"], ["f_home"]);
 const edit = needAny(["f_orders", "edit"], ["f_dispatch", "edit"], ["f_customers", "edit"]);
+const everyLabel = (n) => (n === 7 ? "كل أسبوع" : n === 14 ? "كل أسبوعين" : n === 30 ? "كل شهر" : `كل ${n} أيام`);
 const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
 const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
@@ -39,7 +40,6 @@ function clean(b) {
   const items = (Array.isArray(b.items) ? b.items : [])
     .map((i) => ({ product_id: Number(i.product_id), qty: Math.round(Number(i.qty)) }))
     .filter((i) => i.product_id && i.qty > 0);
-  if (!items.length) throw new Error("اختار المنتجات والكمية.");
   const next = isDate(b.next_date) ? b.next_date : jordanDate();
   return { every, items, next, notes: b.notes ? String(b.notes).slice(0, 300) : null };
 }
@@ -105,8 +105,23 @@ export async function runRecurring(onlyId = null) {
       await pushManagers({ title: `🔁 ${r.customer_name}: إجا موعد طلبه الثابت`, body: `ما ضفناه لأنه عنده طلب مفتوح (#${open.id}). الموعد الجاي ${next}.`, url: "/f/orders", tag: `rc-${r.id}` });
       continue;
     }
+    // بدون منتجات محددة: منكرر آخر طلب للزبون (والسائق بيعدّل وقت التسليم حسب اللي أخذه)
+    let src = r.items;
+    if (!src?.length) {
+      const last = (await query(
+        `SELECT i.product_id, CASE WHEN o.status = 'delivered' THEN COALESCE(i.delivered_qty, i.qty) ELSE i.qty END AS qty
+         FROM f_order_items i JOIN f_orders o ON o.id = i.order_id
+         WHERE o.id = (SELECT id FROM f_orders WHERE customer_id = $1 AND status <> 'cancelled' ORDER BY id DESC LIMIT 1)`,
+        [r.customer_id]
+      )).rows.filter((x) => x.qty > 0);
+      if (!last.length) {
+        await pushManagers({ title: `⏰ تذكير: ${r.customer_name}`, body: `إجا موعده (${everyLabel(r.every_days)}). ما إله طلب سابق نكرره — اتصل فيه وسجّل طلبه.`, url: "/f/customers", tag: `rc-${r.id}` });
+        continue;
+      }
+      src = last;
+    }
     let items;
-    try { items = await buildItems(r.customer_id, r.items, null); } catch { continue; }
+    try { items = await buildItems(r.customer_id, src, null); } catch { continue; }
     const total = round2(items.reduce((s, i) => s + i.qty * i.price, 0));
     const client = await pool.connect();
     let id;

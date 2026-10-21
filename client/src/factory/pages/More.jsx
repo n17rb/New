@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin } from "react-icons/fi";
+import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText } from "react-icons/fi";
 import { useFx } from "../ui.jsx";
 import PushCard from "../PushCard.jsx";
 
@@ -9,10 +9,11 @@ export default function More({ onLogout }) {
   const items = [
     { to: "/f/customers", icon: FiUsers, label: "العملاء", hint: "بياناتهم وطلباتهم وكشف حسابهم" },
     { to: "/f/density", icon: FiMapPin, label: "خريطة العملاء", hint: "وين زباينك متجمّعين" },
-    (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/recurring", icon: FiRepeat, label: "الطلبات الثابتة", hint: "زباين بياخذوا نفس الطلب كل كم يوم" },
+    (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/recurring", icon: FiRepeat, label: "المواعيد الثابتة", hint: "زباين بنوصّلهم كل كم يوم" },
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/live", icon: FiMap, label: "وين السيارات", hint: "كل السيارات على الخريطة ولوين متجهة" },
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/trips", icon: FiTruck, label: "الرحلات", hint: "وين كل سيارة وشو ضل عليها" },
     (fx.can("f_stock") || fx.can("f_production") || fx.can("f_home")) && { to: "/f/stock", icon: FiBox, label: "المستودع والإنتاج", hint: "الأرصدة، التحميل، التالف، المكنات" },
+    (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_money") || fx.can("f_home")) && { to: "/f/invoices", icon: FiFileText, label: "الفواتير", hint: "نسخة من كل فاتورة: مين سلّمها وإمتى" },
     (fx.can("f_money") || fx.can("f_home")) && { to: "/f/money", icon: FiDollarSign, label: "الحسابات", hint: "كاش السائقين، المصاريف، الديون" },
     (fx.can("f_reports") || fx.can("f_home")) && { to: "/f/reports", icon: FiBarChart2, label: "التقارير", hint: "المبيعات، التوالف، الديزل، السائقين" },
     (fx.can("f_home") || fx.can("f_money") || fx.can("f_dispatch")) && { to: "/f/alerts", icon: FiBell, label: "التنبيهات" },

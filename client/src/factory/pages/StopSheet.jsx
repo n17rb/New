@@ -1,10 +1,14 @@
-import { FiMapPin, FiPhone, FiMessageCircle, FiFileText, FiCheckCircle, FiNavigation } from "react-icons/fi";
-import { Sheet, StatusPill, ORDER_STATUS, waLink, money, num, dateTime } from "../ui.jsx";
+import { useEffect, useState } from "react";
+import { FiMapPin, FiPhone, FiMessageCircle, FiFileText, FiCheckCircle, FiNavigation, FiPrinter } from "react-icons/fi";
+import { fapi } from "../fapi.js";
+import { Invoice } from "../Track.jsx";
+import { Sheet, StatusPill, ORDER_STATUS, waLink, money, num, dateTime, Err, Loading } from "../ui.jsx";
 
 export const deliveredCartons = (o) => o.items.reduce((s, i) => s + (i.delivered_qty ?? i.qty) + (i.delivered_bonus ?? i.bonus_qty ?? 0), 0);
 
 // تفاصيل الوقفة: مين الزبون ووين، شو انطلب وشو انسلّم، الكاش، والإثبات
 export function StopSheet({ o, t, onClose }) {
+  const [inv, setInv] = useState(false);
   const map = o.lat ? `https://www.google.com/maps?q=${o.lat},${o.lng}` : o.maps_url;
   const where = o.delivered_lat ? `https://www.google.com/maps?q=${o.delivered_lat},${o.delivered_lng}` : null;
   const far = o.delivered_lat && o.lat ? kmBetween([o.lat, o.lng], [o.delivered_lat, o.delivered_lng]) : null;
@@ -78,8 +82,9 @@ export function StopSheet({ o, t, onClose }) {
           </>
         )}
         {delivered && o.invoice_token && (
-          <a className="fx-btn block" href={`/t/i/${o.invoice_token}`} target="_blank" rel="noreferrer"><FiFileText /> افتح الفاتورة</a>
+          <button className="fx-btn pri block" onClick={() => setInv(true)}><FiFileText /> الفاتورة</button>
         )}
+        {inv && <InvoiceSheet o={o} onClose={() => setInv(false)} />}
       </div>
     </Sheet>
   );
@@ -90,4 +95,28 @@ function kmBetween(a, b) {
   const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1]);
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// نسخة الفاتورة عندك بالتطبيق (نفس اللي وصلت للزبون)، وزر يبعتها للزبون على واتساب
+export function InvoiceSheet({ o, onClose }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { fapi.invoice(o.invoice_token).then(setData).catch((e) => setErr(e.message)); }, [o.invoice_token]);
+  const link = `${window.location.origin}/t/i/${o.invoice_token}`;
+  const text = `أهلاً ${o.customer_name}، هاي فاتورة طلبك رقم ${o.id}${data ? ` بقيمة ${money(data.invoice.total)} د.أ` : ""}:\n${link}`;
+  return (
+    <Sheet title={`فاتورة #${o.id}`} onClose={onClose}>
+      <Err msg={err} />
+      {!data && !err && <Loading />}
+      {data && (
+        <div className="fx-stack">
+          <div className="fx-invoice-in"><Invoice data={data} inApp /></div>
+          <div className="fx-grid2 fx-noprint">
+            {o.phone ? <a className="fx-btn wa" href={waLink(o.phone, text)} target="_blank" rel="noreferrer"><FiMessageCircle /> ابعتها للزبون</a> : <span />}
+            <button className="fx-btn" onClick={() => window.print()}><FiPrinter /> اطبع</button>
+          </div>
+        </div>
+      )}
+    </Sheet>
+  );
 }
