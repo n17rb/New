@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { LiveMap, LIVE_COLORS } from "./Live.jsx";
+import { LIVE_COLORS } from "./Live.jsx";
+import TripsMap, { TRIP_COLORS } from "./TripsMap.jsx";
 import { FiArrowUp, FiArrowDown, FiClock, FiNavigation, FiPhone } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, TRIP_STATUS, SendMessages, Reload, money, num, time, date, dateTime, today } from "../ui.jsx";
@@ -27,11 +28,17 @@ export default function Trips() {
   }, [isToday]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveBy = new Map((live?.vehicles || []).map((v) => [v.id, v]));
-  const trips = [...(data || [])].sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
-  const counts = { moving: trips.filter((t) => t.status === "active").length, planned: trips.filter((t) => t.status === "planned").length, back: trips.filter((t) => ["returned", "closed"].includes(t.status)).length };
+  // رحلة فاضية (كل طلباتها انتقلت أو انلغت) ما إلها داعي تبين
+  const all = [...(data || [])].filter((t) => t.stops.length > 0 || t.status === "active").sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
+  const trips = all.filter((t) => ["planned", "active"].includes(t.status));
+  const finished = all.filter((t) => !["planned", "active"].includes(t.status));
+  const [showDone, setShowDone] = useState(false);
+  const onRoad = trips.filter((t) => ["planned", "active"].includes(t.status));
+  const colorOf = new Map(onRoad.map((t, i) => [t.id, TRIP_COLORS[i % TRIP_COLORS.length]]));
+  const factory = live?.factory || fx.boot.factory?.point;
 
   function focus(t) {
-    setSel(t.vehicle_id);
+    setSel(sel === t.id ? null : t.id);
     document.querySelector(".fx-live-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
@@ -44,24 +51,35 @@ export default function Trips() {
       <Err msg={error} />
       {!data && !error && <Loading />}
 
-      {isToday && live && trips.length > 0 && (
+      {isToday && onRoad.length > 0 && (
         <>
-          <LiveMap data={live} selected={sel} onSelect={setSel} height="42vh" />
-          <div className="fx-tripsum">
-            <span><i style={{ background: LIVE_COLORS.moving }} /> {counts.moving} بالطريق</span>
-            <span><i style={{ background: LIVE_COLORS.planned }} /> {counts.planned} جاهزة تطلع</span>
-            <span><i style={{ background: LIVE_COLORS.idle }} /> {counts.back} رجعت</span>
+          <TripsMap trips={trips} live={live} factory={factory} selected={sel} onSelect={(id) => setSel(sel === id ? null : id)} />
+          <div className="fx-trip-legend">
+            <button className={!sel ? "on" : ""} onClick={() => setSel(null)}>كل السيارات</button>
+            {onRoad.map((t) => (
+              <button key={t.id} className={sel === t.id ? "on" : ""} onClick={() => setSel(sel === t.id ? null : t.id)}>
+                <i style={{ background: colorOf.get(t.id) }} />{t.driver_name || t.vehicle_name}
+              </button>
+            ))}
           </div>
         </>
       )}
 
-      {data && trips.length === 0 && <Empty title="ما في رحلات" text="من الطلبات علّم على الطلبات واكبس «حطها على سيارة»." />}
+      {data && all.length === 0 && <Empty title="ما في رحلات" text="من الطلبات علّم على الطلبات واكبس «حطها على سيارة»." />}
+      {data && trips.length === 0 && all.length > 0 && <div className="fx-empty-soft">كل السيارات رجعت 👌</div>}
       <div className="fx-stack" data-hl="trips-list">
         {trips.map((t, i) => (
-          <TripCard key={t.id} t={t} lv={liveBy.get(t.vehicle_id)} on={sel === t.vehicle_id} first={i === 0} dispatch={dispatch}
+          <TripCard key={t.id} t={t} lv={liveBy.get(t.vehicle_id)} color={colorOf.get(t.id)} on={sel === t.id} first={i === 0} dispatch={dispatch}
             onFocus={() => focus(t)} onOpen={(kind, o) => setSheet({ kind, t, o })} />
         ))}
       </div>
+
+      {finished.length > 0 && (
+        <>
+          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowDone(!showDone)}>{showDone ? "خبّي" : "اعرض"} اللي رجعت ({finished.length})</button>
+          {showDone && <div className="fx-stack">{finished.map((t) => <TripCard key={t.id} t={t} lv={liveBy.get(t.vehicle_id)} dispatch={dispatch} onFocus={() => {}} onOpen={(kind, o) => setSheet({ kind, t, o })} />)}</div>}
+        </>
+      )}
 
       {sheet?.kind === "delay" && <DelaySheet t={sheet.t} onClose={() => setSheet(null)} onSaved={(r) => { setSheet(null); reload(); setMsgs(r.message_ids); }} />}
       {sheet?.kind === "order" && <TripDetail t={sheet.t} onClose={() => setSheet(null)} onChanged={() => { setSheet(null); reload(); }} onStop={(o) => setSheet({ kind: "stop", t: sheet.t, o, back: "order" })} />}
@@ -83,7 +101,7 @@ function tripState(t, lv) {
   return ["خلصت", "idle"];
 }
 
-function TripCard({ t, lv, on, first, dispatch, onOpen, onFocus }) {
+function TripCard({ t, lv, color, on, first, dispatch, onOpen, onFocus }) {
   const [label, key] = tripState(t, lv);
   const done = t.stops.filter((o) => ["delivered", "failed"].includes(o.status)).length;
   const next = lv?.next;
@@ -91,7 +109,7 @@ function TripCard({ t, lv, on, first, dispatch, onOpen, onFocus }) {
   return (
     <section className={`fx-trip ${on ? "on" : ""}`}>
       <button className="fx-plain fx-trip-h" onClick={onFocus}>
-        <span className="fx-cav" style={{ background: LIVE_COLORS[key], color: "#fff" }}>{t.vehicle_name?.replace(/\D/g, "") || "#"}</span>
+        <span className={`fx-cav ${color ? "route" : ""}`} style={{ background: color || LIVE_COLORS[key], color: "#fff", "--route": color }}>{t.vehicle_name?.replace(/\D/g, "") || "#"}</span>
         <span className="t">
           <b>{t.driver_name || "بدون سائق"}</b>
           <small>{t.vehicle_name} · {num(t.load)} كرتونة</small>
