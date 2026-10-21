@@ -638,3 +638,25 @@ a.fx-pill { text-decoration: none; }
 .fx-trip-legend button i { width: 12px; height: 12px; border-radius: 50%; }
 .fx-trip-legend button.on { border-color: var(--fx-navy); background: var(--fx-sky-soft); }
 .fx-trip .fx-cav.route { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--route); }
+
+/* شاشة السائق: خطوة وحدة واضحة */
+.fx-drv-head { display: grid; gap: 2px; }
+.fx-drv-head b { font-size: 22px; }
+.fx-drv-head span { color: var(--fx-muted); font-size: 14px; }
+.fx-drv-step { display: grid; gap: 8px; background: #fff; border-radius: 22px; padding: 18px 16px; box-shadow: 0 4px 18px rgba(4, 86, 162, .08); border: 1px solid var(--fx-line); }
+.fx-drv-step.go { border: 2px solid #1F9D55; }
+.fx-drv-step .lbl { font-size: 13px; color: var(--fx-muted); font-weight: 600; }
+.fx-drv-step .nm { font-size: 22px; line-height: 1.3; }
+.fx-drv-step .sub { font-size: 14px; color: var(--fx-muted); }
+.fx-drv-step .eta { font-size: 16px; color: #14653a; background: #e6f5ec; border-radius: 12px; padding: 8px 12px; }
+.fx-drv-step .eta b { font-size: 20px; }
+.fx-huge { min-height: 60px; font-size: 18px !important; border-radius: 16px !important; }
+.fx-btn.ok { background: #1F9D55; color: #fff; border-color: #1F9D55; }
+.fx-drv-list { background: #fff; border-radius: 18px; padding: 4px 14px; }
+.fx-drv-list .r { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--fx-line); }
+.fx-drv-list .r:last-child { border-bottom: 0; }
+.fx-drv-list .r .t { flex: 1; display: grid; min-width: 0; }
+.fx-drv-list .r .t small, .fx-drv-list .r .tm { color: var(--fx-muted); font-size: 12.5px; }
+.fx-drv-list .r.cur .t b { color: #14653a; }
+.fx-drv-list .r.cur .fx-n { background: #1F9D55; color: #fff; }
+.fx-drv-list .r.done { opacity: .6; }

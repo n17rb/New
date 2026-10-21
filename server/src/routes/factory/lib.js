@@ -200,6 +200,8 @@ export async function messageText(kind, d) {
       return `السائق ${d.driver} طلع من المصنع وهو بالطريق إلك. الوصول المتوقع حوالي ${fmtTime(d.eta)}.${link}${sign}`;
     case "delivered":
       return `تم تسليم طلبك رقم ${d.order}: ${d.items}.\nقيمة الفاتورة: ${fmtMoney(d.total)} د.أ\nالمدفوع: ${fmtMoney(d.paid)} د.أ\nرصيدك الحالي: ${fmtMoney(d.balance)} د.أ\nالفاتورة: ${invoiceLink(d.invoice)}${sign}`;
+    case "coming":
+      return `السائق ${d.driver} بالطريق إلك هلأ 🚚${d.eta ? `\nالوصول المتوقع حوالي الساعة ${fmtTime(d.eta)}${d.minutes ? ` (بعد ${d.minutes} دقيقة تقريبًا)` : ""}.` : ""}${link}${sign}`;
     case "delay":
       return `نعتذر منك، طلبك رقم ${d.order} رح يتأخر بسبب ${d.reason}. الموعد الجديد: ${d.when}.${d.note ? ` ${d.note}` : ""}${link}${sign}`;
     case "failed":

@@ -91,31 +91,50 @@ router.post("/driver/trips/:id/start", drive, async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t) return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "planned") return bad(res, "الرحلة بلشت من قبل.");
-  if (!t.odo_start || !t.photo_odo_start) return bad(res, "صوّر عداد الكيلومترات أول.");
-  if (!t.fuel_start || !t.photo_fuel_start) return bad(res, "صوّر مؤشر الديزل أول.");
-  if (!t.load_confirmed_at) return bad(res, "لازم الحمولة تتأكد قبل ما تطلع.");
+  // بدون صور عداد وديزل: إذا الحمولة ما تأكدت من المستودع، كبسة «ابدأ» بتأكدها
+  if (!t.load_confirmed_at) await confirmLoad(t.id, req.user.id, []);
   await query("UPDATE f_trips SET status = 'active', started_at = now() WHERE id = $1", [t.id]);
   await query("UPDATE f_orders SET status = 'onway', updated_at = now() WHERE trip_id = $1 AND status = 'assigned'", [t.id]);
   await query("UPDATE f_vehicles SET last_seen_at = now() WHERE id = $1", [t.vehicle_id]);
-  await recomputeEta(t.id, { fromNow: true });
+  await pushManagers({ title: `🚚 ${t.driver_name || "السائق"} طلع بالرحلة`, body: `${t.vehicle_name} · ${t.stops.length} زبون. تابعه على الخريطة.`, url: "/f/trips", tag: `ts-${t.id}` });
+  // أول زبون: بنحسب وقت الوصول من مكان السائق وبنجهّزله رسالة
+  const first = (await loadOrders("o.trip_id = $1 AND o.status = 'onway'", [t.id]))[0];
+  const go = first ? await goTo(first, t, req) : null;
+  res.json({ ok: true, ...(go || {}) });
+});
 
-  // الديزل بالليل: إذا الصبح أقل من المسا والسيارة ما طلعت
-  const prev = (await query("SELECT fuel_end FROM f_trips WHERE vehicle_id = $1 AND fuel_end IS NOT NULL AND id <> $2 ORDER BY returned_at DESC NULLS LAST LIMIT 1", [t.vehicle_id, t.id])).rows[0];
-  if (prev && FUEL.indexOf(t.fuel_start) < FUEL.indexOf(prev.fuel_end)) {
-    await alert({
-      level: "crit", kind: "fuel_night", ref: t.id,
-      title: `الديزل نزل بالليل — ${t.vehicle_name}`,
-      body: `المسا كان «${prev.fuel_end}» والصبح «${t.fuel_start}» بدون ما تتحرك السيارة. السائق: ${t.driver_name || ""}.`,
-    });
+// «انطلق لعند الزبون»: وقت الوصول من مكان السائق هلأ (خط مستقيم × ١.٣، والسرعة حسب المسافة + دقيقتين)
+async function goTo(o, t, req) {
+  let lat = Number(req.body?.lat), lng = Number(req.body?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !lat) {
+    const v = (await query("SELECT last_lat, last_lng FROM f_vehicles WHERE id = $1", [t.vehicle_id])).rows[0];
+    lat = v?.last_lat; lng = v?.last_lng;
   }
-  const orders = await loadOrders("o.trip_id = $1 AND o.status = 'onway'", [t.id]);
-  const ids = [];
-  for (const o of orders) {
-    const track = await ensureTrackToken(o.customer_id);
-    ids.push(await queueMessage({ customerId: o.customer_id, orderId: o.id, kind: "onway", data: { driver: t.driver_name || "السائق", eta: o.eta_at, track }, userId: req.user.id }));
+  let minutes = null;
+  if (lat != null && o.lat != null) {
+    const d = km([lat, lng], [o.lat, o.lng]) * 1.3;
+    const speed = d > 25 ? 70 : d > 8 ? 50 : 35; // طريق سريع / بين المناطق / جوّا البلد
+    minutes = Math.max(3, Math.round((d / speed) * 60) + 2);
   }
-  await pushManagers({ title: `🚚 ${t.driver_name || "السائق"} طلع بالرحلة`, body: `${t.vehicle_name} · ${orders.length} زبون. تابعه على الخريطة.`, url: "/f/trips", tag: `ts-${t.id}` });
-  res.json({ ok: true, message_ids: ids });
+  const eta = minutes != null ? new Date(Date.now() + minutes * 60000) : o.eta_at ? new Date(o.eta_at) : null;
+  await query("UPDATE f_orders SET en_route_at = NULL WHERE trip_id = $1 AND id <> $2", [t.id, o.id]);
+  await query("UPDATE f_orders SET en_route_at = now(), eta_at = COALESCE($2, eta_at), updated_at = now() WHERE id = $1", [o.id, eta]);
+  const track = await ensureTrackToken(o.customer_id);
+  const msg = await queueMessage({
+    customerId: o.customer_id, orderId: o.id, kind: "coming",
+    data: { driver: t.driver_name || "السائق", eta, minutes, order: o.id, track }, userId: req.user.id,
+  });
+  return { message_id: msg, eta_at: eta, minutes, order_id: o.id };
+}
+
+router.post("/driver/orders/:id/go", drive, async (req, res) => {
+  const o = (await loadOrders("o.id = $1", [req.params.id]))[0];
+  if (!o) return bad(res, "الطلب غير موجود.", 404);
+  const t = await myTrip(req, o.trip_id);
+  if (!t) return bad(res, "الطلب مش على رحلتك.", 403);
+  if (t.status !== "active") return bad(res, "ابدأ الرحلة أول.");
+  if (o.status !== "onway") return bad(res, "هالطلب خلص.");
+  res.json({ ok: true, ...(await goTo(o, t, req)) });
 });
 
 // موقع السائق كل دقيقة (والتطبيق مفتوح)
@@ -314,11 +333,10 @@ router.post("/driver/trips/:id/return", drive, async (req, res) => {
   if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
   const open = t.stops.filter((o) => ["assigned", "onway"].includes(o.status));
   if (open.length && !req.body?.force) return bad(res, `لسا في ${open.length} وقفات ما خلصت — سلّمها أو سجّلها «ما تم».`);
-  if (!t.odo_end || !t.photo_odo_end || !t.fuel_end || !t.photo_fuel_end) return bad(res, "صوّر العداد والديزل قبل ما تسكّر.");
   await query("UPDATE f_trips SET status = 'returned', returned_at = now(), required_cash = $1 WHERE id = $2", [t.cash_due, t.id]);
   // الكيلومترات بالعداد مقابل التتبع
-  const odoKm = t.odo_end - t.odo_start;
-  if (t.gps_km > 5 && odoKm > t.gps_km * 1.3 + 10) {
+  const odoKm = t.odo_end && t.odo_start ? t.odo_end - t.odo_start : 0;
+  if (odoKm && t.gps_km > 5 && odoKm > t.gps_km * 1.3 + 10) {
     await alert({ level: "warn", kind: "km_mismatch", ref: t.id, title: `الكيلومترات مش مطابقة — ${t.vehicle_name}`, body: `العداد ${odoKm} كم والتتبع ${Math.round(t.gps_km)} كم. يمكن السيارة مشيت والتلفون مسكّر.` });
   }
   await alert({ level: "info", kind: "returned", ref: t.id, title: `${t.vehicle_name} رجعت — ${t.driver_name || ""}`, body: `الكاش المطلوب ${t.cash_due.toFixed(2)} د.أ. بانتظار تسليم الكاش والمرتجع.` });
