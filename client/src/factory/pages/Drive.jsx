@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FiTruck, FiPhone, FiNavigation, FiAlertTriangle, FiPlus, FiMessageCircle, FiCheck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
+import { InvoiceSheet } from "./StopSheet.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
@@ -26,10 +27,16 @@ export default function Drive() {
     return () => { lock?.release?.().catch(() => {}); };
   }, [t?.status]);
 
+  const [inv, setInv] = useState(null);
   const done = (r) => {
     setSheet(null);
     reload();
     loadExps();
+    // بعد التسليم: الفاتورة PDF جاهزة تنبعت للزبون على واتساب
+    if (r?.invoice_token) {
+      setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id });
+      return;
+    }
     if (r?.message_ids?.length) setMsgs(r.message_ids);
     else if (r?.message_id) setMsgs([r.message_id]);
   };
@@ -98,6 +105,7 @@ export default function Drive() {
       {sheet?.kind === "expense" && <ExpenseSheet kinds={exps?.kinds || []} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "cash" && t && <CashSheet t={t} onClose={() => setSheet(null)} />}
       {msgs && <SendMessages ids={msgs} title="ابعت للزبون" onClose={() => setMsgs(null)} />}
+      {inv && <InvoiceSheet o={inv.o} title={`✓ انسلّم · ${inv.o.customer_name}`} onClose={() => setInv(null)} onSent={() => inv.msg && fapi.messageSent(inv.msg).catch(() => {})} />}
     </div>
   );
 }

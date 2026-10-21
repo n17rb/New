@@ -240,7 +240,7 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
     body: `${cartons} كرتونة · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
     url: "/f/trips", tag: `fd-${o.id}`,
   });
-  res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left });
+  res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left, order_id: o.id, invoice_token: token, customer_name: c.name, phone: c.phone });
 });
 
 router.post("/driver/orders/:id/fail", drive, async (req, res) => {

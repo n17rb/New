@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { FiMapPin, FiPhone, FiMessageCircle, FiFileText, FiCheckCircle, FiNavigation, FiPrinter } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { Invoice } from "../Track.jsx";
-import { Sheet, StatusPill, ORDER_STATUS, waLink, money, num, dateTime, Err, Loading } from "../ui.jsx";
+import { useFx, Sheet, StatusPill, ORDER_STATUS, waLink, money, num, dateTime, Err, Loading } from "../ui.jsx";
+import { shareInvoicePdf } from "../invoicePdf.js";
 
 export const deliveredCartons = (o) => o.items.reduce((s, i) => s + (i.delivered_qty ?? i.qty) + (i.delivered_bonus ?? i.bonus_qty ?? 0), 0);
 
@@ -98,21 +99,39 @@ function kmBetween(a, b) {
 }
 
 // نسخة الفاتورة عندك بالتطبيق (نفس اللي وصلت للزبون)، وزر يبعتها للزبون على واتساب
-export function InvoiceSheet({ o, onClose }) {
+export function InvoiceSheet({ o, onClose, onSent, title }) {
+  const fx = useFx();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
   useEffect(() => { fapi.invoice(o.invoice_token).then(setData).catch((e) => setErr(e.message)); }, [o.invoice_token]);
   const link = `${window.location.origin}/t/i/${o.invoice_token}`;
-  const text = `أهلاً ${o.customer_name}، هاي فاتورة طلبك رقم ${o.id}${data ? ` بقيمة ${money(data.invoice.total)} د.أ` : ""}:\n${link}`;
+  const text = `أهلاً ${o.customer_name}، هاي فاتورة طلبك رقم ${o.id}${data ? ` بقيمة ${money(data.invoice.total)} د.أ` : ""}.`;
+
+  async function sendPdf() {
+    setBusy(true);
+    try {
+      const r = await shareInvoicePdf(data, { text });
+      if (r === "downloaded") {
+        fx.toast("نزل ملف الفاتورة PDF — افتح محادثة الزبون بواتساب وارفقه");
+        if (o.phone) window.open(waLink(o.phone, text), "_blank");
+      }
+      if (r !== "cancelled") onSent?.();
+    } catch (e) { fx.toast(e.message || "ما زبط إنشاء الـPDF"); } finally { setBusy(false); }
+  }
+
   return (
-    <Sheet title={`فاتورة #${o.id}`} onClose={onClose}>
+    <Sheet title={title || `فاتورة #${o.id}`} onClose={onClose}>
       <Err msg={err} />
       {!data && !err && <Loading />}
       {data && (
         <div className="fx-stack">
+          <button className="fx-btn wa block fx-big fx-noprint" disabled={busy} onClick={sendPdf}>
+            <FiFileText /> {busy ? "عم بجهّز الفاتورة..." : "ابعت الفاتورة PDF على واتساب"}
+          </button>
           <div className="fx-invoice-in"><Invoice data={data} inApp /></div>
           <div className="fx-grid2 fx-noprint">
-            {o.phone ? <a className="fx-btn wa" href={waLink(o.phone, text)} target="_blank" rel="noreferrer"><FiMessageCircle /> ابعتها للزبون</a> : <span />}
+            {o.phone ? <a className="fx-btn" href={waLink(o.phone, `${text}\n${link}`)} target="_blank" rel="noreferrer" onClick={() => onSent?.()}><FiMessageCircle /> ابعت رابط</a> : <span />}
             <button className="fx-btn" onClick={() => window.print()}><FiPrinter /> اطبع</button>
           </div>
         </div>
