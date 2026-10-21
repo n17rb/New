@@ -257,7 +257,7 @@ export async function factoryWatch() {
     `SELECT o.id, o.eta_at, c.name, v.name AS vehicle, u.full_name AS driver
      FROM f_orders o JOIN f_customers c ON c.id = o.customer_id JOIN f_trips t ON t.id = o.trip_id
      JOIN f_vehicles v ON v.id = t.vehicle_id LEFT JOIN users u ON u.id = t.driver_id
-     WHERE o.status = 'onway' AND t.status = 'active' AND o.eta_at < now() - interval '30 minutes'`
+     WHERE o.status = 'onway' AND o.en_route_at IS NOT NULL AND t.status = 'active' AND o.eta_at < now() - interval '30 minutes'`
   )).rows;
   for (const o of late) {
     const mins = Math.round((Date.now() - new Date(o.eta_at).getTime()) / 60000);

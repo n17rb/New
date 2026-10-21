@@ -973,3 +973,6 @@ CREATE TABLE IF NOT EXISTS f_recurring (
 );
 CREATE INDEX IF NOT EXISTS idx_f_recurring_next ON f_recurring(next_date) WHERE active;
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS recurring_id INTEGER REFERENCES f_recurring(id) ON DELETE SET NULL;
+
+-- السائق «انطلق لعند الزبون»: من هون بنحسب وقت الوصول وبنبعتله رسالة
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS en_route_at TIMESTAMPTZ;

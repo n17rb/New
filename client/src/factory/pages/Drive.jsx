@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { FiTruck, FiPhone, FiNavigation, FiAlertTriangle, FiPlus, FiMessageCircle, FiCheck } from "react-icons/fi";
+import { FiTruck, FiPhone, FiNavigation, FiAlertTriangle, FiPlus, FiMessageCircle, FiCheck, FiPlay } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
+import TripsMap from "./TripsMap.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
@@ -14,10 +15,22 @@ export default function Drive() {
   const [exps, setExps] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [msgs, setMsgs] = useState(null);
+  const [inv, setInv] = useState(null);
+  const [me, setMe] = useState(null);
+  const [busy, setBusy] = useState(false);
   const t = data?.trip;
 
   const loadExps = useCallback(() => fapi.myExpenses().then(setExps).catch(() => {}), []);
   useEffect(() => { loadExps(); }, [loadExps]);
+
+  // مكاني على الخريطة (كل دقيقة)
+  useEffect(() => {
+    let on = true;
+    const tick = () => getLocation(8000).then((l) => on && l && setMe([l.lat, l.lng]));
+    tick();
+    const i = setInterval(tick, 60000);
+    return () => { on = false; clearInterval(i); };
+  }, []);
 
   // الشاشة بتضل شاغلة والرحلة شغالة (عشان التتبع)
   useEffect(() => {
@@ -27,12 +40,10 @@ export default function Drive() {
     return () => { lock?.release?.().catch(() => {}); };
   }, [t?.status]);
 
-  const [inv, setInv] = useState(null);
   const done = (r) => {
     setSheet(null);
     reload();
     loadExps();
-    // بعد التسليم: الفاتورة PDF جاهزة تنبعت للزبون على واتساب
     if (r?.invoice_token) {
       setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id });
       return;
@@ -41,157 +52,136 @@ export default function Drive() {
     else if (r?.message_id) setMsgs([r.message_id]);
   };
 
+  const stops = t?.stops || [];
+  const open = stops.filter((o) => ["assigned", "onway"].includes(o.status));
+  const current = t?.status === "active" ? open.find((o) => o.en_route_at) : null;
+  const next = current ? null : open[0];
+
+  async function act(fn, okMsg) {
+    setBusy(true);
+    try {
+      const loc = await getLocation(6000);
+      const r = await fn(loc || {});
+      if (okMsg) fx.toast(okMsg);
+      reload();
+      if (r?.message_id) setMsgs([r.message_id]);
+    } catch (e) { fx.toast(e.message); } finally { setBusy(false); }
+  }
+
+  const factory = fx.boot.factory?.point;
+  const mapLive = me && t ? { factory, vehicles: [{ id: t.vehicle_id, lat: me[0], lng: me[1], heading: null, minutes_ago: 0 }] } : null;
+
   return (
     <div className="fx-page">
       <PushCard who="driver" />
-      <div className="fx-card fx-row">
-        <span className="fx-avatar"><FiTruck /></span>
-        <span className="fx-grow" style={{ display: "grid" }}>
-          <b>{fx.user.full_name}</b>
-          <span className="fx-muted">{data?.vehicles?.map((v) => v.name).join("، ") || "ما إلك سيارة لسا"}</span>
-        </span>
-        <button className="fx-btn danger sm" onClick={() => setSheet({ kind: "problem" })}><FiAlertTriangle /> مشكلة</button>
-      </div>
-      <Tip id="drive">الرحلة ما بتبلش إلا بعد صورة العداد والديزل وتأكيد الحمولة. خلي التطبيق مفتوح بالطريق عشان الإدارة تشوف وين إنت.</Tip>
       <Err msg={error} />
       {!data && !error && <Loading />}
 
       {data && !t && (
-        <Empty icon={FiTruck} title="ما في رحلة إلك اليوم" text="لما مسؤول الحركة يوزعلك طلبات، بتطلع هون مع ترتيب الوقفات." />
+        <Empty icon={FiTruck} title="ما في رحلة إلك اليوم" text="لما يوزعولك طلبات بتطلع هون، وبيوصلك إشعار." />
       )}
 
-      {t && t.status === "planned" && <BeforeStart t={t} levels={data.fuel_levels} lastFuel={data.last_fuel} onDone={done} />}
-
-      {t && ["active", "returned"].includes(t.status) && (
+      {t && (
         <>
-          <div className="fx-row">
-            <button className="fx-btn pri fx-grow" data-hl="expense-btn" onClick={() => setSheet({ kind: "expense" })}><FiPlus /> مصروف</button>
-            <button className="fx-btn sky fx-grow" onClick={() => setSheet({ kind: "cash" })}>حسابي اليوم</button>
+          <div className="fx-drv-head">
+            <b>رحلتي اليوم</b>
+            <span>{stops.length} زبون · {num(t.load)} كرتونة · {t.vehicle_name}</span>
           </div>
-          <div className="fx-sec"><h2>وقفاتك ({t.done}/{t.stops.length})</h2><span className="fx-pill sky">{num(t.load)} كرتونة</span></div>
-          <div className="fx-stack" data-hl="stops">
-            {t.stops.map((o, i) => (
-              <StopCard key={o.id} o={o} n={i + 1} active={t.status === "active"} onDeliver={() => setSheet({ kind: "deliver", o })} onFail={() => setSheet({ kind: "fail", o })} />
-            ))}
-          </div>
-          {t.status === "active" && <EndTrip t={t} levels={data.fuel_levels} onDone={done} />}
-          {t.status === "returned" && (
-            <div className="fx-card soft fx-stack">
-              <b>رجعت للمصنع</b>
-              <span>سلّم للمحاسب <b className="fx-num">{money(t.cash_due)}</b> دينار، وأمين المستودع بيستلم الكراتين الراجعة.</span>
+
+          {/* الخطوة الجاية: زر وحدة كبير */}
+          {t.status === "planned" && (
+            <div className="fx-drv-step">
+              <span className="lbl">أول زبون</span>
+              <b className="nm">{stops[0]?.customer_name}</b>
+              <Act className="fx-btn pri block fx-huge" disabled={busy} onClick={() => act((loc) => fapi.driverStart(t.id, loc), "يلا! بلشت الرحلة")}>
+                <FiPlay /> ابدأ الرحلة
+              </Act>
+              <small className="fx-muted">أول ما تبلش بنحسب وقت وصولك للزبون الأول وبتبعتله رسالة.</small>
             </div>
           )}
-        </>
-      )}
 
-      {exps?.list?.filter((e) => e.created_at?.slice(0, 10) >= today().slice(0, 8) + "01").length > 0 && (
-        <>
-          <div className="fx-sec"><h2>مصاريفي هالشهر</h2></div>
-          <div className="fx-list">
-            {exps.list.slice(0, 8).map((e) => (
-              <div key={e.id} className="fx-item">
-                <span className="t"><b>{e.kind} · {money(e.amount)}</b><span>{new Date(e.created_at).toLocaleDateString("ar-JO-u-nu-latn")}</span></span>
-                <span className={`fx-pill ${e.status === "approved" ? "ok" : e.status === "rejected" ? "crit" : "warn"}`}>{e.status === "approved" ? "معتمد" : e.status === "rejected" ? "مرفوض" : "بانتظار الموافقة"}</span>
+          {current && (
+            <div className="fx-drv-step go">
+              <span className="lbl">🚚 رايح على</span>
+              <b className="nm">{current.customer_name}</b>
+              <span className="sub">{[current.city, current.address].filter(Boolean).join(" · ")}</span>
+              {current.eta_at && <span className="eta">بتوصل حوالي <b>{time(current.eta_at)}</b></span>}
+              <span className="sub">{current.items.map((i) => `${num(i.qty)} ${i.name}`).join("، ")}</span>
+              <div className="fx-grid2">
+                <a className="fx-btn sky" href={navUrl(current)} target="_blank" rel="noreferrer"><FiNavigation /> الطريق</a>
+                {current.phone ? <a className="fx-btn" href={`tel:${current.phone}`}><FiPhone /> اتصل</a> : <span />}
               </div>
-            ))}
+              <button className="fx-btn ok block fx-huge" onClick={() => setSheet({ kind: "deliver", o: current })}><FiCheck /> وصلت — تم التسليم</button>
+              <button className="fx-link" onClick={() => setSheet({ kind: "fail", o: current })}>ما زبط التسليم؟</button>
+            </div>
+          )}
+
+          {t.status === "active" && next && (
+            <div className="fx-drv-step">
+              <span className="lbl">الزبون {stops.findIndex((o) => o.id === next.id) + 1} من {stops.length}</span>
+              <b className="nm">{next.customer_name}</b>
+              <span className="sub">{[next.city, next.address].filter(Boolean).join(" · ")} · {num(next.cartons)} كرتونة</span>
+              <Act className="fx-btn pri block fx-huge" disabled={busy} onClick={() => act((loc) => fapi.driverGo(next.id, loc), "انحسب وقت وصولك")}>
+                <FiNavigation /> انطلق لعنده
+              </Act>
+              <small className="fx-muted">بنحسب وقت وصولك من مكانك هلأ وبتبعتله رسالة.</small>
+            </div>
+          )}
+
+          {t.status === "active" && open.length === 0 && (
+            <div className="fx-drv-step">
+              <b className="nm">خلصت كل الزباين 👏</b>
+              <Act className="fx-btn pri block fx-huge" onClick={async () => { const r = await fapi.driverReturn(t.id, {}); fx.toast(`سلّم ${money(r.required_cash)} دينار للمحاسب`); reload(); }}>
+                🏁 رجعت للمصنع
+              </Act>
+            </div>
+          )}
+
+          {t.status === "returned" && (
+            <div className="fx-drv-step">
+              <b className="nm">رجعت للمصنع ✓</b>
+              <span className="sub">سلّم للمحاسب <b className="fx-num">{money(t.cash_due)}</b> دينار، والكراتين الراجعة للمستودع.</span>
+            </div>
+          )}
+
+          {["planned", "active"].includes(t.status) && <TripsMap trips={[t]} live={mapLive} factory={factory} selected={null} onSelect={() => {}} height="34vh" />}
+
+          <div className="fx-sec"><h2>زباينك بالترتيب</h2><span className="fx-muted" style={{ fontSize: 13 }}>{t.done}/{stops.length}</span></div>
+          <div className="fx-drv-list">
+            {stops.map((o, i) => {
+              const isCur = current?.id === o.id;
+              return (
+                <div key={o.id} className={`r ${isCur ? "cur" : ""} ${["delivered", "failed"].includes(o.status) ? "done" : ""}`}>
+                  <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{o.status === "delivered" ? "✓" : o.status === "failed" ? "✗" : i + 1}</span>
+                  <span className="t"><b>{o.customer_name}</b><small>{o.city} · {num(o.cartons)} كرتونة</small></span>
+                  <small className="tm">{o.status === "delivered" ? `سلّمت ${time(o.delivered_at)}` : o.status === "failed" ? "ما تم" : isCur && o.eta_at ? time(o.eta_at) : ""}</small>
+                </div>
+              );
+            })}
           </div>
+
+          {["active", "returned"].includes(t.status) && (
+            <div className="fx-grid2">
+              <button className="fx-btn" data-hl="expense-btn" onClick={() => setSheet({ kind: "expense" })}><FiPlus /> مصروف</button>
+              <button className="fx-btn" onClick={() => setSheet({ kind: "cash" })}>حسابي اليوم</button>
+            </div>
+          )}
+          <button className="fx-link" style={{ justifySelf: "start", color: "var(--fx-crit)" }} onClick={() => setSheet({ kind: "problem" })}><FiAlertTriangle /> صار معي مشكلة (عطل، حادث…)</button>
         </>
       )}
-      {data && <p className="fx-muted" style={{ margin: 0 }}>عُهد عليك: {money(data.custody)} د.أ</p>}
 
       {sheet?.kind === "deliver" && <DeliverSheet o={sheet.o} canCredit={data.can_credit} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "fail" && <FailSheet o={sheet.o} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "problem" && <ProblemSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "expense" && <ExpenseSheet kinds={exps?.kinds || []} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "cash" && t && <CashSheet t={t} onClose={() => setSheet(null)} />}
-      {msgs && <SendMessages ids={msgs} title="ابعت للزبون" onClose={() => setMsgs(null)} />}
+      {msgs && <SendMessages ids={msgs} title="ابعت للزبون وقت وصولك" onClose={() => setMsgs(null)} />}
       {inv && <InvoiceSheet o={inv.o} title={`✓ انسلّم · ${inv.o.customer_name}`} onClose={() => setInv(null)} onSent={() => inv.msg && fapi.messageSent(inv.msg).catch(() => {})} />}
     </div>
   );
 }
 
-function BeforeStart({ t, levels, lastFuel, onDone }) {
-  const fx = useFx();
-  const [odo, setOdo] = useState(t.odo_start || "");
-  const [odoPhoto, setOdoPhoto] = useState(t.photo_odo_start || null);
-  const [fuel, setFuel] = useState(t.fuel_start || "");
-  const [fuelPhoto, setFuelPhoto] = useState(t.photo_fuel_start || null);
-  const [err, setErr] = useState("");
-  const loaded = !!t.load_confirmed_at;
-  const per = new Map();
-  t.stops.forEach((o) => o.items.forEach((i) => per.set(i.name, (per.get(i.name) || 0) + i.qty)));
-
-  async function start() {
-    setErr("");
-    try {
-      if (!t.photo_odo_start || Number(odo) !== t.odo_start) await fapi.driverCheck(t.id, { kind: "odo_start", value: odo, photo_url: odoPhoto });
-      if (!t.photo_fuel_start || fuel !== t.fuel_start) await fapi.driverCheck(t.id, { kind: "fuel_start", value: fuel, photo_url: fuelPhoto });
-      const r = await fapi.driverStart(t.id);
-      fx.toast("بلشت الرحلة. الزباين بيعرفوا إنك بالطريق.");
-      onDone(r);
-    } catch (e) {
-      setErr(e.message);
-    }
-  }
-
-  return (
-    <section className="fx-card fx-stack">
-      <h2 style={{ margin: 0, fontSize: 16 }}>قبل ما تطلع</h2>
-      <p className="fx-muted" style={{ margin: 0 }}>الصور من الكاميرا مباشرة، ومعها الوقت والموقع.</p>
-      <PhotoInput label="صوّر عداد الكيلومترات" value={odoPhoto} onChange={setOdoPhoto} kind="odo" />
-      <label className="fx-field">رقم العداد<input className="fx-input" type="number" inputMode="numeric" value={odo} onChange={(e) => setOdo(e.target.value)} placeholder="مثلًا 45210" /></label>
-      <PhotoInput label="صوّر مؤشر الديزل" value={fuelPhoto} onChange={setFuelPhoto} kind="fuel" />
-      <div className="fx-field">الديزل هلأ
-        <div className="fx-chips">{levels.map((l) => <button key={l} className={`fx-chip ${fuel === l ? "on" : ""}`} onClick={() => setFuel(l)}>{l}</button>)}</div>
-        {lastFuel?.fuel_end && <small className="fx-muted">آخر مرة رجعت السيارة كان «{lastFuel.fuel_end}».</small>}
-      </div>
-      <div className="fx-step on" style={{ cursor: "default" }}>
-        <span className="fx-check" style={loaded ? undefined : { background: "none", borderColor: "var(--fx-line)" }}>{loaded && <FiCheck />}</span>
-        <span className="t">
-          <b>الحمولة: {num(t.load)} كرتونة</b>
-          <small style={{ color: loaded ? "var(--fx-ok)" : "var(--fx-muted)" }}>{[...per].map(([n, q]) => `${num(q)} ${n}`).join("، ")}{loaded ? " · متأكدة" : ""}</small>
-        </span>
-      </div>
-      {!loaded && <Act className="fx-btn sky" onClick={async () => { await fapi.driverConfirmLoad(t.id); fx.toast("تأكدت الحمولة"); onDone(); }}>عدّيت الكراتين — أكّد الحمولة</Act>}
-      <Err msg={err} />
-      <Act className="fx-btn pri block" disabled={!odoPhoto || !odo || !fuel || !fuelPhoto || !loaded} onClick={start}>ابدأ الرحلة</Act>
-    </section>
-  );
-}
-
-function StopCard({ o, n, active, onDeliver, onFail }) {
-  const dest = o.lat ? `${o.lat},${o.lng}` : encodeURIComponent(`${o.city || ""} الأردن`);
-  const [big, setBig] = useState(false);
-  const closed = ["delivered", "failed"].includes(o.status);
-  return (
-    <div className="fx-card fx-stack" style={closed ? { background: "var(--fx-surface-2)" } : undefined}>
-      <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-        <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{n}</span>
-        <span className="fx-grow" style={{ display: "grid" }}>
-          <b>{o.seq_no ? <span className="fx-seq">#{o.seq_no}</span> : null}{o.customer_name}</b>
-          <span className="fx-muted">{o.city}{o.address ? ` · ${o.address}` : ""}</span>
-          <span className="fx-muted">{o.items.map((i) => `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}`).join("، ")}{o.eta_at && !closed ? ` · يوصل ${time(o.eta_at)}` : ""}</span>
-        </span>
-      </div>
-      {o.photo_url && !closed && (
-        <button className="fx-building-btn" onClick={() => setBig(!big)} aria-label="صورة المحل">
-          <img className={`fx-building ${big ? "" : "small"}`} src={o.photo_url} alt={`صورة محل ${o.customer_name}`} loading="lazy" />
-        </button>
-      )}
-      {o.status === "delivered" && <div className="fx-note ok">سلّمت · قيمة الفاتورة {money(o.delivered_total)} · كاش {money(o.cash_paid)}</div>}
-      {o.status === "failed" && <div className="fx-note crit">ما تسلّم: {o.fail_reason}</div>}
-      {!closed && (
-        <div className="fx-row">
-          {active && <button className="fx-btn pri fx-grow" onClick={onDeliver}>تسليم</button>}
-          {active && <button className="fx-btn" onClick={onFail}>ما تم</button>}
-          <a className="fx-btn sky sm" href={`https://www.google.com/maps/dir/?api=1&destination=${dest}`} target="_blank" rel="noreferrer" aria-label="الطريق"><FiNavigation /></a>
-          {o.phone && <a className="fx-btn sm" href={`tel:${o.phone}`} aria-label="اتصال"><FiPhone /></a>}
-          {o.phone && <a className="fx-btn wa sm" href={waLink(o.phone, "")} target="_blank" rel="noreferrer" aria-label="واتساب"><FiMessageCircle /></a>}
-        </div>
-      )}
-    </div>
-  );
-}
+const navUrl = (o) => `https://www.google.com/maps/dir/?api=1&destination=${o.lat ? `${o.lat},${o.lng}` : encodeURIComponent(`${o.city || ""} الأردن`)}`;
 
 function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const fx = useFx();
@@ -428,30 +418,3 @@ function CashSheet({ t, onClose }) {
   );
 }
 
-function EndTrip({ t, levels, onDone }) {
-  const fx = useFx();
-  const left = t.stops.filter((o) => ["assigned", "onway"].includes(o.status)).length;
-  const [odo, setOdo] = useState("");
-  const [odoPhoto, setOdoPhoto] = useState(null);
-  const [fuel, setFuel] = useState("");
-  const [fuelPhoto, setFuelPhoto] = useState(null);
-  const [open, setOpen] = useState(false);
-  if (left > 0 && !open) return null;
-  return (
-    <section className="fx-card fx-stack">
-      <h2 style={{ margin: 0, fontSize: 16 }}>رجعت للمصنع؟</h2>
-      {left > 0 && <div className="fx-note warn">لسا في {left} وقفات. إذا ما رح تكملها، سجّلها «ما تم» أول.</div>}
-      <PhotoInput label="صوّر العداد" value={odoPhoto} onChange={setOdoPhoto} kind="odo" />
-      <label className="fx-field">رقم العداد<input className="fx-input" type="number" inputMode="numeric" value={odo} onChange={(e) => setOdo(e.target.value)} placeholder={t.odo_start ? `أكبر من ${t.odo_start}` : ""} /></label>
-      <PhotoInput label="صوّر مؤشر الديزل" value={fuelPhoto} onChange={setFuelPhoto} kind="fuel" />
-      <div className="fx-chips">{levels.map((l) => <button key={l} className={`fx-chip ${fuel === l ? "on" : ""}`} onClick={() => setFuel(l)}>{l}</button>)}</div>
-      <Act className="fx-btn pri block" disabled={!odo || !odoPhoto || !fuel || !fuelPhoto || left > 0} onClick={async () => {
-        await fapi.driverCheck(t.id, { kind: "odo_end", value: odo, photo_url: odoPhoto });
-        await fapi.driverCheck(t.id, { kind: "fuel_end", value: fuel, photo_url: fuelPhoto });
-        const r = await fapi.driverReturn(t.id, {});
-        fx.toast(`سكّرت الرحلة. سلّم ${money(r.required_cash)} دينار للمحاسب.`);
-        onDone();
-      }}>سكّر الرحلة</Act>
-    </section>
-  );
-}
