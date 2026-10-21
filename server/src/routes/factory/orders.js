@@ -211,6 +211,24 @@ router.post("/orders/:id/cancel", editOrders, async (req, res) => {
   res.json({ ok: true, returns: loaded });
 });
 
+// ---------- الفواتير: نسخة الإدارة من كل فاتورة انبعتت للزبون، ومين سلّمها ----------
+router.get("/invoices", needAny(["f_orders"], ["f_dispatch"], ["f_money"], ["f_home"]), async (req, res) => {
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+  const params = [days];
+  let where = "o.status = 'delivered' AND o.delivered_at > now() - ($1 || ' days')::interval";
+  if (req.query.q) { params.push(`%${String(req.query.q).trim()}%`); where += ` AND (c.name ILIKE $2 OR u.full_name ILIKE $2 OR o.id::text = TRIM(LEADING '#' FROM $3))`; params.push(String(req.query.q).trim()); }
+  const r = await query(
+    `SELECT o.id, o.customer_id, o.invoice_token, o.delivered_at, o.delivered_total, o.cash_paid, c.name AS customer_name, c.phone, c.city,
+            u.full_name AS driver_name, v.name AS vehicle_name,
+            (SELECT SUM(COALESCE(i.delivered_qty, i.qty) + COALESCE(i.delivered_bonus, 0))::int FROM f_order_items i WHERE i.order_id = o.id) AS cartons
+     FROM f_orders o JOIN f_customers c ON c.id = o.customer_id
+     LEFT JOIN f_trips t ON t.id = o.trip_id LEFT JOIN users u ON u.id = t.driver_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id
+     WHERE ${where} ORDER BY o.delivered_at DESC LIMIT 300`,
+    params
+  );
+  res.json(r.rows.map((x) => ({ ...x, delivered_total: Number(x.delivered_total), cash_paid: Number(x.cash_paid) })));
+});
+
 // طلب ما تسلّم أو تأجل: بيرجع للطلبات الجديدة عشان ينحط برحلة ثانية
 router.post("/orders/:id/reopen", dispatch, async (req, res) => {
   const due = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.due_date || "") ? req.body.due_date : jordanDate();

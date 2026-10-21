@@ -86,7 +86,7 @@ function Orders({ data }) {
   );
 }
 
-function Invoice({ data }) {
+export function Invoice({ data, inApp = false }) {
   const { brand, invoice: inv, items } = data;
   return (
     <div className="fx-public">
@@ -94,7 +94,8 @@ function Invoice({ data }) {
       <div className="fx-card fx-stack">
         <div className="fx-row" style={{ justifyContent: "space-between" }}><b>فاتورة رقم {inv.id}</b><span className="fx-muted">{d(inv.delivered_at)} {t(inv.delivered_at)}</span></div>
         <div className="fx-kv"><span>الزبون</span><b>{inv.customer_name}</b></div>
-        {inv.driver_name && <div className="fx-kv"><span>السائق</span><b>{inv.driver_name} · {inv.vehicle_name}</b></div>}
+        {inv.driver_name && <div className="fx-kv"><span>سلّمها</span><b>{inv.driver_name} · {inv.vehicle_name}</b></div>}
+        <div className="fx-kv"><span>وقت التسليم</span><b>{d(inv.delivered_at)} {t(inv.delivered_at)}</b></div>
       </div>
       <div className="fx-table">
         <table>
@@ -116,7 +117,7 @@ function Invoice({ data }) {
         {inv.balance_after != null && <div className="fx-kv"><span>رصيد حسابك الكلي</span><b>{money(inv.balance_after)}</b></div>}
       </div>
       {inv.signature && <div className="fx-card"><span className="fx-muted">توقيع المستلم</span><img src={inv.signature} alt="التوقيع" style={{ width: "100%", maxHeight: 120, objectFit: "contain" }} /></div>}
-      {inv.track_token && <a className="fx-btn sky block fx-noprint" href={`/t/${inv.track_token}`}>كل طلباتي وكشف حسابي</a>}
+      {inv.track_token && !inApp && <a className="fx-btn sky block fx-noprint" href={`/t/${inv.track_token}`}>كل طلباتي وكشف حسابي</a>}
       <p className="fx-muted" style={{ textAlign: "center", margin: 0 }}>{brand.name}{brand.phone ? ` · ${brand.phone}` : ""}</p>
     </div>
   );

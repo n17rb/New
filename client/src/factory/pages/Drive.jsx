@@ -191,7 +191,11 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const [dmg, setDmg] = useState({});
   const [bon, setBon] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.bonus_qty || 0])));
   const [showDmg, setShowDmg] = useState(false);
-  const total = o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0);
+  const [added, setAdded] = useState({}); // منتجات زيادة أخذها الزبون من السيارة
+  const [showAdd, setShowAdd] = useState(false);
+  const extraProducts = fx.boot.products.filter((p) => p.active && !o.items.some((i) => i.product_id === p.id));
+  const total = o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
+    + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * (fx.boot.products.find((p) => p.id === Number(pid))?.price || 0), 0);
   const [cash, setCash] = useState(() => (o.pay_terms === "credit" ? "" : String(Math.round(total * 100) / 100)));
   const [sig, setSig] = useState(null);
   const [photo, setPhoto] = useState(null);
@@ -207,6 +211,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
     try {
       const r = await fapi.deliver(o.id, {
         items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
+        add_items: Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
         cash: cashN, signature: sig, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
       });
       fx.toast(r.remaining_stops ? `انسجل التسليم. باقي ${r.remaining_stops} وقفات.` : "انسجل التسليم. خلصت كل الوقفات!");
@@ -220,19 +225,21 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   return (
     <Sheet title={`تسليم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
-        <div className="fx-note sky">الزبون بدّه أقل؟ نزّل العدد هون. الفاتورة بتنحسب على اللي سلّمته، والباقي بيرجع معك للمستودع.</div>
+        <div className="fx-note sky">سلّم حسب اللي أخذه الزبون: نزّل أو زيد العدد. الفاتورة بتنحسب على اللي سلّمته.</div>
         {o.items.map((i) => {
           const got = Number(qty[i.id]);
           const back = Number.isFinite(got) && got < i.qty ? i.qty - got : 0;
+          const more = Number.isFinite(got) && got > i.qty ? got - i.qty : 0;
           return (
           <label key={i.id} className="fx-field">
             <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} />{i.name} <span className="fx-muted">(المطلوب {num(i.qty)})</span></span>
             <div className="fx-stepper big">
               <button type="button" dir="ltr" onClick={() => setQty({ ...qty, [i.id]: Math.max(0, (Number(qty[i.id]) || 0) - 1) })} aria-label="ناقص">−</button>
-              <input className="fx-input" type="number" inputMode="numeric" min="0" max={i.qty} value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} aria-label={`سلّم من ${i.name}`} />
-              <button type="button" dir="ltr" disabled={(Number(qty[i.id]) || 0) >= i.qty} onClick={() => setQty({ ...qty, [i.id]: Math.min(i.qty, (Number(qty[i.id]) || 0) + 1) })} aria-label="زايد">+</button>
+              <input className="fx-input" type="number" inputMode="numeric" min="0" value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} aria-label={`سلّم من ${i.name}`} />
+              <button type="button" dir="ltr" onClick={() => setQty({ ...qty, [i.id]: (Number(qty[i.id]) || 0) + 1 })} aria-label="زايد">+</button>
             </div>
             {back > 0 && <small style={{ color: "#b06a00", fontWeight: 600 }}>سلّمت {num(got)} بدل {num(i.qty)} · بيرجع معك {num(back)} كرتونة</small>}
+            {more > 0 && <small style={{ color: "var(--fx-navy)", fontWeight: 600 }}>أخذ {num(more)} زيادة من اللي معك بالسيارة</small>}
             {i.bonus_qty > 0 && (
               <span className="fx-bonus" style={{ marginTop: 6 }}>
                 + بونص ببلاش
@@ -243,6 +250,27 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
           </label>
           );
         })}
+        {Object.keys(added).map((pid) => {
+          const p = fx.boot.products.find((x) => x.id === Number(pid));
+          const q = Number(added[pid]) || 0;
+          return (
+            <div key={pid} className="fx-field">
+              <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={p} size={36} />{p?.name} <span className="fx-muted">(زيادة)</span></span>
+              <div className="fx-stepper big">
+                <button type="button" dir="ltr" onClick={() => setAdded((a) => { const n = { ...a, [pid]: Math.max(0, q - 1) }; if (!n[pid]) delete n[pid]; return n; })} aria-label="ناقص">−</button>
+                <input className="fx-input" type="number" inputMode="numeric" min="0" value={added[pid]} onChange={(e) => setAdded({ ...added, [pid]: e.target.value })} aria-label={`زيادة ${p?.name}`} />
+                <button type="button" dir="ltr" onClick={() => setAdded({ ...added, [pid]: q + 1 })} aria-label="زايد">+</button>
+              </div>
+            </div>
+          );
+        })}
+        {extraProducts.length > 0 && (!showAdd ? (
+          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowAdd(true)}>+ أخذ منتج ثاني من السيارة؟</button>
+        ) : (
+          <div className="fx-chips">
+            {extraProducts.filter((p) => !(String(p.id) in added)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setAdded({ ...added, [p.id]: 1 }); setShowAdd(false); }}>{p.name}</button>)}
+          </div>
+        ))}
         {!showDmg ? (
           <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowDmg(true)}>في كراتين تالفة؟</button>
         ) : (

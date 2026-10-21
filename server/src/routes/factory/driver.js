@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km } from "../../utils/factoryGeo.js";
-import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers } from "./lib.js";
+import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor } from "./lib.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 
 // ============================================================
@@ -156,11 +156,23 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
     const dmg = Math.max(0, Math.round(Number(x.damaged_qty) || 0));
     const bonus = it.bonus_qty || 0;
     const db = x.delivered_bonus == null ? bonus : Math.round(Number(x.delivered_bonus));
-    if (!(dq >= 0) || dq > it.qty) return bad(res, `كمية ${it.name} غير صحيحة.`);
+    // الزبون ممكن ياخذ أقل أو أكثر من المطلوب (الزيادة من اللي على السيارة)
+    if (!(dq >= 0) || dq > 100000) return bad(res, `كمية ${it.name} غير صحيحة.`);
     if (!(db >= 0) || db > bonus) return bad(res, `بونص ${it.name} غير صحيح.`);
-    if (dmg > it.qty + bonus - dq - db) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
+    if (dmg > Math.max(0, it.qty + bonus - dq - db)) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
     total += dq * it.price; // البونص ببلاش: ما بينحسب بالفاتورة
     lines.push({ ...it, dq, dmg, db });
+  }
+  // منتج ما كان بالطلب وأخذه الزبون من السيارة
+  const added = [];
+  for (const x of Array.isArray(b.add_items) ? b.add_items : []) {
+    const q = Math.round(Number(x.qty));
+    if (!x.product_id || !(q > 0) || q > 100000) continue;
+    const p = (await query("SELECT id, name FROM f_products WHERE id = $1 AND active", [x.product_id])).rows[0];
+    if (!p) continue;
+    const price = await priceFor(o.customer_id, p.id);
+    total += q * price;
+    added.push({ product_id: p.id, name: p.name, qty: q, price });
   }
   total = round2(total);
   const cash = round2(b.cash);
@@ -181,6 +193,9 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   let balance;
   try {
     await client.query("BEGIN");
+    for (const a of added) {
+      await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, delivered_qty, bonus_qty, delivered_bonus) VALUES ($1,$2,$3,$4,$3,0,0)", [o.id, a.product_id, a.qty, a.price]);
+    }
     for (const l of lines) {
       await client.query("UPDATE f_order_items SET delivered_qty = $1, damaged_qty = $2, delivered_bonus = $3 WHERE id = $4", [l.dq, l.dmg, l.db, l.id]);
       if (l.dmg > 0) {
@@ -215,11 +230,11 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
     customerId: c.id, orderId: o.id, kind: "delivered",
-    data: { order: o.id, items: itemsText(lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db }))), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
+    data: { order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name }))]), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });
-  const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0);
+  const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0) + added.reduce((a, x) => a + x.qty, 0);
   await pushManagers({
     title: `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
     body: `${cartons} كرتونة · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
