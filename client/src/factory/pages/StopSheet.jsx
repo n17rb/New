@@ -135,16 +135,18 @@ export function InvoiceSheet({ o, onClose, onSent, title }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { fapi.invoice(o.invoice_token).then(setData).catch((e) => setErr(e.message)); }, [o.invoice_token]);
   const link = `${window.location.origin}/t/i/${o.invoice_token}`;
-  const text = `أهلاً ${o.customer_name}، هاي فاتورة طلبك رقم ${o.id}${data ? ` بقيمة ${money(data.invoice.total)} د.أ` : ""}.`;
   const phone = o.phone || data?.invoice?.phone;
 
   async function sendPdf() {
     setBusy(true);
+    const msg = invoiceSummary(data, link);
+    // نسخة من الرسالة على الحافظة: إذا واتساب ما حط النص مع الملف، بيلصقه
+    try { await navigator.clipboard?.writeText(msg); } catch { /* مش مشكلة */ }
     try {
-      const r = await shareInvoicePdf(data, { text });
+      const r = await shareInvoicePdf(data, { text: msg });
       if (r === "downloaded") {
         fx.toast("نزل ملف الفاتورة PDF — افتح محادثة الزبون بواتساب وارفقه");
-        if (o.phone) window.open(waLink(o.phone, text), "_blank");
+        if (phone) window.open(waLink(phone, msg), "_blank");
       }
       if (r !== "cancelled") onSent?.();
     } catch (e) { fx.toast(e.message || "ما زبط إنشاء الـPDF"); } finally { setBusy(false); }
@@ -156,14 +158,13 @@ export function InvoiceSheet({ o, onClose, onSent, title }) {
       {!data && !err && <Loading />}
       {data && (
         <div className="fx-stack">
-          {phone ? (
-            <a className="fx-btn wa block fx-big fx-noprint" href={waLink(phone, invoiceSummary(data, link))} target="_blank" rel="noreferrer" onClick={() => onSent?.()}>
-              <FiMessageCircle /> ابعت الفاتورة لواتساب {o.customer_name}
-            </a>
-          ) : <div className="fx-note warn">ما في رقم تلفون لهالزبون — ابعتها كملف.</div>}
+          <button className="fx-btn wa block fx-big fx-noprint" disabled={busy} onClick={sendPdf}>
+            <FiFileText /> {busy ? "عم بجهّز الفاتورة…" : "ابعت الفاتورة PDF + الرابط للزبون"}
+          </button>
+          <small className="fx-muted fx-noprint" style={{ textAlign: "center" }}>بيفتح واتساب: اختار {o.customer_name} وابعت. الرسالة والرابط مع الملف (وكمان منسوخين لو بدك تلصقهم).</small>
           <div className="fx-invoice-in"><Invoice data={data} inApp /></div>
           <div className="fx-grid2 fx-noprint">
-            <button className="fx-btn" disabled={busy} onClick={sendPdf}><FiFileText /> {busy ? "بجهّز…" : "ابعت كملف PDF"}</button>
+            {phone ? <a className="fx-btn" href={waLink(phone, invoiceSummary(data, link))} target="_blank" rel="noreferrer" onClick={() => onSent?.()}><FiMessageCircle /> رسالة لرقمه بس</a> : <span />}
             <button className="fx-btn" onClick={() => window.print()}><FiPrinter /> اطبع</button>
           </div>
         </div>
