@@ -188,7 +188,7 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
         {d.trips.flatMap((t) => t.invoices).map((o) => (
           <article key={o.id} className="fx-jard-inv">
             <div className="hd">
-              <span className="t"><b>{o.customer_name}</b><small>#{o.id} · {time(o.delivered_at)}{o.city ? ` · ${o.city}` : ""}{o.sale ? " · بيع مندوب" : ""}</small></span>
+              <span className="t"><b>{o.customer_name}{o.edited_at ? <small className="fx-edited"> ✏️ معدّلة</small> : null}</b><small>#{o.id} · {time(o.delivered_at)}{o.city ? ` · ${o.city}` : ""}{o.sale ? " · بيع مندوب" : ""}</small></span>
               <button className="fx-btn sm fx-noprint" onClick={() => onInvoice({ id: o.id, invoice_token: o.invoice_token, customer_name: o.customer_name, phone: o.phone })}>الفاتورة</button>
             </div>
             <div className="lines">

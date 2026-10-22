@@ -6,7 +6,7 @@ function getToken() {
 }
 
 // نسخة محفوظة من آخر رد لكل صفحة مهمة — بتظهر فورًا وبعدين بتتحدّث (التطبيق بيفتح أسرع)
-const CACHEABLE = [/^\/dashboard$/, /^\/cash\/current$/, /^\/cash\/insights$/, /^\/forecast$/, /^\/customers(\?|$)/, /^\/orders(\?|$)/, /^\/trips\/mine$/, /^\/swot$/];
+const CACHEABLE = [/^\/factory\/driver\/today$/, /^\/dashboard$/, /^\/cash\/current$/, /^\/cash\/insights$/, /^\/forecast$/, /^\/customers(\?|$)/, /^\/orders(\?|$)/, /^\/trips\/mine$/, /^\/swot$/];
 const memCache = new Map();
 function cacheKey(path) {
   try {
@@ -66,8 +66,10 @@ export async function request(path, { method = "GET", body, isFormData = false, 
       await new Promise((r) => setTimeout(r, 1200));
       return request(path, { method, body, isFormData, timeout }, 1);
     }
-    if (err?.name === "AbortError") throw new Error("السيرفر بطيء هلّأ — جرّب كمان شوي.");
-    throw new Error("ما في اتصال بالسيرفر — تأكد من الإنترنت وجرّب كمان مرة.");
+    // offline = ما وصلنا للسيرفر (أو ما رد) — العملية بتنحفظ على التلفون وبتنبعت بعدين
+    const e = new Error(err?.name === "AbortError" ? "السيرفر بطيء هلّأ — جرّب كمان شوي." : "ما في اتصال بالسيرفر — تأكد من الإنترنت وجرّب كمان مرة.");
+    e.offline = true;
+    throw e;
   }
   clearTimeout(timer);
 
@@ -89,6 +91,7 @@ export async function request(path, { method = "GET", body, isFormData = false, 
     }
     const e = new Error(data?.error || "حدث خطأ غير متوقع.");
     e.status = res.status;
+    if ([502, 503, 504].includes(res.status)) e.offline = true; // السيرفر عم يصحى
     e.data = data;
     throw e;
   }

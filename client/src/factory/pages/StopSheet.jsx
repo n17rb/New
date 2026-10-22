@@ -131,7 +131,10 @@ export function InvoiceSheet({ o, onClose, onSent, title }) {
   const fx = useFx();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
-  useEffect(() => { fapi.invoice(o.invoice_token).then(setData).catch((e) => setErr(e.message)); }, [o.invoice_token]);
+  const [fixing, setFixing] = useState(false);
+  const [ver, setVer] = useState(0);
+  const canFix = fx.can("f_money", "edit") || fx.can("f_orders", "edit");
+  useEffect(() => { fapi.invoice(o.invoice_token).then(setData).catch((e) => setErr(e.message)); }, [o.invoice_token, ver]);
   const link = `${window.location.origin}/t/i/${o.invoice_token}`;
   const phone = o.phone || data?.invoice?.phone;
 
@@ -147,7 +150,84 @@ export function InvoiceSheet({ o, onClose, onSent, title }) {
             </a>
           ) : <div className="fx-note warn fx-noprint">ما في رقم تلفون لهالزبون — ضيفه من «العملاء».</div>}
           <div className="fx-invoice-in"><Invoice data={data} inApp /></div>
-          <button className="fx-btn block fx-noprint" onClick={() => window.print()}><FiPrinter /> اطبع</button>
+          <div className="fx-grid2 fx-noprint">
+            <button className="fx-btn" onClick={() => window.print()}><FiPrinter /> اطبع</button>
+            {canFix ? <button className="fx-btn" onClick={() => setFixing(true)}>✏️ صحّح الفاتورة</button> : <span />}
+          </div>
+          {fixing && <CorrectSheet id={o.id} onClose={() => setFixing(false)} onDone={() => { setFixing(false); setVer((v) => v + 1); }} />}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+// تصحيح فاتورة بعد التسليم: الكميات والكاش، مع السبب — وكل التعديلات القديمة ظاهرة
+export function CorrectSheet({ id, onClose, onDone }) {
+  const fx = useFx();
+  const [o, setO] = useState(null);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState({});
+  const [bn, setBn] = useState({});
+  const [cash, setCash] = useState("");
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    fapi.orderDetail(id).then((d) => {
+      setO(d);
+      setQ(Object.fromEntries(d.items.map((i) => [i.id, String(i.delivered_qty ?? i.qty)])));
+      setBn(Object.fromEntries(d.items.map((i) => [i.id, String(i.delivered_bonus ?? i.bonus_qty ?? 0)])));
+      setCash(String(d.cash_paid));
+    }).catch((e) => setErr(e.message));
+  }, [id]);
+  const total = o ? Math.round(o.items.reduce((a, i) => a + (Number(q[i.id]) || 0) * i.price, 0) * 100) / 100 : 0;
+  const REASONS = ["الزبون رجّع بضاعة", "الكمية انكتبت غلط", "الكاش انكتب غلط", "خصم للزبون"];
+  return (
+    <Sheet title={`تصحيح فاتورة #${id}`} onClose={onClose}>
+      <Err msg={err} />
+      {!o && !err && <Loading />}
+      {o && (
+        <div className="fx-stack">
+          <div className="fx-note sky">صحّح الأرقام الصح. حساب الزبون والجرد والمستودع بيتعدّلوا لحالهم، والتصحيح بيضل محفوظ باسمك.</div>
+          {o.items.map((i) => (
+            <div key={i.id} className="fx-field">
+              <b>{i.name} <span className="fx-muted">({money(i.price)} · كانت {num(i.delivered_qty ?? i.qty)})</span></b>
+              <div className="fx-grid2">
+                <label className="fx-field">الكمية<input className="fx-input fx-num" type="number" inputMode="numeric" value={q[i.id]} onChange={(e) => setQ({ ...q, [i.id]: e.target.value })} /></label>
+                <label className="fx-field">بونص<input className="fx-input fx-num" type="number" inputMode="numeric" value={bn[i.id]} onChange={(e) => setBn({ ...bn, [i.id]: e.target.value })} /></label>
+              </div>
+            </div>
+          ))}
+          <button className="fx-link" style={{ justifySelf: "start", color: "var(--fx-crit)" }} onClick={() => { setQ(Object.fromEntries(o.items.map((i) => [i.id, "0"]))); setBn(Object.fromEntries(o.items.map((i) => [i.id, "0"]))); setCash("0"); setReason("الزبون رجّع كل البضاعة"); }}>رجّع كل البضاعة (إلغاء الفاتورة)</button>
+          <div className="fx-card">
+            <div className="fx-kv"><span>المجموع كان</span><b>{money(o.delivered_total)}</b></div>
+            <div className="fx-kv total"><span>المجموع صار</span><b>{money(total)}</b></div>
+            <label className="fx-field" style={{ paddingTop: 8 }}>الكاش اللي انقبض فعلًا (كان {money(o.cash_paid)})
+              <input className="fx-input fx-num" type="number" inputMode="decimal" value={cash} onChange={(e) => setCash(e.target.value)} />
+            </label>
+          </div>
+          <div className="fx-sf">ليش؟
+            <div className="fx-chips">{REASONS.map((r) => <button key={r} type="button" className={`fx-chip ${reason === r ? "on" : ""}`} onClick={() => setReason(r)}>{r}</button>)}</div>
+            <input className="fx-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="اكتب السبب" />
+          </div>
+          <Act className="fx-btn pri block fx-big" disabled={!reason.trim()} onClick={async () => {
+            setErr("");
+            try {
+              await fapi.correctInvoice(id, {
+                reason,
+                cash: Number(cash) || 0,
+                items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(q[i.id]) || 0, delivered_bonus: Number(bn[i.id]) || 0 })),
+              });
+              fx.toast("انصحّحت الفاتورة ✓");
+              onDone();
+            } catch (e) { setErr(e.message); }
+          }}>احفظ التصحيح</Act>
+          {o.edits?.length > 0 && (
+            <div className="fx-card">
+              <h3 style={{ marginTop: 0 }}>تصحيحات قبل</h3>
+              {o.edits.map((e) => (
+                <div key={e.id} className="fx-kv"><span>{dateTime(e.created_at)} · {e.user_name} — {e.reason}</span><b>{money(e.before?.total)} ← {money(e.after?.total)}</b></div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Sheet>

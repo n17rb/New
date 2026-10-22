@@ -235,3 +235,39 @@ export function itemsText(items) {
 export function canSeeAllMoney(user) {
   return can(user, "f_money", "view") || can(user, "f_home", "view");
 }
+
+// ============================================================
+// «مرة وحدة بس»: التلفون بيبعت client_key مع كل عملية مهمة (تسليم، بيع، مصروف…)
+// إذا نفس العملية وصلت مرتين (كبستين، أو إعادة إرسال بعد انقطاع الشبكة) منرجّع نفس الرد بدون ما نسجّلها مرة ثانية
+// ============================================================
+export function once(handler) {
+  return async (req, res, next) => {
+    const raw = req.body?.client_key;
+    const key = raw ? String(raw).slice(0, 64) : null;
+    if (!key || !req.user?.id) return handler(req, res, next);
+    const got = await query(
+      "INSERT INTO f_idem (key, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING key",
+      [key, req.user.id]
+    );
+    if (!got.rows.length) {
+      const prev = (await query("SELECT status, response FROM f_idem WHERE key = $1 AND user_id = $2", [key, req.user.id])).rows[0];
+      if (prev?.response) return res.status(prev.status || 200).json({ ...prev.response, duplicate: true });
+      return res.status(409).json({ error: "العملية عم تنسجّل هلأ — استنى ثانية.", code: "IN_PROGRESS" });
+    }
+    const json = res.json.bind(res);
+    let saved = false;
+    res.json = (body) => {
+      saved = true;
+      const st = res.statusCode || 200;
+      if (st < 400) query("UPDATE f_idem SET status = $3, response = $4 WHERE key = $1 AND user_id = $2", [key, req.user.id, st, JSON.stringify(body ?? {})]).catch(() => {});
+      else query("DELETE FROM f_idem WHERE key = $1 AND user_id = $2", [key, req.user.id]).catch(() => {});
+      return json(body);
+    };
+    try {
+      return await handler(req, res, next);
+    } catch (e) {
+      if (!saved) await query("DELETE FROM f_idem WHERE key = $1 AND user_id = $2", [key, req.user.id]).catch(() => {});
+      throw e;
+    }
+  };
+}

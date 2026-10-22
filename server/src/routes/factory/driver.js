@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km, chainNearest } from "../../utils/factoryGeo.js";
-import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor } from "./lib.js";
+import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once } from "./lib.js";
 import { cleanCustomer, nextSeq } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 import { factoryPoint } from "./lib.js";
@@ -198,7 +198,7 @@ router.post("/driver/ping", drive, async (req, res) => {
 });
 
 // التسليم عند الزبون
-router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
+router.post("/driver/orders/:id/deliver", drive, once(async (req, res) => {
   const o = (await loadOrders("o.id = $1", [req.params.id]))[0];
   if (!o) return bad(res, "الطلب غير موجود.", 404);
   const t = o.trip_id ? await myTrip(req, o.trip_id) : null;
@@ -208,7 +208,7 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   else if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
   const b = req.body || {};
   return deliverOrder(req, res, o, t, b);
-});
+}));
 
 // تسجيل التسليم (للطلبات العادية، ولبيع المندوب على الطريق)
 async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
@@ -266,6 +266,12 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   let balance;
   try {
     await client.query("BEGIN");
+    // قفل على الطلب: إذا انسلّم بنفس اللحظة من كبسة ثانية، ما بنسجّله مرتين
+    const cur = (await client.query("SELECT status FROM f_orders WHERE id = $1 FOR UPDATE", [o.id])).rows[0];
+    if (!cur || cur.status === "delivered") {
+      await client.query("ROLLBACK");
+      return bad(res, "الطلب مسلّم من قبل.");
+    }
     for (const x of exchanges) {
       await client.query("INSERT INTO f_order_exchanges (order_id, product_id, qty) VALUES ($1,$2,$3)", [o.id, x.product_id, x.qty]);
       await client.query(
@@ -345,7 +351,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left, order_id: o.id, invoice_token: token, customer_name: c.name, phone: c.phone });
 }
 
-router.post("/driver/orders/:id/fail", drive, async (req, res) => {
+router.post("/driver/orders/:id/fail", drive, once(async (req, res) => {
   const o = (await loadOrders("o.id = $1", [req.params.id]))[0];
   if (!o) return bad(res, "الطلب غير موجود.", 404);
   const t = o.trip_id ? await myTrip(req, o.trip_id) : null;
@@ -360,10 +366,10 @@ router.post("/driver/orders/:id/fail", drive, async (req, res) => {
   await alert({ level: "warn", kind: "failed", ref: o.id, title: `ما تسلّم طلب #${o.id} — ${o.customer_name}`, body: `${reason}. السائق ${t.driver_name || ""} صوّر المحل.` });
   const msg = await queueMessage({ customerId: o.customer_id, orderId: o.id, kind: "failed", data: { order: o.id, reason }, userId: req.user.id });
   res.json({ ok: true, message_id: msg });
-});
+}));
 
 // زر «بلّغ عن مشكلة»
-router.post("/driver/problem", drive, async (req, res) => {
+router.post("/driver/problem", drive, once(async (req, res) => {
   const kind = String(req.body?.kind || "").trim();
   if (!kind) return bad(res, "اختار شو المشكلة.");
   const v = (await query("SELECT v.id, v.name FROM f_vehicles v WHERE v.driver_id = $1 ORDER BY v.id LIMIT 1", [req.user.id])).rows[0];
@@ -382,7 +388,7 @@ router.post("/driver/problem", drive, async (req, res) => {
   }
   await query("UPDATE f_alerts SET user_id = $1 WHERE id = $2", [req.user.id, alertId]);
   res.json({ ok: true, trip_id: trip?.id || null, alert_id: alertId });
-});
+}));
 
 // المشكلة انحلت (السيارة رجعت تشتغل) — أو انبعتت بالغلط
 router.post("/driver/problem/:id/resolve", drive, async (req, res) => {
@@ -406,7 +412,7 @@ router.get("/driver/expenses", drive, async (req, res) => {
   res.json({ kinds: EXP_KINDS, list: r.rows.map((e) => ({ ...e, amount: Number(e.amount) })) });
 });
 
-router.post("/driver/expenses", drive, async (req, res) => {
+router.post("/driver/expenses", drive, once(async (req, res) => {
   const b = req.body || {};
   const kind = EXP_KINDS.includes(b.kind) ? b.kind : null;
   const amount = round2(b.amount);
@@ -421,10 +427,10 @@ router.post("/driver/expenses", drive, async (req, res) => {
   );
   await alert({ level: "warn", kind: "expense", ref: r.rows[0].id, title: `مصروف ${kind} ${amount.toFixed(2)} د.أ — ${req.user.full_name}`, body: `${v?.name || ""}${b.liters ? ` · ${b.liters} لتر` : ""}${b.photo_url ? "" : " · بدون صورة"} · بانتظار موافقتك.` });
   res.status(201).json(r.rows[0]);
-});
+}));
 
 // ---------- الرجوع للمصنع ----------
-router.post("/driver/trips/:id/return", drive, async (req, res) => {
+router.post("/driver/trips/:id/return", drive, once(async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t) return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
@@ -438,7 +444,7 @@ router.post("/driver/trips/:id/return", drive, async (req, res) => {
   }
   await alert({ level: "info", kind: "returned", ref: t.id, title: `${t.vehicle_name} رجعت — ${t.driver_name || ""}`, body: `الكاش المطلوب ${t.cash_due.toFixed(2)} د.أ. بانتظار تسليم الكاش والمرتجع.` });
   res.json({ ok: true, required_cash: t.cash_due });
-});
+}));
 
 // حسابي (العُهد)
 router.get("/driver/account", drive, async (req, res) => {
@@ -497,7 +503,7 @@ async function addLoad(t, items, userId) {
 }
 
 // «اليوم بشتغل مندوب»: رحلة بيع بدون طلبات، بالحمولة اللي طلعت على السيارة
-router.post("/driver/sales/start", drive, async (req, res) => {
+router.post("/driver/sales/start", drive, once(async (req, res) => {
   const items = cleanLoad(req.body?.items);
   if (!items.length) return bad(res, "اكتب شو حمّلت على السيارة.");
   const busy = (await query("SELECT id FROM f_trips WHERE driver_id = $1 AND status = 'active'", [req.user.id])).rows[0];
@@ -523,10 +529,10 @@ router.post("/driver/sales/start", drive, async (req, res) => {
   }
   await pushManagers({ title: `🛒 ${req.user.full_name} طلع مندوب اليوم`, body: `${v.name} · حمّل ${n} كرتونة للبيع على المحلات.`, url: "/f/trips", tag: `ts-${t.id}` });
   res.json({ ok: true, trip_id: t.id });
-});
+}));
 
 // رجع حمّل زيادة من المصنع
-router.post("/driver/sales/:id/load", drive, async (req, res) => {
+router.post("/driver/sales/:id/load", drive, once(async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t || t.kind !== "sales") return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
@@ -535,7 +541,7 @@ router.post("/driver/sales/:id/load", drive, async (req, res) => {
   const n = await addLoad(t, items, req.user.id);
   await pushManagers({ title: `📦 ${t.driver_name || "المندوب"} حمّل زيادة`, body: `${n} كرتونة على ${t.vehicle_name}.`, url: "/f/trips", tag: `tl-${t.id}` });
   res.json({ ok: true, stock: await carStock(t.id) });
-});
+}));
 
 // المحلات القريبة مني (عشان أختار بسرعة)
 router.get("/driver/shops", drive, async (req, res) => {
@@ -562,7 +568,7 @@ router.get("/driver/prices", drive, async (req, res) => {
 });
 
 // بيع لمحل: طلب بينعمل ويتسلّم بنفس اللحظة من اللي على السيارة
-router.post("/driver/sales/:id/sell", drive, async (req, res) => {
+router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t || t.kind !== "sales") return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
@@ -636,7 +642,12 @@ router.post("/driver/sales/:id/sell", drive, async (req, res) => {
     await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,false)", [oid, i.product_id, i.qty, i.price, i.bonus]);
   }
   const o = (await loadOrders("o.id = $1", [oid]))[0];
-  return deliverOrder(req, res, o, t, { cash, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true, exchanges: exch, exchange_photo: b.exchange_photo }, { sale: true });
-});
+  // البيع كله أو ولا إشي: إذا التسليم ما زبط منشيل الطلب اللي انعمل
+  const drop = () => query("DELETE FROM f_orders WHERE id = $1 AND status <> 'delivered'", [oid]).catch(() => {});
+  try {
+    await deliverOrder(req, res, o, t, { cash, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true, exchanges: exch, exchange_photo: b.exchange_photo }, { sale: true });
+  } catch (e) { await drop(); throw e; }
+  if (res.statusCode >= 400) await drop();
+}));
 
 export default router;

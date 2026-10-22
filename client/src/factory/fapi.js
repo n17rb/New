@@ -1,4 +1,4 @@
-import { request } from "../api.js";
+import { request, peek } from "../api.js";
 
 // ============================================================
 // موج للمصانع — طلبات السيرفر
@@ -93,8 +93,11 @@ export const fapi = {
   delayTrip: (id, b) => post(`/trips/${id}/delay`, b),
 
   // السائق
-  driverToday: () => get("/driver/today"),
+  // بدون شبكة: آخر نسخة محفوظة من رحلتي
+  driverToday: () => get("/driver/today").catch((e) => { const c = e.offline ? peek(`${F}/driver/today`) : undefined; if (c) return { ...c, offline: true }; throw e; }),
   jard: (o) => get(`/jard${qs(o)}`),
+  orderDetail: (id) => get(`/orders/${id}/detail`),
+  correctInvoice: (id, b) => post(`/orders/${id}/correct`, b),
   myJard: (o) => get(`/driver/jard${qs(o)}`),
   jardSettle: (b) => post("/jard/settle", b),
   driverCheck: (id, b) => post(`/driver/trips/${id}/check`, b),
