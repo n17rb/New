@@ -442,31 +442,22 @@ function ExpenseSheet({ kinds, onClose, onDone }) {
   const [kind, setKind] = useState("ديزل");
   const [amount, setAmount] = useState("");
   const [liters, setLiters] = useState("");
-  const [odo, setOdo] = useState("");
   const [photo, setPhoto] = useState(null);
-  const [odoPhoto, setOdoPhoto] = useState(null);
   const [note, setNote] = useState("");
   const diesel = kind === "ديزل";
-  const ok = Number(amount) > 0 && photo && (!diesel || (odo && odoPhoto));
   return (
     <Sheet title="مصروف جديد" onClose={onClose}>
       <div className="fx-stack">
         <div className="fx-chips">{(kinds.length ? kinds : ["ديزل"]).map((k) => <button key={k} className={`fx-chip ${kind === k ? "on" : ""}`} onClick={() => setKind(k)}>{k}</button>)}</div>
         <div className="fx-grid2">
           <label className="fx-field">المبلغ (دينار)<input className="fx-input" type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
-          {diesel && <label className="fx-field">كم لتر<input className="fx-input" type="number" inputMode="decimal" value={liters} onChange={(e) => setLiters(e.target.value)} /></label>}
+          {diesel && <label className="fx-field">كم لتر (اختياري)<input className="fx-input" type="number" inputMode="decimal" value={liters} onChange={(e) => setLiters(e.target.value)} /></label>}
         </div>
-        <PhotoInput label="صوّر الفاتورة" hint="إجباري" value={photo} onChange={setPhoto} kind="receipt" />
-        {diesel && (
-          <>
-            <PhotoInput label="صوّر العداد" hint="عشان نحسب استهلاك السيارة" value={odoPhoto} onChange={setOdoPhoto} kind="odo" />
-            <label className="fx-field">رقم العداد<input className="fx-input" type="number" inputMode="numeric" value={odo} onChange={(e) => setOdo(e.target.value)} /></label>
-          </>
-        )}
-        {!diesel && <label className="fx-field">ملاحظة<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>}
+        <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <PhotoInput label="صوّر الفاتورة (اختياري)" value={photo} onChange={setPhoto} kind="receipt" />
         <div className="fx-note">المصروف بينخصم من الكاش اللي بتسلّمه. إذا الإدارة رفضته بيرجع عليك.</div>
-        <Act className="fx-btn pri block" disabled={!ok} onClick={async () => {
-          await fapi.addExpense({ kind, amount, liters, odo, photo_url: photo, odo_photo_url: odoPhoto, note });
+        <Act className="fx-btn pri block" disabled={!(Number(amount) > 0)} onClick={async () => {
+          await fapi.addExpense({ kind, amount, liters, photo_url: photo, note });
           fx.toast("انبعت للإدارة للموافقة");
           onDone();
         }}>ابعت للإدارة</Act>

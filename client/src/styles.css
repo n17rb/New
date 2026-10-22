@@ -63,6 +63,23 @@ html, body, #root {
   margin: 0;
 }
 
+/* الصفحة نفسها ما بتتحرك — اللي بيتمرر هو #root بس.
+   هيك الشريط السفلي والأزرار الثابتة بيضلوا مكانهم على الآيفون
+   (حتى بعد ما يتسكّر الكيبورد أو تسحب الصفحة لفوق وتحت) */
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+#root {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+@media print {
+  html, body, #root { height: auto; overflow: visible; }
+}
+
 body {
   font-family: var(--font);
   font-size: 15px;

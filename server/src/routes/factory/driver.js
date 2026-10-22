@@ -376,16 +376,14 @@ router.post("/driver/expenses", drive, async (req, res) => {
   const amount = round2(b.amount);
   if (!kind) return bad(res, "اختار نوع المصروف.");
   if (!(amount > 0)) return bad(res, "اكتب المبلغ.");
-  if (!b.photo_url) return bad(res, "صوّر الفاتورة.");
-  if (kind === "ديزل" && (!b.odo || !b.odo_photo_url)) return bad(res, "صوّر العداد واكتب رقمه.");
   const v = (await query("SELECT id, name FROM f_vehicles WHERE driver_id = $1 ORDER BY id LIMIT 1", [req.user.id])).rows[0];
   const trip = v ? (await query("SELECT id FROM f_trips WHERE vehicle_id = $1 AND status IN ('active','returned','planned') ORDER BY (status='active') DESC, id DESC LIMIT 1", [v.id])).rows[0] : null;
   const r = await query(
     `INSERT INTO f_expenses (trip_id, vehicle_id, driver_id, kind, amount, liters, odo, photo_url, odo_photo_url, note)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [trip?.id || null, v?.id || null, req.user.id, kind, amount, Number(b.liters) || null, Number(b.odo) || null, b.photo_url, b.odo_photo_url || null, b.note ? String(b.note).slice(0, 300) : null]
+    [trip?.id || null, v?.id || null, req.user.id, kind, amount, Number(b.liters) || null, Number(b.odo) || null, b.photo_url || null, null, b.note ? String(b.note).slice(0, 300) : null]
   );
-  await alert({ level: "warn", kind: "expense", ref: r.rows[0].id, title: `مصروف ${kind} ${amount.toFixed(2)} د.أ — ${req.user.full_name}`, body: `${v?.name || ""}${b.liters ? ` · ${b.liters} لتر` : ""}${b.odo ? ` · العداد ${b.odo}` : ""} · بانتظار موافقتك.` });
+  await alert({ level: "warn", kind: "expense", ref: r.rows[0].id, title: `مصروف ${kind} ${amount.toFixed(2)} د.أ — ${req.user.full_name}`, body: `${v?.name || ""}${b.liters ? ` · ${b.liters} لتر` : ""}${b.photo_url ? "" : " · بدون صورة"} · بانتظار موافقتك.` });
   res.status(201).json(r.rows[0]);
 });
 
