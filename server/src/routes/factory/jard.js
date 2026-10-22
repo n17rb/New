@@ -184,6 +184,7 @@ router.post("/trips/:id/load-edit", needAny(["f_dispatch", "edit"], ["f_stock", 
   const cur = new Map((await query("SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'load' GROUP BY product_id", [t.id])).rows.map((r) => [r.product_id, r.q]));
   const changes = [];
   for (const x of Array.isArray(req.body?.items) ? req.body.items : []) {
+    if (x.loaded === "" || x.loaded === null || x.loaded === undefined) continue; // خانة فاضية = ما تغيّر
     const pid = Number(x.product_id), want = Math.round(Number(x.loaded));
     if (!pid || !(want >= 0) || want > 100000) continue;
     const p = (await query("SELECT id, name FROM f_products WHERE id = $1", [pid])).rows[0];

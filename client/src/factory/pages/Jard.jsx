@@ -266,7 +266,7 @@ function LoadEditSheet({ d, reload, onClose }) {
         <Act className="fx-btn pri block fx-big" onClick={async () => {
           setErr("");
           try {
-            const r = await fapi.loadEdit(t.id, { reason, items: ids.map((pid) => ({ product_id: Number(pid), loaded: Number(vals[pid]) || 0 })) });
+            const r = await fapi.loadEdit(t.id, { reason, items: ids.map((pid) => ({ product_id: Number(pid), loaded: vals[pid] === "" ? "" : Number(vals[pid]) || 0 })) });
             fx.toast(`انعدّلت الحمولة: ${r.changes.join("، ")}`);
             onClose(); reload();
           } catch (e) { setErr(e.message); }

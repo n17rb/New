@@ -114,9 +114,17 @@ app.use("/api/public", publicInvoiceRouter);
 app.use("/api/public", factoryPublicRouter);
 app.use("/api/factory", factoryRoutes);
 
+// رابط API مش موجود (غالبًا السيرفر لسا ما تحدّث بآخر نسخة)
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "هالميزة لسا ما وصلت للسيرفر — استنى دقيقتين وجرّب كمان مرة.", code: "NOT_FOUND" });
+});
+
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "حدث خطأ غير متوقع في السيرفر." });
+  console.error(req.method, req.originalUrl, err);
+  // رقم قصير للخطأ عشان نلاقيه بسجل السيرفر
+  const ref = Math.random().toString(36).slice(2, 7).toUpperCase();
+  console.error("error ref:", ref);
+  res.status(500).json({ error: `حدث خطأ غير متوقع في السيرفر (رمز ${ref}).`, ref });
 });
 
 async function initDbIfNeeded() {
