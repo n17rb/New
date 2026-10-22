@@ -73,7 +73,7 @@ export default function Customers() {
       {sheet?.kind === "view" && <CustomerView id={sheet.id} onClose={() => setSheet(null)} onEdit={(c) => setSheet({ kind: "edit", c })} onChanged={load} onOrder={canOrder ? (c) => setSheet({ kind: "order", c, back: c.id }) : null} />}
       {sheet?.kind === "order" && (
         <OrderSheet customer={sheet.c} onClose={() => setSheet(sheet.back ? { kind: "view", id: sheet.back } : null)}
-          onSaved={(r) => { setSheet(sheet.back ? { kind: "view", id: sheet.back } : null); load(); if (r?.message_ids?.[0]) setMsgs(r.message_ids); }} />
+          onSaved={(r) => { setSheet(null); load(); if (r?.message_ids?.[0]) setMsgs(r.message_ids); }} />
       )}
       {msgs && <SendMessages ids={msgs} title="ابعت للزبون إنه وصلنا طلبه" onClose={() => setMsgs(null)} />}
     </div>
@@ -345,7 +345,7 @@ function CustomerView({ id, onClose, onEdit, onChanged, onOrder }) {
   const canPay = fx.can("f_money", "edit") || fx.can("f_customers", "edit");
 
   if (msgs) return <SendMessages ids={msgs} onClose={() => setMsgs(null)} />;
-  if (pay && c) return <PaymentSheet c={c} onClose={() => setPay(false)} onSaved={(r) => { setPay(false); load(); onChanged(); fx.toast("انسجلت الدفعة"); if (r?.message_ids) setMsgs(r.message_ids); }} />;
+  if (pay && c) return <PaymentSheet c={c} onClose={() => setPay(false)} onSaved={(r) => { setPay(false); load(); onChanged(); fx.toast("انسجلت الدفعة"); if (r?.message_ids) setMsgs(r.message_ids); else if (r?.message_id) setMsgs([r.message_id]); }} />;
   return (
     <Sheet title={c?.name || "الزبون"} onClose={onClose}>
       <Err msg={err} />
