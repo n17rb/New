@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers } from "react-icons/fi";
+import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers, FiClipboard } from "react-icons/fi";
 import { canUser, canUserAction } from "../auth.jsx";
 import { fapi } from "./fapi.js";
 import { FxContext } from "./ui.jsx";
@@ -16,6 +16,7 @@ const Live = lazy(() => import("./pages/Live.jsx"));
 const Recurring = lazy(() => import("./pages/Recurring.jsx"));
 const Density = lazy(() => import("./pages/Density.jsx"));
 const Invoices = lazy(() => import("./pages/Invoices.jsx"));
+const Jard = lazy(() => import("./pages/Jard.jsx"));
 const Drive = lazy(() => import("./pages/Drive.jsx"));
 const Customers = lazy(() => import("./pages/Customers.jsx"));
 const Stock = lazy(() => import("./pages/Stock.jsx"));
@@ -121,6 +122,8 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
     const all = [
       can("f_home") && { to: "/", icon: FiHome, label: "الرئيسية", end: true },
       isDriver && !can("f_home") && { to: "/f/drive", icon: FiNavigation, label: "رحلتي" },
+      (can("f_money") || can("f_home")) && { to: "/f/jard", icon: FiClipboard, label: "الجرد" },
+      isDriver && !can("f_home") && !can("f_money") && { to: "/f/jard", icon: FiClipboard, label: "جردي" },
       (can("f_customers") || can("f_orders") || can("f_home")) && { to: "/f/customers", icon: FiUsers, label: "العملاء" },
       (can("f_orders") || can("f_dispatch")) && { to: "/f/orders", icon: FiPackage, label: "الطلبات" },
       can("f_dispatch") && { to: "/f/trips", icon: FiTruck, label: "الرحلات" },
@@ -174,6 +177,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
                 <Route path="/f/density" element={<Density />} />
                 {(can("f_orders") || can("f_dispatch") || can("f_money") || can("f_home")) && <Route path="/f/invoices" element={<Invoices />} />}
                 {(can("f_stock") || can("f_production") || can("f_home")) && <Route path="/f/stock" element={<Stock />} />}
+                {(isDriver || can("f_money") || can("f_home") || can("f_stock") || can("f_dispatch")) && <Route path="/f/jard" element={<Jard />} />}
                 {(can("f_money") || can("f_home")) && <Route path="/f/money" element={<Money />} />}
                 {(can("f_reports") || can("f_home")) && <Route path="/f/reports" element={<Reports />} />}
                 {manager && <Route path="/f/alerts" element={<Alerts />} />}

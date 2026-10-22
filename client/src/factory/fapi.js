@@ -93,6 +93,8 @@ export const fapi = {
 
   // السائق
   driverToday: () => get("/driver/today"),
+  jard: (o) => get(`/jard${qs(o)}`),
+  myJard: (o) => get(`/driver/jard${qs(o)}`),
   driverCheck: (id, b) => post(`/driver/trips/${id}/check`, b),
   driverConfirmLoad: (id) => post(`/driver/trips/${id}/confirm-load`),
   driverStart: (id, b) => post(`/driver/trips/${id}/start`, b),

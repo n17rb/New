@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText } from "react-icons/fi";
+import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard } from "react-icons/fi";
 import { useFx } from "../ui.jsx";
 import PushCard from "../PushCard.jsx";
 
@@ -7,6 +7,7 @@ export default function More({ onLogout }) {
   const fx = useFx();
   const nav = useNavigate();
   const items = [
+    (fx.can("f_money") || fx.can("f_home") || fx.can("f_stock") || fx.can("f_dispatch") || fx.can("f_drive", "edit")) && { to: "/f/jard", icon: FiClipboard, label: fx.can("f_money") || fx.can("f_home") ? "الجرد اليومي" : "جردي", hint: "كل سائق: الكاش، المرتجع، الفواتير والمصاريف بشاشة وحدة" },
     { to: "/f/customers", icon: FiUsers, label: "العملاء", hint: "بياناتهم وطلباتهم وكشف حسابهم" },
     { to: "/f/density", icon: FiMapPin, label: "خريطة العملاء", hint: "وين زباينك متجمّعين" },
     (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/recurring", icon: FiRepeat, label: "المواعيد الثابتة", hint: "زباين بنوصّلهم كل كم يوم" },

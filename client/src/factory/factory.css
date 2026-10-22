@@ -702,3 +702,73 @@ a.fx-pill { text-decoration: none; }
 .fx-sales-orders { border: 2px solid #f0b429; background: #fffaf0; }
 .fx-sales-order { display: grid; gap: 8px; width: 100%; text-align: start; padding: 10px 0; border-bottom: 1px dashed #ecd9a8; }
 .fx-sales-order:last-child { border-bottom: 0; }
+
+/* ---------- الجرد ---------- */
+.fx-jard-day { display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid var(--fx-line); border-radius: 16px; padding: 6px; }
+.fx-jard-day button { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; color: var(--fx-navy); background: var(--fx-surface-2); }
+.fx-jard-day button:disabled { opacity: .3; }
+.fx-jard-day b { font-size: 16px; }
+.fx-jard-drv { display: grid; gap: 12px; padding-bottom: 18px; border-bottom: 2px dashed var(--fx-line); }
+.fx-jard-drv:last-child { border-bottom: 0; }
+.fx-jard-h { display: flex; align-items: center; gap: 12px; }
+.fx-jard-h .av { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; background: var(--fx-navy, #0456a2); color: #fff; font-size: 22px; font-weight: 800; flex: none; }
+.fx-jard-h .t { flex: 1; display: grid; min-width: 0; }
+.fx-jard-h .t b { font-size: 20px; }
+.fx-jard-h .t small { color: var(--fx-muted); }
+.fx-jard-big { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fx-jard-big .tile { display: grid; gap: 2px; padding: 16px 14px; border-radius: 20px; background: #fff; border: 1px solid var(--fx-line); }
+.fx-jard-big .tile b { font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.fx-jard-big .tile small { color: var(--fx-muted); font-size: 13px; }
+.fx-jard-big .tile.cash { background: #fff8e6; border-color: #f3d48a; }
+.fx-jard-big .tile.cash b { color: #8a5a00; }
+.fx-jard-big .tile.box { background: #eef6fd; border-color: #bcd9f2; }
+.fx-jard-big .tile.box b { color: var(--fx-navy, #0456a2); }
+.fx-jard-big .tile.ok { background: #e9f7ef; border-color: #b7e2c7; }
+.fx-jard-big .tile.ok b { color: #14653a; }
+.fx-jard-money h3, .fx-jard-drv .fx-card h3 { margin: 0 0 6px; font-size: 16px; }
+.fx-kv.warn b { color: #b06a00; }
+.fx-jard-goods { display: grid; }
+.fx-jard-goods .g { padding: 10px 0; border-bottom: 1px dashed var(--fx-line); display: grid; gap: 6px; }
+.fx-jard-goods .g:last-child { border-bottom: 0; }
+.fx-jard-goods .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fx-jard-goods .back { color: var(--fx-navy, #0456a2); font-size: 14px; text-align: end; }
+.fx-jard-goods .back > b { font-size: 20px; }
+.fx-jard-goods .back small { color: var(--fx-muted); }
+.fx-jard-goods .back em { color: var(--fx-crit); font-style: normal; font-weight: 700; }
+.fx-jard-goods .nums { display: flex; flex-wrap: wrap; gap: 6px; }
+.fx-jard-goods .nums span { background: var(--fx-surface-2); border-radius: 9px; padding: 3px 9px; font-size: 13px; color: var(--fx-muted); }
+.fx-jard-goods .nums b { color: var(--fx-ink, #102A43); }
+.fx-jard-goods .nums .ok { background: #e9f7ef; } .fx-jard-goods .nums .ok b { color: #14653a; }
+.fx-jard-goods .nums .ex { background: #f1ecfd; } .fx-jard-goods .nums .ex b { color: #5b3cc4; }
+.fx-jard-goods .nums .bad { background: #fdecec; } .fx-jard-goods .nums .bad b { color: #a32020; }
+.fx-jard-exp { display: flex; gap: 12px; align-items: flex-start; }
+.fx-jard-exp .ph { flex: none; width: 76px; height: 76px; border-radius: 14px; overflow: hidden; background: var(--fx-surface-2); display: grid; place-items: center; }
+.fx-jard-exp .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fx-jard-exp .ph.none { font-size: 11px; color: var(--fx-muted); text-align: center; padding: 4px; }
+.fx-jard-exp .t { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.fx-jard-exp .t small { color: var(--fx-muted); }
+.fx-jard-zoom { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.85); display: grid; place-items: center; padding: 16px; }
+.fx-jard-zoom img { max-width: 100%; max-height: 100%; border-radius: 12px; }
+.fx-jard-inv { background: #fff; border: 1px solid var(--fx-line); border-radius: 18px; padding: 12px 14px; display: grid; gap: 8px; break-inside: avoid; }
+.fx-jard-inv .hd { display: flex; align-items: center; gap: 10px; }
+.fx-jard-inv .hd .t { flex: 1; display: grid; min-width: 0; }
+.fx-jard-inv .hd .t b { font-size: 16px; }
+.fx-jard-inv .hd .t small { color: var(--fx-muted); font-size: 12.5px; }
+.fx-jard-inv .lines { display: grid; gap: 4px; border-top: 1px dashed var(--fx-line); padding-top: 8px; }
+.fx-jard-inv .ln { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.fx-jard-inv .ln small { color: var(--fx-muted); }
+.fx-jard-inv .ln.ok { color: #14653a; }
+.fx-jard-inv .ln.ex { color: #5b3cc4; font-weight: 600; }
+.fx-jard-inv .ln.bad { color: #a32020; }
+.fx-jard-inv .ft { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: space-between; background: var(--fx-surface-2); border-radius: 12px; padding: 8px 10px; font-size: 14px; }
+.fx-jard-inv .ft .debt { color: #b06a00; }
+.fx-jard-inv .ft .paid { color: #14653a; font-weight: 700; }
+@media print {
+  .fx-jard-drv { break-after: page; }
+  .fx-jard-inv, .fx-jard-big .tile { border-color: #999; }
+}
+
+/* استبدال التالف عند الزبون */
+.fx-exch { display: grid; gap: 10px; padding: 12px; border-radius: 16px; background: #f6f2ff; border: 1px solid #ddd2fb; }
+.fx-exch .hd { color: #5b3cc4; font-weight: 700; }
+.fx-exch small { color: #6b5aa8; }

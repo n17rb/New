@@ -11,6 +11,7 @@ import reports from "./reports.js";
 import publicRoutes from "./public.js";
 import sample from "./sample.js";
 import recurring from "./recurring.js";
+import jard from "./jard.js";
 
 // ============================================================
 // موج للمصانع — كل مسارات المصنع تحت /api/factory
@@ -26,6 +27,7 @@ router.use(money);
 router.use(reports);
 router.use(sample);
 router.use(recurring);
+router.use(jard);
 
 export const factoryPublicRouter = publicRoutes;
 export { factoryWatch } from "./reports.js";

@@ -170,6 +170,8 @@ export function expectedReturns(t) {
       if (o.status !== "delivered") continue;
       for (const i of o.items) sub(i.product_id, i.name, (i.delivered_qty ?? i.qty) + (i.delivered_bonus ?? i.bonus_qty ?? 0));
     }
+    // الاستبدال: الجديد طلع من السيارة للزبون (والتالف اللي أخذناه بيرجع لحاله كتالف)
+    for (const o of t.stops) if (o.status === "delivered") for (const x of o.exchanges || []) sub(x.product_id, x.name, x.qty);
     for (const d of t.damaged_per || []) sub(d.product_id, d.name, d.qty);
     return [...per.values()].filter((x) => x.qty > 0);
   }

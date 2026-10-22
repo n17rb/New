@@ -99,8 +99,13 @@ router.get("/f/invoice/:token", async (req, res) => {
     "SELECT p.name, i.qty, i.delivered_qty, i.damaged_qty, i.price, i.bonus_qty, i.delivered_bonus FROM f_order_items i JOIN f_products p ON p.id = i.product_id WHERE i.order_id = (SELECT id FROM f_orders WHERE invoice_token = $1)",
     [req.params.token]
   );
+  const exchanges = (await query(
+    "SELECT p.name, SUM(x.qty)::int AS qty FROM f_order_exchanges x JOIN f_products p ON p.id = x.product_id WHERE x.order_id = $1 GROUP BY p.name",
+    [o.id]
+  )).rows;
   res.json({
     brand: await brand(),
+    exchanges,
     invoice: { ...o, total: Number(o.delivered_total), paid: Number(o.cash_paid), balance_after: o.balance_after == null ? null : Number(o.balance_after) },
     items: items.rows.map((i) => ({ ...i, price: Number(i.price), line: round2((i.delivered_qty ?? i.qty) * Number(i.price)) })),
   });
