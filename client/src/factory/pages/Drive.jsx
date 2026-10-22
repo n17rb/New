@@ -4,7 +4,7 @@ import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
-import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList, PayBox } from "./Sales.jsx";
+import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList, PayBox, SellSheet } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
@@ -178,6 +178,9 @@ export default function Drive() {
             </div>
           )}
 
+          {t.status === "active" && (
+            <button className="fx-btn sky block" onClick={() => setSheet({ kind: "walkin" })}>🛒 زبون وقّفني — بيع من السيارة</button>
+          )}
           {["planned", "active"].includes(t.status) && <TripsMap trips={[t]} live={mapLive} factory={factory} selected={null} onSelect={() => {}} height="34vh" />}
 
           <div className="fx-sec"><h2>زباينك بالترتيب</h2><span className="fx-muted" style={{ fontSize: 13 }}>{t.done}/{stops.length}</span></div>
@@ -236,6 +239,10 @@ export default function Drive() {
       )}
       {sheet?.kind === "fail" && <FailSheet o={sheet.o} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "problem" && <ProblemSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "walkin" && t && (
+        <SellSheet t={t} stock={data.car_stock} canCredit={data.can_credit} onClose={() => setSheet(null)}
+          onDone={(r) => { setSheet(null); if (r?.queued) return; reload(); setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id }); }} />
+      )}
       {sheet?.kind === "expense" && <ExpenseSheet kinds={exps?.kinds || []} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "cash" && t && <CashSheet t={t} onClose={() => setSheet(null)} />}
       {msgs && <SendMessages ids={msgs} title="ابعت للزبون وقت وصولك" onClose={() => setMsgs(null)} />}
