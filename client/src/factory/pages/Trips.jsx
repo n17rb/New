@@ -122,7 +122,7 @@ function TripCard({ t, lv, color, on, first, dispatch, onOpen, onFocus }) {
         <span className={`fx-cav ${color ? "route" : ""}`} style={{ background: color || LIVE_COLORS[key], color: "#fff", "--route": color }}>{t.vehicle_name?.replace(/\D/g, "") || "#"}</span>
         <span className="t">
           <b>{t.driver_name || "بدون سائق"}</b>
-          <small>{t.vehicle_name} · {num(t.load)} كرتونة</small>
+          <small>{t.kind === "sales" ? "🛒 مندوب · " : ""}{t.vehicle_name} · {num(t.load)} كرتونة</small>
         </span>
         <span className={`fx-trip-st ${key}`}>{label}</span>
       </button>
@@ -143,7 +143,9 @@ function TripCard({ t, lv, color, on, first, dispatch, onOpen, onFocus }) {
         </div>
       )}
 
-      <div className="fx-trip-prog"><span>سلّم {done} من {t.stops.length}</span><div className="fx-bar"><i style={{ width: `${pct}%` }} /></div></div>
+      {t.kind === "sales"
+        ? <div className="fx-trip-prog"><span>باع لـ {done} محل · {money(t.collected)} كاش</span></div>
+        : <div className="fx-trip-prog"><span>سلّم {done} من {t.stops.length}</span><div className="fx-bar"><i style={{ width: `${pct}%` }} /></div></div>}
 
       <div className="fx-trip-stops">
         {t.stops.map((o, i) => {

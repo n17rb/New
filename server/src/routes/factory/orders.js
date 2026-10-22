@@ -275,7 +275,7 @@ export async function loadTrips(where, params = []) {
     const loaded_per = moved.rows.filter((m) => m.trip_id === t.id && m.kind === "load");
     const damaged_per = moved.rows.filter((m) => m.trip_id === t.id && m.kind === "damage");
     const expenses = exps.rows.filter((e) => e.trip_id === t.id).map((e) => ({ ...e, amount: Number(e.amount) }));
-    const load = stops.reduce((s, o) => s + o.cartons, 0) + (t.extra_cartons || 0);
+    const load = t.kind === "sales" ? (t.extra_cartons || 0) : stops.reduce((s, o) => s + o.cartons, 0) + (t.extra_cartons || 0);
     const collected = round2(stops.filter((o) => o.status === "delivered").reduce((s, o) => s + o.cash_paid, 0));
     const expTotal = round2(expenses.filter((e) => e.status !== "rejected").reduce((s, e) => s + e.amount, 0));
     const late = stops.filter((o) => ["assigned", "onway"].includes(o.status) && o.eta_at && t.status === "active" && now - new Date(o.eta_at).getTime() > 30 * 60000).length;

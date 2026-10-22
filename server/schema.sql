@@ -979,3 +979,6 @@ ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS en_route_at TIMESTAMPTZ;
 
 -- مين بلّغ عن المشكلة (عشان السائق يقدر يسكّرها لما تنحل)
 ALTER TABLE f_alerts ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+-- رحلة طلبات أو شغل مندوب (بيع مباشر على المحلات من اللي على السيارة)
+ALTER TABLE f_trips ADD COLUMN IF NOT EXISTS kind VARCHAR(10) NOT NULL DEFAULT 'orders';

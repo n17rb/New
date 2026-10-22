@@ -2,7 +2,8 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km } from "../../utils/factoryGeo.js";
-import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor } from "./lib.js";
+import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor } from "./lib.js";
+import { cleanCustomer, nextSeq } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 
 // ============================================================
@@ -42,7 +43,8 @@ router.get("/driver/today", drive, async (req, res) => {
     "SELECT id, title, kind, created_at FROM f_alerts WHERE user_id = $1 AND kind IN ('breakdown','problem') AND closed_at IS NULL AND created_at > now() - interval '3 days' ORDER BY id DESC",
     [req.user.id]
   )).rows;
-  res.json({ problems, unsettled, vehicles, trip, custody: round2(custody), fuel_levels: FUEL, last_fuel: lastFuel || null, can_credit: canAction(req.user, "give_credit") });
+  const car_stock = trip?.kind === "sales" ? await carStock(trip.id) : null;
+  res.json({ problems, unsettled, car_stock, vehicles, trip, custody: round2(custody), fuel_levels: FUEL, last_fuel: lastFuel || null, can_credit: canAction(req.user, "give_credit") });
 });
 
 // صور وقراءات البداية والنهاية (عداد + ديزل)
@@ -176,6 +178,11 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   if (o.status === "delivered") return bad(res, "الطلب مسلّم من قبل.");
   const b = req.body || {};
   if (!b.signature && !b.photo_url) return bad(res, "خلي الزبون يوقّع، أو صوّر البضاعة عنده.");
+  return deliverOrder(req, res, o, t, b);
+});
+
+// تسجيل التسليم (للطلبات العادية، ولبيع المندوب على الطريق)
+async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   const byItem = new Map((b.items || []).map((i) => [Number(i.item_id), i]));
   let total = 0;
   const lines = [];
@@ -265,12 +272,12 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });
   const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0) + added.reduce((a, x) => a + x.qty, 0);
   await pushManagers({
-    title: `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
-    body: `${cartons} كرتونة · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
+    title: sale ? `🛒 ${t.driver_name || "المندوب"} باع لـ ${c.name}` : `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
+    body: `${cartons} كرتونة · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${sale ? "" : left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
     url: "/f/trips", tag: `fd-${o.id}`,
   });
   res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left, order_id: o.id, invoice_token: token, customer_name: c.name, phone: c.phone });
-});
+}
 
 router.post("/driver/orders/:id/fail", drive, async (req, res) => {
   const o = (await loadOrders("o.id = $1", [req.params.id]))[0];
@@ -382,6 +389,170 @@ router.get("/driver/account", drive, async (req, res) => {
   ]);
   const custody = Number((await query("SELECT COALESCE(SUM(amount),0) AS s FROM f_driver_ledger WHERE driver_id = $1", [req.user.id])).rows[0].s);
   res.json({ custody: round2(custody), ledger: ledger.rows.map((x) => ({ ...x, amount: Number(x.amount) })), month: { ...month.rows[0], collected: Number(month.rows[0].collected) } });
+});
+
+// ============================================================
+// شغل المندوب: بيحمّل بضاعة على السيارة، بيلف على المحلات وبيبيع مباشرة
+// الجرد: اللي طلع (تحميل) − اللي انباع − التالف = لازم يرجع للمستودع
+// ============================================================
+async function carStock(tripId) {
+  const r = await query(
+    `WITH l AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'load' GROUP BY product_id),
+          s AS (SELECT i.product_id, SUM(COALESCE(i.delivered_qty,0) + COALESCE(i.delivered_bonus,0))::int AS q
+                FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY i.product_id),
+          d AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'damage' GROUP BY product_id)
+     SELECT p.id AS product_id, p.name, p.image_url, COALESCE(l.q,0) AS loaded, COALESCE(s.q,0) AS sold, COALESCE(d.q,0) AS damaged,
+            COALESCE(l.q,0) - COALESCE(s.q,0) - COALESCE(d.q,0) AS left
+     FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN d ON d.product_id = p.id
+     WHERE l.q IS NOT NULL ORDER BY p.id`,
+    [tripId]
+  );
+  return r.rows;
+}
+
+function cleanLoad(items) {
+  const out = [];
+  for (const x of Array.isArray(items) ? items : []) {
+    const q = Math.round(Number(x.qty));
+    if (x.product_id && q > 0 && q <= 100000) out.push({ product_id: Number(x.product_id), qty: q });
+  }
+  return out;
+}
+
+async function addLoad(t, items, userId) {
+  let n = 0;
+  for (const x of items) {
+    const p = (await query("SELECT id FROM f_products WHERE id = $1 AND active", [x.product_id])).rows[0];
+    if (!p) continue;
+    await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,'تحميل مندوب',$5)", [p.id, x.qty, t.id, t.vehicle_id, userId]);
+    n += x.qty;
+  }
+  await query("UPDATE f_trips SET extra_cartons = extra_cartons + $1 WHERE id = $2", [n, t.id]);
+  return n;
+}
+
+// «اليوم بشتغل مندوب»: رحلة بيع بدون طلبات، بالحمولة اللي طلعت على السيارة
+router.post("/driver/sales/start", drive, async (req, res) => {
+  const items = cleanLoad(req.body?.items);
+  if (!items.length) return bad(res, "اكتب شو حمّلت على السيارة.");
+  const busy = (await query("SELECT id FROM f_trips WHERE driver_id = $1 AND status = 'active'", [req.user.id])).rows[0];
+  if (busy) return bad(res, "عندك رحلة شغالة — خلّصها أول.");
+  const vid = Number(req.body?.vehicle_id) || (await query("SELECT id FROM f_vehicles WHERE driver_id = $1 AND status <> 'inactive' ORDER BY id LIMIT 1", [req.user.id])).rows[0]?.id;
+  const v = vid ? (await query("SELECT id, name FROM f_vehicles WHERE id = $1 AND status <> 'inactive'", [vid])).rows[0] : null;
+  if (!v) return bad(res, "ما في سيارة مربوطة فيك. خلي الإدارة تربطك بسيارة.");
+  const t = (await query(
+    `INSERT INTO f_trips (vehicle_id, driver_id, trip_date, status, kind, started_at, load_confirmed_at, load_confirmed_by)
+     VALUES ($1,$2,$3,'active','sales',now(),now(),$2) RETURNING *`,
+    [v.id, req.user.id, jordanDate()]
+  )).rows[0];
+  const n = await addLoad(t, items, req.user.id);
+  await pushManagers({ title: `🛒 ${req.user.full_name} طلع مندوب اليوم`, body: `${v.name} · حمّل ${n} كرتونة للبيع على المحلات.`, url: "/f/trips", tag: `ts-${t.id}` });
+  res.json({ ok: true, trip_id: t.id });
+});
+
+// رجع حمّل زيادة من المصنع
+router.post("/driver/sales/:id/load", drive, async (req, res) => {
+  const t = await myTrip(req, req.params.id);
+  if (!t || t.kind !== "sales") return bad(res, "الرحلة مش إلك.", 403);
+  if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
+  const items = cleanLoad(req.body?.items);
+  if (!items.length) return bad(res, "اكتب شو حمّلت.");
+  const n = await addLoad(t, items, req.user.id);
+  await pushManagers({ title: `📦 ${t.driver_name || "المندوب"} حمّل زيادة`, body: `${n} كرتونة على ${t.vehicle_name}.`, url: "/f/trips", tag: `tl-${t.id}` });
+  res.json({ ok: true, stock: await carStock(t.id) });
+});
+
+// المحلات القريبة مني (عشان أختار بسرعة)
+router.get("/driver/shops", drive, async (req, res) => {
+  const lat = Number(req.query.lat), lng = Number(req.query.lng);
+  const q = String(req.query.q || "").trim();
+  const rows = (await query(
+    `SELECT id, name, phone, city, address, lat, lng, balance, seq_no FROM f_customers
+     WHERE active ${q ? "AND (name ILIKE $1 OR phone ILIKE $1 OR city ILIKE $1 OR seq_no::text = $2)" : ""} ORDER BY name LIMIT 2000`,
+    q ? [`%${q}%`, q] : []
+  )).rows;
+  const near = Number.isFinite(lat) && lat;
+  const list = rows.map((c) => ({ ...c, balance: Number(c.balance), km: near && c.lat != null ? km([lat, lng], [c.lat, c.lng]) : null }));
+  list.sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || a.name.localeCompare(b.name, "ar"));
+  res.json(list.slice(0, 40));
+});
+
+// أسعار المحل (الخاصة أو العامة)
+router.get("/driver/prices", drive, async (req, res) => {
+  const cid = Number(req.query.customer_id) || null;
+  const ps = (await query("SELECT id, price FROM f_products WHERE active")).rows;
+  const out = {};
+  for (const p of ps) out[p.id] = cid ? await priceFor(cid, p.id) : Number(p.price);
+  res.json(out);
+});
+
+// بيع لمحل: طلب بينعمل ويتسلّم بنفس اللحظة من اللي على السيارة
+router.post("/driver/sales/:id/sell", drive, async (req, res) => {
+  const t = await myTrip(req, req.params.id);
+  if (!t || t.kind !== "sales") return bad(res, "الرحلة مش إلك.", 403);
+  if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
+  const b = req.body || {};
+  // المحل: موجود أو جديد
+  let c;
+  if (b.customer_id) {
+    c = (await query("SELECT * FROM f_customers WHERE id = $1 AND active", [b.customer_id])).rows[0];
+    if (!c) return bad(res, "المحل غير موجود.");
+  } else {
+    let nc; try { nc = await cleanCustomer({ ...(b.new_customer || {}), lat: b.lat, lng: b.lng }); } catch (e) { return bad(res, e.message); }
+    if (nc.phone) {
+      const same = (await query("SELECT * FROM f_customers WHERE phone = $1 AND active LIMIT 1", [nc.phone])).rows[0];
+      if (same) c = same;
+    }
+    if (!c) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("LOCK TABLE f_customers IN SHARE ROW EXCLUSIVE MODE");
+        const seq = await nextSeq(client);
+        c = (await client.query(
+          `INSERT INTO f_customers (name, phone, city, address, lat, lng, kind, pay_terms, governorate, district, created_by, seq_no)
+           VALUES ($1,$2,$3,$4,$5,$6,'محل','cash',$7,$8,$9,$10) RETURNING *`,
+          [nc.name, nc.phone, nc.city, nc.address, nc.lat, nc.lng, nc.governorate, nc.district, req.user.id, seq]
+        )).rows[0];
+        await client.query("COMMIT");
+      } catch (err) { await client.query("ROLLBACK").catch(() => {}); throw err; } finally { client.release(); }
+      await pushManagers({ title: `🏪 محل جديد: ${c.name}`, body: `سجّله ${req.user.full_name} وهو بيلف مندوب.`, url: "/f/customers", tag: `nc-${c.id}` });
+    }
+  }
+  // الكميات: ما بتزيد عن اللي على السيارة
+  const left = new Map((await carStock(t.id)).map((x) => [x.product_id, x]));
+  const items = [];
+  for (const x of Array.isArray(b.items) ? b.items : []) {
+    const qty = Math.round(Number(x.qty));
+    if (!x.product_id || !(qty > 0)) continue;
+    const st = left.get(Number(x.product_id));
+    if (!st) return bad(res, "في منتج مش محمّل على السيارة.");
+    if (qty > st.left) return bad(res, `على السيارة بس ${st.left} ${st.name}.`);
+    const bonus = Math.min(await bonusFor(c.id, st.product_id, qty), st.left - qty);
+    items.push({ product_id: st.product_id, name: st.name, qty, bonus, price: await priceFor(c.id, st.product_id) });
+  }
+  if (!items.length) return bad(res, "اختار شو بدك تبيع.");
+  const total = round2(items.reduce((a, i) => a + i.qty * i.price, 0));
+  const cash = b.cash === undefined || b.cash === "" || b.cash === null ? total : round2(b.cash);
+  if (!(cash >= 0)) return bad(res, "المبلغ غير صحيح.");
+  const debt = round2(total - cash);
+  if (debt > 0) {
+    if (!canAction(req.user, "give_credit")) return bad(res, "ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.");
+    const newBal = round2(Number(c.balance) + debt);
+    const over = Number(c.credit_limit) > 0 ? newBal > Number(c.credit_limit) : c.pay_terms === "cash";
+    if (over && !b.confirm_over_limit) {
+      return res.status(409).json({ error: `${c.name} رح يصير عليه ${newBal.toFixed(2)} د.أ${Number(c.credit_limit) > 0 ? ` وسقفه ${Number(c.credit_limit).toFixed(2)}` : " وهو زبون كاش"}. إذا كملت بيوصل تنبيه للإدارة.`, code: "OVER_LIMIT", customer_id: c.id });
+    }
+  }
+  const oid = (await query(
+    "INSERT INTO f_orders (customer_id, status, trip_id, due_date, notes, total, created_by) VALUES ($1,'onway',$2,$3,'بيع مندوب',$4,$5) RETURNING id",
+    [c.id, t.id, jordanDate(), total, req.user.id]
+  )).rows[0].id;
+  for (const i of items) {
+    await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,false)", [oid, i.product_id, i.qty, i.price, i.bonus]);
+  }
+  const o = (await loadOrders("o.id = $1", [oid]))[0];
+  return deliverOrder(req, res, o, t, { cash, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true }, { sale: true });
 });
 
 export default router;
