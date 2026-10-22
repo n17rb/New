@@ -1,0 +1,17 @@
+{
+  "name": "mawj-driver-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "تطبيق السائق (أندرويد): نفس شاشات «رحلتي» + تتبع السيارة بالخلفية والشاشة مطفية",
+  "scripts": {
+    "android": "npx cap add android && node scripts/patch-android.js && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor-community/background-geolocation": "^1.2.17"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

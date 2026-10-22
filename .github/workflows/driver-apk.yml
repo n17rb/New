@@ -1,0 +1,70 @@
+name: تطبيق السائق (APK)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, factory]
+    paths:
+      - "driver-app/**"
+      - ".github/workflows/driver-apk.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: driver-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: تنزيل المكتبات
+        run: npm install --no-audit --no-fund
+
+      - name: تجهيز مشروع أندرويد
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          npx cap add android
+          node scripts/patch-android.js
+          npx cap sync android
+
+      # نفس مفتاح التوقيع كل مرة، عشان التحديث ينزل فوق النسخة القديمة
+      - name: مفتاح التوقيع
+        run: |
+          mkdir -p ~/.android
+          cp keystore/debug.keystore ~/.android/debug.keystore
+
+      - name: بناء الـAPK
+        working-directory: driver-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../mawj-driver.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mawj-driver-apk
+          path: driver-app/mawj-driver.apk
+
+      # رابط ثابت للتنزيل: آخر نسخة دايمًا بنفس الرابط
+      - name: نشر آخر نسخة
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete driver-latest --yes --cleanup-tag || true
+          gh release create driver-latest mawj-driver.apk \
+            --title "تطبيق السائق — آخر نسخة" \
+            --notes "نزّل الملف على تلفون السائق (أندرويد) وثبّته. إصدار ${{ github.run_number }}." \
+            --target ${{ github.sha }}
