@@ -168,6 +168,8 @@ const fmtTime = (iso) => {
   return new Date(iso).toLocaleTimeString("ar-JO-u-nu-latn", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Amman" });
 };
 const fmtMoney = (n) => Number(n || 0).toFixed(2);
+// الرصيد بكلام مفهوم: عليك / إلك / صفر
+const balWord = (n) => { const v = Number(n || 0); return v > 0.009 ? `${v.toFixed(2)} د.أ عليك` : v < -0.009 ? `${(-v).toFixed(2)} د.أ إلك عنّا (دفعت زيادة)` : "صفر — حسابك مسكّر ✓"; };
 
 export function trackLink(token) {
   const base = process.env.APP_URL || "https://new-1-tb2d.onrender.com";
@@ -199,7 +201,7 @@ export async function messageText(kind, d) {
     case "onway":
       return `السائق ${d.driver} طلع من المصنع وهو بالطريق إلك. الوصول المتوقع حوالي ${fmtTime(d.eta)}.${link}${sign}`;
     case "delivered":
-      return `تم تسليم طلبك رقم ${d.order}: ${d.items}.\nقيمة الفاتورة: ${fmtMoney(d.total)} د.أ\nالمدفوع: ${fmtMoney(d.paid)} د.أ\nرصيدك الحالي: ${fmtMoney(d.balance)} د.أ\nالفاتورة: ${invoiceLink(d.invoice)}${sign}`;
+      return `تم تسليم طلبك رقم ${d.order}: ${d.items}.\nقيمة الفاتورة: ${fmtMoney(d.total)} د.أ\nالمدفوع: ${fmtMoney(d.paid)} د.أ\nرصيد حسابك: ${balWord(d.balance)}\nالفاتورة: ${invoiceLink(d.invoice)}${sign}`;
     case "debt":
       return `السلام عليكم ${d.name} 🌷\nنتمنى تكونوا بألف خير. حبّينا نذكّركم بلطف إنه رصيد حسابكم عنّا ${fmtMoney(d.balance)} دينار.\nبتقدروا تشوفوا كشف الحساب كامل من هون: ${trackLink(d.track)}\nإذا في أي استفسار أو ملاحظة إحنا بالخدمة دايمًا. شكرًا لثقتكم وتعاملكم معنا 🙏${sign}`;
     case "coming":
@@ -211,7 +213,7 @@ export async function messageText(kind, d) {
     case "transfer":
       return `صار طلبك رقم ${d.order} مع السائق ${d.driver} (${d.vehicle}). الموعد ما تغيّر.${link}${sign}`;
     case "payment":
-      return `وصلتنا دفعتك ${fmtMoney(d.amount)} د.أ. شكرًا إلك. رصيدك الحالي: ${fmtMoney(d.balance)} د.أ.${sign}`;
+      return `وصلتنا دفعتك ${fmtMoney(d.amount)} د.أ. شكرًا إلك. رصيد حسابك: ${balWord(d.balance)}.${sign}`;
     default:
       return `${d.body}${sign}`;
   }

@@ -243,9 +243,15 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const [showAdd, setShowAdd] = useState(false);
   const [exch, setExch] = useState({}); // استبدال تالف عند الزبون
   const extraProducts = fx.boot.products.filter((p) => p.active && !o.items.some((i) => i.product_id === p.id));
-  const total = o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
-    + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * (fx.boot.products.find((p) => p.id === Number(pid))?.price || 0), 0);
-  const [cash, setCash] = useState(() => (o.pay_terms === "credit" ? "" : String(Math.round(total * 100) / 100)));
+  // أسعار هالزبون (الخاصة) للمنتجات الزيادة — نفس اللي السيرفر بيحسبه
+  const [prices, setPrices] = useState({});
+  useEffect(() => { fapi.driverPrices(o.customer_id).then(setPrices).catch(() => {}); }, [o.customer_id]);
+  const total = Math.round((o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
+    + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * Number(prices[pid] ?? fx.boot.products.find((p) => p.id === Number(pid))?.price ?? 0), 0)) * 100) / 100;
+  // الكاش بيمشي مع الفاتورة لحاله (لو غيّرت الكميات)، إلا إذا السائق كتب مبلغ بإيده
+  const [cashEdit, setCashEdit] = useState(null);
+  const cash = cashEdit ?? (o.pay_terms === "credit" ? "" : String(total));
+  const setCash = (v) => setCashEdit(v);
   const [photo, setPhoto] = useState(null);
   const [overMsg, setOverMsg] = useState("");
   const [err, setErr] = useState("");

@@ -96,7 +96,10 @@ async function drawInvoice({ brand, invoice: inv, items, exchanges = [] }) {
   y += 110;
   kv("المدفوع", money(inv.paid));
   kv("الباقي على الفاتورة", money(Math.max(0, inv.total - inv.paid)), Math.max(0, inv.total - inv.paid) > 0 ? { color: "#D64545" } : {});
-  if (inv.balance_after != null) kv("رصيد الحساب الكلي", money(inv.balance_after));
+  if (inv.balance_after != null) {
+    const v = Number(inv.balance_after);
+    kv("رصيد الحساب الكلي", v > 0.009 ? `${money(v)} عليك` : v < -0.009 ? `${money(-v)} إلك عنّا` : "0.00 ✓", v < -0.009 ? { color: C.ok } : {});
+  }
 
   // التوقيع
   const sig = /^data:image/.test(inv.signature || "") ? await loadImg(inv.signature) : null;
