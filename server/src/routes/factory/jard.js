@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { query } from "../../db.js";
-import { canAction } from "../../permissions.js";
+import { can, canAction } from "../../permissions.js";
 import { needAny, need, round2, jordanDate } from "./lib.js";
 import { loadTrips } from "./orders.js";
+import { settleTrip } from "./money.js";
+import { alert, bad } from "./lib.js";
 
 // ============================================================
 // الجرد اليومي: لكل سائق بشاشة وحدة —
@@ -86,6 +88,15 @@ async function buildJard(date, driverId = null) {
     };
   };
 
+  // الرحلات اللي رجعت ولسا ما انستلم كاشها (من اليوم أو من قبل) — للتسوية
+  const drvIds = [...new Set(trips.map((t) => t.driver_id).filter(Boolean))];
+  const unsettled = drvIds.length ? await loadTrips("t.driver_id = ANY($1::int[]) AND t.status = 'returned' AND t.settled_at IS NULL", [drvIds]) : [];
+  const settleView = (t) => ({
+    id: t.id, vehicle_name: t.vehicle_name, trip_date: t.trip_date, kind: t.kind || "orders",
+    cash: round2(t.collected), expenses: round2(t.expenses_total), due: round2(t.cash_due),
+    expenses_list: t.expenses.map((e) => ({ id: e.id, kind: e.kind, amount: e.amount, status: e.status, photo_url: e.photo_url, note: e.note })),
+  });
+
   // نجمّع حسب السائق
   const byDriver = new Map();
   for (const t of trips) {
@@ -102,8 +113,15 @@ async function buildJard(date, driverId = null) {
       goods.set(g.product_id, x);
     }
     const open = d.trips.filter((t) => !t.settled_at);
+    const toSettle = unsettled.filter((t) => t.driver_id === d.driver_id).sort((a, b) => a.trip_date.localeCompare(b.trip_date) || a.id - b.id).map(settleView);
     return {
       ...d,
+      settle: {
+        trips: toSettle,
+        due: round2(toSettle.reduce((a, t) => a + t.due, 0)),
+        older: round2(toSettle.filter((t) => !d.trips.some((x) => x.id === t.id)).reduce((a, t) => a + t.due, 0)),
+        active: d.trips.filter((t) => t.status === "active").length,
+      },
       custody: round2(Number(ledger.rows.find((l) => l.driver_id === d.driver_id)?.bal || 0)),
       totals: {
         invoices: sum((t) => t.money.invoices), cash: sum((t) => t.money.cash), debt: sum((t) => t.money.debt),
@@ -123,7 +141,36 @@ async function buildJard(date, driverId = null) {
 router.get("/jard", viewJard, async (req, res) => {
   const date = isDate(req.query.date) ? req.query.date : jordanDate();
   const drivers = await buildJard(date, Number(req.query.driver_id) || null);
-  res.json({ date, drivers, can_review: canAction(req.user, "approve_expense") });
+  res.json({ date, drivers, can_review: canAction(req.user, "approve_expense"), can_settle: can(req.user, "f_money", "edit") });
+});
+
+// تسوية: استلمت من السائق — كل رحلاته اللي رجعت ولسا ما انحاسبت، الأقدم أول
+router.post("/jard/settle", need("f_money", "edit"), async (req, res) => {
+  const driverId = Number(req.body?.driver_id);
+  const handed = round2(req.body?.handed);
+  if (!driverId) return bad(res, "اختار السائق.");
+  if (!(handed >= 0)) return bad(res, "اكتب المبلغ اللي استلمته.");
+  const trips = (await loadTrips("t.driver_id = $1 AND t.status = 'returned' AND t.settled_at IS NULL", [driverId]))
+    .sort((a, b) => a.trip_date.localeCompare(b.trip_date) || a.id - b.id);
+  if (!trips.length) return bad(res, "ما في رحلات راجعة بدها تسوية. إذا السائق لسا شغال، خليه يكبس «رجعت للمصنع» أول.");
+  const pending = trips.flatMap((t) => t.expenses.filter((e) => e.status === "pending"));
+  if (pending.length) return bad(res, `في ${pending.length} مصروف لسا ما وافقت عليه أو رفضته — قرّر فيهم أول.`);
+  let left = handed;
+  const out = [];
+  trips.forEach((t, i) => {
+    const due = round2(t.cash_due);
+    const give = i === trips.length - 1 ? left : Math.min(due, left);
+    left = round2(left - give);
+    out.push([t, round2(give)]);
+  });
+  let required = 0;
+  for (const [t, give] of out) required += (await settleTrip(t, give, req.user)).required;
+  required = round2(required);
+  const diff = round2(required - handed);
+  const name = trips[0].driver_name || "السائق";
+  if (diff > 0) await alert({ level: "crit", kind: "cash_short", ref: trips[0].id, title: `نقص ${diff.toFixed(2)} د.أ بكاش ${name}`, body: `المطلوب ${required.toFixed(2)} والمسلّم ${handed.toFixed(2)}. انسجّل عهدة عليه.` });
+  else await alert({ level: "ok", kind: "cash_ok", ref: trips[0].id, title: `${name} سلّم ${handed.toFixed(2)} د.أ`, body: diff < 0 ? `زيادة ${(-diff).toFixed(2)} عن المطلوب.` : "مطابق للمطلوب ✓" });
+  res.json({ ok: true, required, handed, diff, trips: trips.length });
 });
 
 // جردي أنا (السائق)

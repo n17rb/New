@@ -821,3 +821,15 @@ a.fx-pill { text-decoration: none; }
 .fx-debt-alert { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: #fff4e0; border: 1.5px solid #f0b429; color: #7a4f00; font-size: 14px; line-height: 1.6; }
 .fx-debt-alert .fx-btn { justify-self: start; }
 .fx-who .debt { background: #fff4e0; border: 1px solid #f0b429; border-radius: 10px; padding: 4px 8px; }
+
+.fx-jard-big .tile.wait { background: #eef6fd; border-color: #bcd9f2; }
+.fx-jard-big .tile.wait b { color: var(--fx-navy, #0456a2); }
+.fx-jard-invbtn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 16px; border-radius: 18px; background: #fff; border: 1px solid var(--fx-line); font: inherit; font-size: 15px; color: inherit; cursor: pointer; text-align: start; }
+.fx-jard-invbtn > span:first-child { flex: 1; }
+.fx-jard-invbtn .amt { font-weight: 800; color: var(--fx-navy, #0456a2); font-variant-numeric: tabular-nums; }
+.fx-jard-invbtn .chev { font-size: 22px; color: var(--fx-muted); transition: transform .2s; }
+.fx-jard-invbtn.on { border-color: var(--fx-navy, #0456a2); }
+.fx-jard-invbtn.on .chev { transform: rotate(180deg); }
+.fx-jard-invs { display: grid; gap: 10px; }
+.fx-jard-invs.closed { display: none; }
+@media print { .fx-jard-invs.closed { display: grid; } }
