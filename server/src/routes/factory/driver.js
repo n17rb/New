@@ -240,6 +240,14 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
     total += q * price;
     added.push({ product_id: p.id, name: p.name, qty: q, price });
   }
+  // استبدال تالف: أخذنا من الزبون كراتين تالفة وأعطيناه بدالها جديد (ما بينحسب بالفاتورة)
+  const exchanges = [];
+  for (const x of Array.isArray(b.exchanges) ? b.exchanges : []) {
+    const q = Math.round(Number(x.qty));
+    if (!x.product_id || !(q > 0) || q > 100000) continue;
+    const p = (await query("SELECT id, name FROM f_products WHERE id = $1", [x.product_id])).rows[0];
+    if (p) exchanges.push({ product_id: p.id, name: p.name, qty: q });
+  }
   total = round2(total);
   const cash = round2(b.cash);
   if (cash < 0) return bad(res, "المبلغ غير صحيح.");
@@ -259,6 +267,13 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   let balance;
   try {
     await client.query("BEGIN");
+    for (const x of exchanges) {
+      await client.query("INSERT INTO f_order_exchanges (order_id, product_id, qty) VALUES ($1,$2,$3)", [o.id, x.product_id, x.qty]);
+      await client.query(
+        "INSERT INTO f_stock_moves (product_id, kind, qty, damage_source, trip_id, vehicle_id, reason, photo_url, created_by) VALUES ($1,'damage',$2,'customer',$3,$4,$5,$6,$7)",
+        [x.product_id, x.qty, t.id, t.vehicle_id, `استبدال تالف عند ${o.customer_name}`, b.exchange_photo || null, req.user.id]
+      );
+    }
     for (const a of added) {
       await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, delivered_qty, bonus_qty, delivered_bonus) VALUES ($1,$2,$3,$4,$3,0,0)", [o.id, a.product_id, a.qty, a.price]);
     }
@@ -296,14 +311,15 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
     customerId: c.id, orderId: o.id, kind: "delivered",
-    data: { order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name }))]), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
+    data: { order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });
   const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0) + added.reduce((a, x) => a + x.qty, 0);
+  const exTxt = exchanges.length ? ` · بدّل ${exchanges.reduce((a, x) => a + x.qty, 0)} تالف` : "";
   await pushManagers({
     title: sale ? `🛒 ${t.driver_name || "المندوب"} باع لـ ${c.name}` : `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
-    body: `${cartons} كرتونة · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${sale ? "" : left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
+    body: `${cartons} كرتونة${exTxt} · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${sale ? "" : left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
     url: "/f/trips", tag: `fd-${o.id}`,
   });
   res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left, order_id: o.id, invoice_token: token, customer_name: c.name, phone: c.phone });
@@ -428,10 +444,11 @@ async function carStock(tripId) {
     `WITH l AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'load' GROUP BY product_id),
           s AS (SELECT i.product_id, SUM(COALESCE(i.delivered_qty,0) + COALESCE(i.delivered_bonus,0))::int AS q
                 FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY i.product_id),
-          d AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'damage' GROUP BY product_id)
-     SELECT p.id AS product_id, p.name, p.image_url, COALESCE(l.q,0) AS loaded, COALESCE(s.q,0) AS sold, COALESCE(d.q,0) AS damaged,
-            COALESCE(l.q,0) - COALESCE(s.q,0) - COALESCE(d.q,0) AS left
-     FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN d ON d.product_id = p.id
+          d AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'damage' AND damage_source = 'vehicle' GROUP BY product_id),
+          x AS (SELECT x.product_id, SUM(x.qty)::int AS q FROM f_order_exchanges x JOIN f_orders o ON o.id = x.order_id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY x.product_id)
+     SELECT p.id AS product_id, p.name, p.image_url, COALESCE(l.q,0) AS loaded, COALESCE(s.q,0) AS sold, COALESCE(d.q,0) AS damaged, COALESCE(x.q,0) AS exchanged,
+            COALESCE(l.q,0) - COALESCE(s.q,0) - COALESCE(d.q,0) - COALESCE(x.q,0) AS left
+     FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN d ON d.product_id = p.id LEFT JOIN x ON x.product_id = p.id
      WHERE l.q IS NOT NULL ORDER BY p.id`,
     [tripId]
   );
@@ -569,7 +586,16 @@ router.post("/driver/sales/:id/sell", drive, async (req, res) => {
     const bonus = Math.min(await bonusFor(c.id, st.product_id, qty), st.left - qty);
     items.push({ product_id: st.product_id, name: st.name, qty, bonus, price: await priceFor(c.id, st.product_id) });
   }
-  if (!items.length) return bad(res, "اختار شو بدك تبيع.");
+  const exch = [];
+  for (const x of Array.isArray(b.exchanges) ? b.exchanges : []) {
+    const qty = Math.round(Number(x.qty));
+    if (!x.product_id || !(qty > 0)) continue;
+    const st = left.get(Number(x.product_id));
+    const used = items.filter((i) => i.product_id === Number(x.product_id)).reduce((a, i) => a + i.qty + i.bonus, 0);
+    if (!st || qty > st.left - used) return bad(res, `ما معك ${st ? st.name : "هالمنتج"} كفاية للاستبدال.`);
+    exch.push({ product_id: st.product_id, qty });
+  }
+  if (!items.length && !exch.length) return bad(res, "اختار شو بدك تبيع.");
   const total = round2(items.reduce((a, i) => a + i.qty * i.price, 0));
   const cash = b.cash === undefined || b.cash === "" || b.cash === null ? total : round2(b.cash);
   if (!(cash >= 0)) return bad(res, "المبلغ غير صحيح.");
@@ -590,7 +616,7 @@ router.post("/driver/sales/:id/sell", drive, async (req, res) => {
     await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,false)", [oid, i.product_id, i.qty, i.price, i.bonus]);
   }
   const o = (await loadOrders("o.id = $1", [oid]))[0];
-  return deliverOrder(req, res, o, t, { cash, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true }, { sale: true });
+  return deliverOrder(req, res, o, t, { cash, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true, exchanges: exch, exchange_photo: b.exchange_photo }, { sale: true });
 });
 
 export default router;

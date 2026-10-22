@@ -45,6 +45,11 @@ export async function loadOrders(where, params = []) {
      WHERE i.order_id = ANY($1::int[]) ORDER BY i.id`,
     [r.rows.map((o) => o.id)]
   );
+  const exch = await query(
+    `SELECT x.order_id, x.product_id, p.name, SUM(x.qty)::int AS qty FROM f_order_exchanges x JOIN f_products p ON p.id = x.product_id
+     WHERE x.order_id = ANY($1::int[]) GROUP BY x.order_id, x.product_id, p.name`,
+    [r.rows.map((o) => o.id)]
+  );
   const byOrder = new Map();
   for (const i of items.rows) {
     if (!byOrder.has(i.order_id)) byOrder.set(i.order_id, []);
@@ -58,6 +63,7 @@ export async function loadOrders(where, params = []) {
       ...(reg ? { governorate: reg.governorate, district: reg.district } : {}),
       total: Number(o.total), cash_paid: Number(o.cash_paid), delivered_total: o.delivered_total == null ? null : Number(o.delivered_total),
       customer_balance: Number(o.customer_balance), credit_limit: Number(o.credit_limit),
+      exchanges: exch.rows.filter((x) => x.order_id === o.id),
       items: its, cartons: its.reduce((s, i) => s + i.qty + (i.bonus_qty || 0), 0), bonus: its.reduce((s, i) => s + (i.bonus_qty || 0), 0),
     };
   });

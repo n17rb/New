@@ -23,7 +23,7 @@ function loadImg(src) {
   });
 }
 
-async function drawInvoice({ brand, invoice: inv, items }) {
+async function drawInvoice({ brand, invoice: inv, items, exchanges = [] }) {
   const cv = document.createElement("canvas");
   cv.width = W; cv.height = 3600;
   const g = cv.getContext("2d");
@@ -82,7 +82,12 @@ async function drawInvoice({ brand, invoice: inv, items }) {
     const b = i.delivered_bonus ?? i.bonus_qty;
     if (b > 0) row([`بونص ${i.name}`, b, "ببلاش", "0.00"], C.ok);
   }
+  for (const x of exchanges) row([`استبدال تالف ${x.name}`, x.qty, "ببلاش", "0.00"], "#5B3CC4");
   hr(y); y += 40;
+  if (exchanges.length) {
+    text(`أخذنا ${exchanges.map((x) => `${x.qty} ${x.name}`).join(" و")} تالف وأعطيناك بدالها جديد ببلاش`, R, y, { size: 26, color: "#5B3CC4" });
+    y += 56;
+  }
 
   // المجاميع
   g.fillStyle = C.soft; g.fillRect(L, y - 10, R - L, 84);

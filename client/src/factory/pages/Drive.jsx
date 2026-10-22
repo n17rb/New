@@ -4,7 +4,7 @@ import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
-import { SalesStartCard, SalesDay } from "./Sales.jsx";
+import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
@@ -241,6 +241,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const [showDmg, setShowDmg] = useState(false);
   const [added, setAdded] = useState({}); // منتجات زيادة أخذها الزبون من السيارة
   const [showAdd, setShowAdd] = useState(false);
+  const [exch, setExch] = useState({}); // استبدال تالف عند الزبون
   const extraProducts = fx.boot.products.filter((p) => p.active && !o.items.some((i) => i.product_id === p.id));
   const total = o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
     + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * (fx.boot.products.find((p) => p.id === Number(pid))?.price || 0), 0);
@@ -260,6 +261,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
       const r = await fapi.deliver(o.id, {
         items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
         add_items: Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
+        exchanges: exchangeList(exch),
         cash: cashN, signature: sig, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
       });
       fx.toast(r.remaining_stops ? `انسجل التسليم. باقي ${r.remaining_stops} وقفات.` : "انسجل التسليم. خلصت كل الوقفات!");
@@ -319,8 +321,9 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
             {extraProducts.filter((p) => !(String(p.id) in added)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setAdded({ ...added, [p.id]: 1 }); setShowAdd(false); }}>{p.name}</button>)}
           </div>
         ))}
+        <ExchangeEditor value={exch} onChange={setExch} products={fx.boot.products.filter((p) => p.active)} />
         {!showDmg ? (
-          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowDmg(true)}>في كراتين تالفة؟</button>
+          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowDmg(true)}>في كراتين تالفة من حمولتي؟</button>
         ) : (
           o.items.map((i) => (
             <label key={i.id} className="fx-field">تالف من {i.name}

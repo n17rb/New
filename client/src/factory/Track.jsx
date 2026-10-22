@@ -87,7 +87,7 @@ function Orders({ data }) {
 }
 
 export function Invoice({ data, inApp = false }) {
-  const { brand, invoice: inv, items } = data;
+  const { brand, invoice: inv, items, exchanges = [] } = data;
   return (
     <div className="fx-public">
       <Head brand={brand} />
@@ -107,9 +107,13 @@ export function Invoice({ data, inApp = false }) {
                 {(i.delivered_bonus ?? i.bonus_qty) > 0 && <tr style={{ color: "var(--fx-ok)" }}><td>بونص {i.name}</td><td>{i.delivered_bonus ?? i.bonus_qty}</td><td>ببلاش</td><td>0.00</td></tr>}
               </Fragment>
             ))}
+            {exchanges.map((x, k) => (
+              <tr key={`x${k}`} style={{ color: "#5b3cc4" }}><td>🔁 استبدال تالف {x.name}</td><td>{x.qty}</td><td>ببلاش</td><td>0.00</td></tr>
+            ))}
           </tbody>
         </table>
       </div>
+      {exchanges.length > 0 && <div className="fx-note" style={{ background: "#f6f2ff", color: "#5b3cc4" }}>أخذنا منك {exchanges.map((x) => `${x.qty} ${x.name}`).join(" و")} تالف، وأعطيناك بدالها جديد ببلاش.</div>}
       <div className="fx-card">
         <div className="fx-kv total"><span>المجموع</span><b>{money(inv.total)} د.أ</b></div>
         <div className="fx-kv"><span>المدفوع</span><b>{money(inv.paid)}</b></div>

@@ -982,3 +982,13 @@ ALTER TABLE f_alerts ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(i
 
 -- رحلة طلبات أو شغل مندوب (بيع مباشر على المحلات من اللي على السيارة)
 ALTER TABLE f_trips ADD COLUMN IF NOT EXISTS kind VARCHAR(10) NOT NULL DEFAULT 'orders';
+
+-- استبدال تالف عند الزبون: أخذنا منه كراتين تالفة وأعطيناه بدالها جديد ببلاش
+CREATE TABLE IF NOT EXISTS f_order_exchanges (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES f_orders(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES f_products(id),
+  qty INTEGER NOT NULL CHECK (qty > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_exch_order ON f_order_exchanges(order_id);
