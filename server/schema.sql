@@ -976,3 +976,6 @@ ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS recurring_id INTEGER REFERENCES f_
 
 -- السائق «انطلق لعند الزبون»: من هون بنحسب وقت الوصول وبنبعتله رسالة
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS en_route_at TIMESTAMPTZ;
+
+-- مين بلّغ عن المشكلة (عشان السائق يقدر يسكّرها لما تنحل)
+ALTER TABLE f_alerts ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;

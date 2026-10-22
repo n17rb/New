@@ -660,3 +660,11 @@ a.fx-pill { text-decoration: none; }
 .fx-drv-list .r.cur .t b { color: #14653a; }
 .fx-drv-list .r.cur .fx-n { background: #1F9D55; color: #fff; }
 .fx-drv-list .r.done { opacity: .6; }
+
+/* عطل مفتوح — بينشال لما السيارة ترجع تشتغل */
+.fx-drv-prob { display: grid; gap: 8px; padding: 14px; border-radius: 18px; background: #fdecec; border: 1px solid #f5c2c2; }
+.fx-drv-prob > span { display: grid; gap: 2px; color: #a32020; }
+.fx-drv-prob small { color: #a35a5a; font-size: 12px; }
+.fx-trip-prob { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 8px 12px; border-radius: 12px; background: #fdecec; color: #a32020; font-size: 13px; font-weight: 600; }
+.fx-trip-prob small { color: #a35a5a; font-weight: 500; }
+.fx-trip-prob .fx-btn { flex: none; }
