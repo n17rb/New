@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km, chainNearest } from "../../utils/factoryGeo.js";
+import { smartFilter } from "../../utils/smartSearch.js";
 import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once } from "./lib.js";
 import { cleanCustomer, nextSeq } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
@@ -547,14 +548,13 @@ router.post("/driver/sales/:id/load", drive, once(async (req, res) => {
 router.get("/driver/shops", drive, async (req, res) => {
   const lat = Number(req.query.lat), lng = Number(req.query.lng);
   const q = String(req.query.q || "").trim();
-  const rows = (await query(
-    `SELECT id, name, phone, city, address, lat, lng, balance, seq_no FROM f_customers
-     WHERE active ${q ? "AND (name ILIKE $1 OR phone ILIKE $1 OR city ILIKE $1 OR seq_no::text = $2)" : ""} ORDER BY name LIMIT 2000`,
-    q ? [`%${q}%`, q] : []
+  let rows = (await query(
+    "SELECT id, name, contact_name, phone, city, address, lat, lng, balance, seq_no FROM f_customers WHERE active ORDER BY name LIMIT 5000"
   )).rows;
+  if (q) rows = smartFilter(rows, q);
   const near = Number.isFinite(lat) && lat;
   const list = rows.map((c) => ({ ...c, balance: Number(c.balance), km: near && c.lat != null ? km([lat, lng], [c.lat, c.lng]) : null }));
-  list.sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || a.name.localeCompare(b.name, "ar"));
+  if (!q) list.sort((a, b) => (a.km ?? 1e9) - (b.km ?? 1e9) || a.name.localeCompare(b.name, "ar"));
   res.json(list.slice(0, 40));
 });
 
