@@ -687,3 +687,15 @@ a.fx-pill { text-decoration: none; }
 .fx-sheet { overflow-x: hidden; }
 .fx-stepper.big { grid-template-columns: 56px minmax(0, 1fr) 56px; }
 .fx-stepper.big .fx-input { min-width: 0; width: 100%; }
+
+/* بطاقة الزبون عند السائق */
+.fx-who { display: flex; gap: 12px; align-items: flex-start; }
+.fx-who .ph { flex: none; width: 72px; height: 72px; border-radius: 16px; overflow: hidden; background: #e8f1fa; display: grid; place-items: center; }
+.fx-who .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fx-who .ph.none { font-size: 28px; font-weight: 800; color: var(--fx-navy, #0456a2); }
+.fx-who.big .ph { width: 96px; height: 96px; }
+.fx-who .tx { display: grid; gap: 3px; min-width: 0; flex: 1; font-size: 14px; color: var(--fx-muted); }
+.fx-who .tx .nm { font-size: 21px; line-height: 1.3; color: var(--fx-text, #102A43); }
+.fx-who .tx .nm small { font-size: 13px; color: var(--fx-muted); font-weight: 600; }
+.fx-who .debt { color: #b06a00; font-weight: 700; }
+.fx-who .note { background: #fff8e6; color: #7a5a00; border-radius: 10px; padding: 4px 8px; }

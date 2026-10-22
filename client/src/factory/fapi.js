@@ -97,6 +97,7 @@ export const fapi = {
   driverConfirmLoad: (id) => post(`/driver/trips/${id}/confirm-load`),
   driverStart: (id, b) => post(`/driver/trips/${id}/start`, b),
   driverGo: (id, b) => post(`/driver/orders/${id}/go`, b),
+  driverResort: (id, b) => post(`/driver/trips/${id}/resort`, b),
   driverReturn: (id, b) => post(`/driver/trips/${id}/return`, b),
   ping: (b) => post("/driver/ping", b),
   deliver: (id, b) => post(`/driver/orders/${id}/deliver`, b),

@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
-import { km } from "../../utils/factoryGeo.js";
+import { km, chainNearest } from "../../utils/factoryGeo.js";
 import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor } from "./lib.js";
 import { cleanCustomer, nextSeq } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
+import { factoryPoint } from "./lib.js";
 
 // ============================================================
 // المصنع: تطبيق السائق — فتح الرحلة، التسليم، المصاريف، الإبلاغ، الرجوع
@@ -98,17 +99,44 @@ router.post("/driver/trips/:id/confirm-load", drive, async (req, res) => {
   res.json({ ok: true });
 });
 
+// بداية الرحلة (من الزر، أو لحالها لما يسلّم/ينطلق لأي زبون قبل ما يكبس «ابدأ»)
+async function startTrip(t, userId = t.driver_id) {
+  if (!t.load_confirmed_at) await confirmLoad(t.id, userId, []);
+  await query("UPDATE f_trips SET status = 'active', started_at = now() WHERE id = $1 AND status = 'planned'", [t.id]);
+  await query("UPDATE f_orders SET status = 'onway', updated_at = now() WHERE trip_id = $1 AND status = 'assigned'", [t.id]);
+  await query("UPDATE f_vehicles SET last_seen_at = now() WHERE id = $1", [t.vehicle_id]);
+  t.status = "active";
+  await pushManagers({ title: `🚚 ${t.driver_name || "السائق"} طلع بالرحلة`, body: `${t.vehicle_name} · ${t.stops.length} زبون. تابعه على الخريطة.`, url: "/f/trips", tag: `ts-${t.id}` });
+}
+
+// رتّب الباقي من مكاني هلأ (الأقرب فالأقرب)
+router.post("/driver/trips/:id/resort", drive, async (req, res) => {
+  const t = await myTrip(req, req.params.id);
+  if (!t) return bad(res, "الرحلة مش إلك.", 403);
+  const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
+  let start = Number.isFinite(lat) && lat ? [lat, lng] : null;
+  if (!start) {
+    const v = (await query("SELECT last_lat, last_lng FROM f_vehicles WHERE id = $1", [t.vehicle_id])).rows[0];
+    start = v?.last_lat != null && t.status === "active" ? [v.last_lat, v.last_lng] : await factoryPoint();
+  } else {
+    await query("UPDATE f_vehicles SET last_lat = $1, last_lng = $2, last_seen_at = now() WHERE id = $3", [lat, lng, t.vehicle_id]);
+  }
+  const done = t.stops.filter((o) => ["delivered", "failed"].includes(o.status));
+  const open = t.stops.filter((o) => !["delivered", "failed"].includes(o.status));
+  let seq = 0;
+  for (const o of done) await query("UPDATE f_orders SET stop_seq = $1 WHERE id = $2", [++seq, o.id]);
+  for (const o of chainNearest(start, open)) await query("UPDATE f_orders SET stop_seq = $1 WHERE id = $2", [++seq, o.id]);
+  await recomputeEta(t.id, { fromNow: t.status === "active" });
+  res.json({ ok: true });
+});
+
 // بداية الرحلة
 router.post("/driver/trips/:id/start", drive, async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t) return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "planned") return bad(res, "الرحلة بلشت من قبل.");
   // بدون صور عداد وديزل: إذا الحمولة ما تأكدت من المستودع، كبسة «ابدأ» بتأكدها
-  if (!t.load_confirmed_at) await confirmLoad(t.id, req.user.id, []);
-  await query("UPDATE f_trips SET status = 'active', started_at = now() WHERE id = $1", [t.id]);
-  await query("UPDATE f_orders SET status = 'onway', updated_at = now() WHERE trip_id = $1 AND status = 'assigned'", [t.id]);
-  await query("UPDATE f_vehicles SET last_seen_at = now() WHERE id = $1", [t.vehicle_id]);
-  await pushManagers({ title: `🚚 ${t.driver_name || "السائق"} طلع بالرحلة`, body: `${t.vehicle_name} · ${t.stops.length} زبون. تابعه على الخريطة.`, url: "/f/trips", tag: `ts-${t.id}` });
+  await startTrip(t, req.user.id);
   // أول زبون: بنحسب وقت الوصول من مكان السائق وبنجهّزله رسالة
   const first = (await loadOrders("o.trip_id = $1 AND o.status = 'onway'", [t.id]))[0];
   const go = first ? await goTo(first, t, req) : null;
@@ -144,8 +172,9 @@ router.post("/driver/orders/:id/go", drive, async (req, res) => {
   if (!o) return bad(res, "الطلب غير موجود.", 404);
   const t = await myTrip(req, o.trip_id);
   if (!t) return bad(res, "الطلب مش على رحلتك.", 403);
-  if (t.status !== "active") return bad(res, "ابدأ الرحلة أول.");
-  if (o.status !== "onway") return bad(res, "هالطلب خلص.");
+  if (t.status === "planned") await startTrip(t);
+  else if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
+  if (!["onway", "assigned"].includes(o.status)) return bad(res, "هالطلب خلص.");
   res.json({ ok: true, ...(await goTo(o, t, req)) });
 });
 
@@ -174,8 +203,9 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   if (!o) return bad(res, "الطلب غير موجود.", 404);
   const t = o.trip_id ? await myTrip(req, o.trip_id) : null;
   if (!t) return bad(res, "الطلب مش على رحلتك.", 403);
-  if (t.status !== "active") return bad(res, "ابدأ الرحلة أول.");
   if (o.status === "delivered") return bad(res, "الطلب مسلّم من قبل.");
+  if (t.status === "planned") await startTrip(t);
+  else if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
   const b = req.body || {};
   if (!b.signature && !b.photo_url) return bad(res, "خلي الزبون يوقّع، أو صوّر البضاعة عنده.");
   return deliverOrder(req, res, o, t, b);
