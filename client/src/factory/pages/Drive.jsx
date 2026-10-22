@@ -7,7 +7,7 @@ import TripsMap from "./TripsMap.jsx";
 import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList, PayBox, SellSheet } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -256,8 +256,15 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const fx = useFx();
   const [qty, setQty] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.qty])));
   const [dmg, setDmg] = useState({});
-  const [bon, setBon] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.bonus_qty || 0])));
-  const [extra, setExtra] = useState(""); // add | exch | dmg — الإشي الزيادة المفتوح
+  // البونص بيمشي مع الكمية لحاله (حسب قاعدة البونص)، إلا إذا انعدّل بالإيد
+  const [bonEdit, setBonEdit] = useState({});
+  const canBonus = fx.canAction?.("give_bonus");
+  const rules = fx.boot.bonus_rules;
+  const autoBon = (i) => (i.bonus_manual ? i.bonus_qty || 0 : bonusPreview(rules, o.customer_id, i.product_id, Number(qty[i.id]) || 0));
+  const bon = Object.fromEntries(o.items.map((i) => [i.id, bonEdit[i.id] ?? autoBon(i)]));
+  const setBon = (f) => setBonEdit((x) => f(x));
+  const [freeB, setFreeB] = useState({}); // 🎁 بونص حر على أي صنف
+  const [extra, setExtra] = useState(""); // add | exch | dmg | bonus — الإشي الزيادة المفتوح
   const [added, setAdded] = useState({}); // منتجات زيادة أخذها الزبون من السيارة
   const [exch, setExch] = useState({}); // استبدال تالف عند الزبون
   const extraProducts = fx.boot.products.filter((p) => p.active && !o.items.some((i) => i.product_id === p.id));
@@ -280,7 +287,10 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
       // الدين فوق السقف ما بيوقف السائق — بيوصل تنبيه للإدارة لحاله
       const q = await sendOrQueue({ kind: "deliver", ref: o.id, label: `تسليم ${o.customer_name}`, path: `/driver/orders/${o.id}/deliver`, body: {
         items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
-        add_items: Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
+        add_items: [
+          ...Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
+          ...Object.entries(freeB).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: 0, bonus: Number(q) })),
+        ],
         exchanges: exchangeList(exch),
         cash: cashN, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       } });
@@ -312,13 +322,28 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
           const got = Number(qty[i.id]);
           const back = Number.isFinite(got) && got < i.qty ? i.qty - got : 0;
           const more = Number.isFinite(got) && got > i.qty ? got - i.qty : 0;
+          if (i.qty === 0) return (
+            <div key={i.id} className="fx-field fx-free-bonus">
+              <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} /><b>🎁 {i.name}</b> <span className="fx-muted">(بونص ببلاش)</span></span>
+              {step(bon[i.id], (v) => setBon((x) => ({ ...x, [i.id]: v })), `بونص ${i.name}`)}
+            </div>
+          );
           return (
             <div key={i.id} className="fx-field">
               <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} /><b>{i.name}</b> <span className="fx-muted">(طلب {num(i.qty)})</span></span>
               {step(qty[i.id], (v) => setQty((x) => ({ ...x, [i.id]: v })), `سلّم من ${i.name}`)}
               {back > 0 && <small className="fx-dlv-hint warn">بيرجع معك {num(back)}</small>}
               {more > 0 && <small className="fx-dlv-hint">+{num(more)} زيادة من السيارة</small>}
-              {i.bonus_qty > 0 && <small className="fx-dlv-hint ok">+ {num(bon[i.id])} بونص ببلاش {Number(bon[i.id]) !== i.bonus_qty ? "" : <button type="button" className="fx-link" onClick={() => setBon((x) => ({ ...x, [i.id]: 0 }))}>(ما أخذه)</button>}</small>}
+              {(Number(bon[i.id]) > 0 || bonEdit[i.id] !== undefined) && (
+                <small className="fx-dlv-hint ok fx-row" style={{ gap: 6 }}>
+                  🎁 +
+                  {canBonus
+                    ? <input className="fx-input" style={{ width: 64, padding: "2px 6px", textAlign: "center" }} type="number" inputMode="numeric" min="0" value={bon[i.id]} onChange={(e) => setBon((x) => ({ ...x, [i.id]: e.target.value }))} aria-label={`بونص ${i.name}`} />
+                    : <b>{num(bon[i.id])}</b>}
+                  بونص ببلاش
+                  {bonEdit[i.id] === undefined && <button type="button" className="fx-link" onClick={() => setBon((x) => ({ ...x, [i.id]: 0 }))}>(ما أخذه)</button>}
+                </small>
+              )}
             </div>
           );
         })}
@@ -333,6 +358,20 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
           );
         })}
 
+        {Object.keys(freeB).map((pid) => {
+          const p = fx.boot.products.find((x) => x.id === Number(pid));
+          return (
+            <div key={`b${pid}`} className="fx-field fx-free-bonus">
+              <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={p} size={36} /><b>🎁 {p?.name}</b> <span className="fx-muted">(بونص ببلاش)</span></span>
+              {step(freeB[pid], (v) => setFreeB((a) => { const n = { ...a, [pid]: v }; if (v !== "" && !Number(v)) delete n[pid]; return n; }), `بونص ${p?.name}`)}
+            </div>
+          );
+        })}
+        {extra === "bonus" && (
+          <div className="fx-chips">
+            {fx.boot.products.filter((p) => p.active && !(String(p.id) in freeB)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setFreeB({ ...freeB, [p.id]: 1 }); setExtra(""); }}>🎁 {p.name}</button>)}
+          </div>
+        )}
         {extra === "add" && (
           <div className="fx-chips">
             {extraProducts.filter((p) => !(String(p.id) in added)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setAdded({ ...added, [p.id]: 1 }); setExtra(""); }}>+ {p.name}</button>)}
@@ -355,6 +394,7 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
         {/* إشي ثاني؟ كبسات صغيرة بس لما تحتاجها */}
         <div className="fx-dlv-more">
           {extraProducts.length > 0 && extra !== "add" && <button type="button" onClick={() => setExtra("add")}>+ منتج زيادة</button>}
+          {canBonus && extra !== "bonus" && <button type="button" onClick={() => setExtra("bonus")}>🎁 بونص على صنف</button>}
           {extra !== "exch" && !Object.keys(exch).length && <button type="button" onClick={() => setExtra("exch")}>🔁 بدل تالف</button>}
           {extra !== "dmg" && !hasDmg && <button type="button" onClick={() => setExtra("dmg")}>انكسر معي</button>}
         </div>

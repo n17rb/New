@@ -871,3 +871,4 @@ a.fx-pill { text-decoration: none; }
 .fx-trips-day summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
 .fx-trips-day[open] summary { margin-bottom: 8px; }
 .fx-date .said.bad { color: var(--fx-crit); font-weight: 700; }
+.fx-free-bonus { background: #effaf3; border-radius: 14px; padding: 8px; }

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
-import { can } from "../../permissions.js";
+import { can, canAction } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
 import { smartFilter } from "../../utils/smartSearch.js";
 import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers } from "./lib.js";
@@ -260,11 +260,17 @@ router.post("/customers/:id/location", edit, async (req, res) => {
   res.json({ ok: true });
 });
 
+// حذف زبون: للإدارة بس (صلاحية «حذف عميل»). الزبون بينخفى وسجلّاته وفواتيره القديمة بتضل للجرد
 router.delete("/customers/:id", need("f_customers", "edit"), async (req, res) => {
-  const c = (await query("SELECT balance FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
+  if (!canAction(req.user, "delete_customer")) return bad(res, "حذف الزباين للإدارة بس.", 403);
+  const c = (await query("SELECT id, name, balance FROM f_customers WHERE id = $1 AND active", [req.params.id])).rows[0];
   if (!c) return bad(res, "الزبون غير موجود.", 404);
-  if (Math.abs(Number(c.balance)) > 0.01) return bad(res, "الزبون عليه رصيد — سكّر حسابه قبل ما تحذفه.");
-  await query("UPDATE f_customers SET active = false WHERE id = $1", [req.params.id]);
+  if (Math.abs(Number(c.balance)) > 0.01) return bad(res, `${c.name} عليه/إله رصيد ${Number(c.balance).toFixed(2)} — سكّر حسابه قبل ما تحذفه.`);
+  const open = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE customer_id = $1 AND status IN ('new','assigned','onway','delayed')", [c.id])).rows[0].n;
+  if (open) return bad(res, `${c.name} عنده ${open} طلب مفتوح — الغيهم أو سلّمهم أول.`);
+  await query("UPDATE f_customers SET active = false WHERE id = $1", [c.id]);
+  await query("UPDATE f_recurring SET active = false WHERE customer_id = $1", [c.id]).catch(() => {});
+  await logActivity({ userId: req.user.id, action: "F_DELETE_CUSTOMER", recordType: "f_customer", recordId: c.id, oldValue: { name: c.name } });
   res.json({ ok: true });
 });
 

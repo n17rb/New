@@ -229,7 +229,7 @@ export async function queueMessage({ customerId, orderId = null, kind, data, use
 }
 
 export function itemsText(items) {
-  return items.map((i) => `${i.qty} كرتونة ${i.name}${i.bonus ? ` + ${i.bonus} بونص` : ""}`).join("، ");
+  return items.filter((i) => i.qty > 0 || i.bonus > 0).map((i) => (i.qty > 0 ? `${i.qty} كرتونة ${i.name}${i.bonus ? ` + ${i.bonus} بونص` : ""}` : `${i.bonus} كرتونة ${i.name} بونص ببلاش 🎁`)).join("، ");
 }
 
 export function canSeeAllMoney(user) {

@@ -4,7 +4,7 @@ import { can, canAction } from "../../permissions.js";
 import { needAny, need, round2, jordanDate } from "./lib.js";
 import { loadTrips } from "./orders.js";
 import { settleTrip } from "./money.js";
-import { alert, bad } from "./lib.js";
+import { alert, bad, pushTo } from "./lib.js";
 
 // ============================================================
 // الجرد اليومي: لكل سائق بشاشة وحدة —
@@ -172,6 +172,32 @@ router.post("/jard/settle", need("f_money", "edit"), async (req, res) => {
   if (diff > 0) await alert({ level: "crit", kind: "cash_short", ref: trips[0].id, title: `نقص ${diff.toFixed(2)} د.أ بكاش ${name}`, body: `المطلوب ${required.toFixed(2)} والمسلّم ${handed.toFixed(2)}. انسجّل عهدة عليه.` });
   else await alert({ level: "ok", kind: "cash_ok", ref: trips[0].id, title: `${name} سلّم ${handed.toFixed(2)} د.أ`, body: diff < 0 ? `زيادة ${(-diff).toFixed(2)} عن المطلوب.` : "مطابق للمطلوب ✓" });
   res.json({ ok: true, required, handed, diff, trips: trips.length });
+});
+
+// الإدارة بتعدّل اللي محمّل على السيارة (السائق ما بيقدر) — بنسجّل الفرق حركة تحميل
+router.post("/trips/:id/load-edit", needAny(["f_dispatch", "edit"], ["f_stock", "edit"]), async (req, res) => {
+  const t = (await query("SELECT t.*, v.name AS vehicle_name FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [req.params.id])).rows[0];
+  if (!t) return bad(res, "الرحلة غير موجودة.", 404);
+  if (!["planned", "active", "returned"].includes(t.status)) return bad(res, "الرحلة تسكّرت — ما بتنعدّل حمولتها.");
+  if (t.returns_received_at) return bad(res, "المرتجع انستلم — صحّح من المستودع.");
+  const reason = String(req.body?.reason || "").trim().slice(0, 200) || "تعديل من الإدارة";
+  const cur = new Map((await query("SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'load' GROUP BY product_id", [t.id])).rows.map((r) => [r.product_id, r.q]));
+  const changes = [];
+  for (const x of Array.isArray(req.body?.items) ? req.body.items : []) {
+    const pid = Number(x.product_id), want = Math.round(Number(x.loaded));
+    if (!pid || !(want >= 0) || want > 100000) continue;
+    const p = (await query("SELECT id, name FROM f_products WHERE id = $1", [pid])).rows[0];
+    if (!p) continue;
+    const diff = want - (cur.get(pid) || 0);
+    if (!diff) continue;
+    await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,$5,$6)", [pid, diff, t.id, t.vehicle_id, `تعديل الحمولة: ${reason}`, req.user.id]);
+    changes.push(`${p.name} ${cur.get(pid) || 0} ← ${want}`);
+  }
+  if (!changes.length) return bad(res, "ما في إشي تغيّر.");
+  if (!t.load_confirmed_at) await query("UPDATE f_trips SET load_confirmed_at = now(), load_confirmed_by = $1 WHERE id = $2", [req.user.id, t.id]);
+  await alert({ level: "info", kind: "load_edit", ref: t.id, title: `📦 ${req.user.full_name} عدّل حمولة ${t.vehicle_name}`, body: `${changes.join("، ")} — ${reason}` });
+  if (t.driver_id) await pushTo(t.driver_id, { title: "📦 الإدارة عدّلت حمولتك", body: changes.join("، "), url: "/f/drive", tag: `load-${t.id}` });
+  res.json({ ok: true, changes });
 });
 
 // جردي أنا (السائق)

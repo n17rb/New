@@ -4,7 +4,8 @@ import { fapi } from "../fapi.js";
 import { deliveredCartons } from "./StopSheet.jsx";
 import { Who } from "./Who.jsx";
 import { sendOrQueue } from "../outbox.js";
-import { useFx, Sheet, Err, Act, ProductArt, getLocation, money, num, time } from "../ui.jsx";
+import { FreeBonus } from "./Orders.jsx";
+import { useFx, Sheet, Err, Act, ProductArt, getLocation, money, num, time, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شغل المندوب: حمّل ← بيع لمحل ← بيع لمحل … ← رجعت للمصنع
@@ -92,7 +93,7 @@ export function SalesDay({ t, stock, canCredit, reload, onSold, openSheet }) {
           </div>
         ))}
       </div>
-      {active && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setSheet("load")}><FiPackage /> رجعت حمّلت زيادة</button>}
+      {active && <small className="fx-muted">حمّلت زيادة من المصنع؟ المستودع أو الإدارة بيضيفوها على سيارتك.</small>}
 
       {sold.length > 0 && (
         <>
@@ -302,6 +303,8 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
   const [prices, setPrices] = useState(null);
   const [cash, setCash] = useState(null); // null = كاش كامل
   const [exch, setExch] = useState({});
+  const [freeB, setFreeB] = useState({});
+  const canBonus = fx.canAction?.("give_bonus");
   const [err, setErr] = useState("");
 
   useEffect(() => { fapi.driverPrices(shop.new ? null : shop.id).then(setPrices).catch(() => setPrices({})); }, [shop]);
@@ -319,7 +322,8 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
       const q = await sendOrQueue({ kind: "sell", ref: t.id, label: `بيع لـ ${shop.name}`, path: `/driver/sales/${t.id}/sell`, body: {
         customer_id: shop.new ? undefined : shop.id,
         new_customer: shop.new ? { name: shop.name, phone: shop.phone } : undefined,
-        items, exchanges: exchangeList(exch), cash: cashN, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
+        items, exchanges: exchangeList(exch), cash: cashN,
+        bonus_items: Object.entries(freeB).filter(([, n]) => Number(n) > 0).map(([pid, n]) => ({ product_id: Number(pid), qty: Number(n) })), lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       } });
       if (q.queued) { fx.toast("📶 ما في شبكة — البيعة انحفظت على التلفون وبتنبعت لحالها"); onDone({ queued: true }); return; }
       const r = q.data;
@@ -347,11 +351,13 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
             </span>
             <Stepper value={q[x.product_id] ?? ""} max={x.left} onChange={(v) => setQ({ ...q, [x.product_id]: v })} label={`كراتين ${x.name}`} />
             {Number(q[x.product_id]) > x.left && <small style={{ color: "var(--fx-crit)" }}>معك بس {num(x.left)}</small>}
+            {(() => { const b = bonusPreview(fx.boot.bonus_rules, shop.new ? null : shop.id, x.product_id, Math.min(x.left, Number(q[x.product_id]) || 0)); return b > 0 ? <small className="fx-dlv-hint ok">🎁 + {num(b)} بونص ببلاش</small> : null; })()}
             {x.reserved > 0 && Number(q[x.product_id]) <= x.left && Number(q[x.product_id]) > Math.max(0, x.left - x.reserved) && (
               <small style={{ color: "#b06a00", fontWeight: 600 }}>⚠️ {num(x.reserved)} منهم لطلبات زباينك الجايين — رح ينقص عليهم {num(Number(q[x.product_id]) - Math.max(0, x.left - x.reserved))}</small>
             )}
           </label>
         ))}
+        {canBonus && <FreeBonus products={avail.map((x) => ({ ...x, id: x.product_id }))} value={freeB} onChange={setFreeB} />}
         <ExchangeEditor value={exch} onChange={setExch} products={avail} />
         <PayBox total={total} cash={cash} onCash={setCash} balance={shop.balance} canCredit={canCredit} />
         <Err msg={err} />
