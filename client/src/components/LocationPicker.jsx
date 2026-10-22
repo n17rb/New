@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { FiMapPin, FiLink, FiCheck, FiChevronDown } from "react-icons/fi";
+import { useEffect, useRef, useState } from "react";
+import { FiMapPin, FiLink, FiCheck } from "react-icons/fi";
 import { api } from "../api.js";
 
 // اختيار موقع الزبون: «موقعي الحالي» أو رابط خرائط — والمنطقة والمحافظة بيتعبّوا لحالهم
@@ -10,9 +10,22 @@ export default function LocationPicker({ value, onChange }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [regions, setRegions] = useState([]);
-  const [showDetails, setShowDetails] = useState(false);
   const v = value || {};
   const has = v.latitude != null && v.longitude != null;
+  const detailsRef = useRef(null);
+  const buildingRef = useRef(null);
+  const wasSet = useRef(has);
+
+  // أول ما ينحفظ الموقع: بنوديك مباشرة على تفاصيل البيت
+  useEffect(() => {
+    if (has && !wasSet.current) {
+      setTimeout(() => {
+        detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        buildingRef.current?.focus({ preventScroll: true });
+      }, 150);
+    }
+    wasSet.current = has;
+  }, [has]);
 
   useEffect(() => { api.getRegions().then(setRegions).catch(() => {}); }, []);
 
@@ -110,19 +123,22 @@ export default function LocationPicker({ value, onChange }) {
             {regions.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
           </select>
 
-          <button type="button" className="loc-more" onClick={() => setShowDetails((s) => !s)}>
-            تفاصيل البيت <span>(عمارة، طابق…)</span> <FiChevronDown style={{ transform: showDetails ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-          </button>
-          {showDetails && (
-            <div className="loc-details">
-              <input value={v.street || ""} onChange={set("street")} placeholder="الشارع" />
-              <div className="loc-two">
-                <input value={v.building_number || ""} onChange={set("building_number")} placeholder="رقم العمارة" />
-                <input value={v.floor || ""} onChange={set("floor")} placeholder="الطابق" />
-              </div>
-              <input value={v.side || ""} onChange={set("side")} placeholder="الجهة (مثلاً: شمال الدرج)" />
+          <div className="loc-details" ref={detailsRef}>
+            <div className="loc-sub">تفاصيل البيت</div>
+            <div className="loc-two">
+              <input ref={buildingRef} value={v.building_number || ""} onChange={set("building_number")} placeholder="رقم العمارة" />
+              <input value={v.floor || ""} onChange={set("floor")} placeholder="الطابق" />
             </div>
-          )}
+            <div className="side-btns">
+              {[["يمين", "يمين الدرج"], ["يسار", "شمال الدرج"]].map(([val, label]) => (
+                <button key={val} type="button" className={`side-btn${v.side === val ? " on" : ""}`}
+                  onClick={() => onChange({ ...v, side: v.side === val ? "" : val })}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <input value={v.street || ""} onChange={set("street")} placeholder="الشارع" />
+          </div>
         </div>
       )}
 
