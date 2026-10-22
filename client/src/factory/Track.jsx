@@ -45,7 +45,7 @@ function Orders({ data }) {
       <div className="fx-card" style={{ textAlign: "center" }}>
         <b style={{ fontSize: 17 }}>{customer.name}</b>
         <div className="fx-muted">رصيد حسابك</div>
-        <b className="fx-num" style={{ fontSize: 26, color: customer.balance > 0 ? "var(--fx-crit)" : "var(--fx-ok)" }}>{money(customer.balance)} د.أ</b>
+        <b className="fx-num" style={{ fontSize: 26, color: customer.balance > 0 ? "var(--fx-crit)" : "var(--fx-ok)" }}>{balWord(customer.balance)}</b>
       </div>
       <h2 style={{ fontSize: 16, margin: "6px 0 0" }}>طلباتك الحالية</h2>
       {open.length === 0 && <p className="fx-muted" style={{ margin: 0 }}>ما في طلبات مفتوحة. لطلب جديد اتصل على {brand.phone}.</p>}
@@ -86,6 +86,9 @@ function Orders({ data }) {
   );
 }
 
+// الرصيد بكلام مفهوم بدل السالب
+export const balWord = (n) => { const v = Number(n || 0); return v > 0.009 ? `${money(v)} د.أ عليك` : v < -0.009 ? `${money(-v)} د.أ إلك عنّا` : "0.00 — مسكّر ✓"; };
+
 export function Invoice({ data, inApp = false }) {
   const { brand, invoice: inv, items, exchanges = [] } = data;
   return (
@@ -118,7 +121,7 @@ export function Invoice({ data, inApp = false }) {
         <div className="fx-kv total"><span>المجموع</span><b>{money(inv.total)} د.أ</b></div>
         <div className="fx-kv"><span>المدفوع</span><b>{money(inv.paid)}</b></div>
         <div className="fx-kv"><span>الباقي على الفاتورة</span><b>{money(Math.max(0, inv.total - inv.paid))}</b></div>
-        {inv.balance_after != null && <div className="fx-kv"><span>رصيد حسابك الكلي</span><b>{money(inv.balance_after)}</b></div>}
+        {inv.balance_after != null && <div className="fx-kv"><span>رصيد حسابك الكلي</span><b>{balWord(inv.balance_after)}</b></div>}
       </div>
       {inv.signature && <div className="fx-card"><span className="fx-muted">توقيع المستلم</span><img src={inv.signature} alt="التوقيع" style={{ width: "100%", maxHeight: 120, objectFit: "contain" }} /></div>}
       {inv.track_token && !inApp && <a className="fx-btn sky block fx-noprint" href={`/t/${inv.track_token}`}>كل طلباتي وكشف حسابي</a>}
