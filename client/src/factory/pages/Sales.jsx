@@ -236,7 +236,7 @@ function LoadSheet({ title, hint, btn, onClose, onSubmit }) {
   );
 }
 
-function SellSheet({ t, stock, canCredit, onClose, onDone }) {
+export function SellSheet({ t, stock, canCredit, onClose, onDone }) {
   const [shop, setShop] = useState(null); // { id, name, balance } أو { new: true, name, phone }
   return shop
     ? <SellItems t={t} stock={stock} shop={shop} canCredit={canCredit} onBack={() => setShop(null)} onClose={onClose} onDone={onDone} />
@@ -343,10 +343,13 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
           <label key={x.product_id} className="fx-field">
             <span className="fx-row" style={{ flexWrap: "nowrap" }}>
               <ProductArt p={x} size={36} />{x.name}
-              <span className="fx-muted">({money(priceOf(x.product_id))} · معك {num(x.left)})</span>
+              <span className="fx-muted">({money(priceOf(x.product_id))} · معك {num(x.left)}{x.reserved > 0 ? ` · زيادة ${num(Math.max(0, x.left - x.reserved))}` : ""})</span>
             </span>
             <Stepper value={q[x.product_id] ?? ""} max={x.left} onChange={(v) => setQ({ ...q, [x.product_id]: v })} label={`كراتين ${x.name}`} />
             {Number(q[x.product_id]) > x.left && <small style={{ color: "var(--fx-crit)" }}>معك بس {num(x.left)}</small>}
+            {x.reserved > 0 && Number(q[x.product_id]) <= x.left && Number(q[x.product_id]) > Math.max(0, x.left - x.reserved) && (
+              <small style={{ color: "#b06a00", fontWeight: 600 }}>⚠️ {num(x.reserved)} منهم لطلبات زباينك الجايين — رح ينقص عليهم {num(Number(q[x.product_id]) - Math.max(0, x.left - x.reserved))}</small>
+            )}
           </label>
         ))}
         <ExchangeEditor value={exch} onChange={setExch} products={avail} />

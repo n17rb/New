@@ -45,7 +45,7 @@ router.get("/driver/today", drive, async (req, res) => {
     "SELECT id, title, kind, created_at FROM f_alerts WHERE user_id = $1 AND kind IN ('breakdown','problem') AND closed_at IS NULL AND created_at > now() - interval '3 days' ORDER BY id DESC",
     [req.user.id]
   )).rows;
-  const car_stock = trip?.kind === "sales" ? await carStock(trip.id) : null;
+  const car_stock = trip && (trip.kind === "sales" || ["planned", "active"].includes(trip.status)) ? await carStock(trip.id) : null;
   res.json({ problems, unsettled, car_stock, vehicles, trip, custody: round2(custody), fuel_levels: FUEL, last_fuel: lastFuel || null, can_credit: canAction(req.user, "give_credit") });
 });
 
@@ -312,6 +312,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
       `WITH l AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'load' GROUP BY product_id),
             s AS (SELECT i.product_id, SUM(COALESCE(i.delivered_qty,0) + COALESCE(i.delivered_bonus,0))::int AS q FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY i.product_id),
             x AS (SELECT x.product_id, SUM(x.qty)::int AS q FROM f_order_exchanges x JOIN f_orders o ON o.id = x.order_id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY x.product_id),
+          r AS (SELECT i.product_id, SUM(i.qty + i.bonus_qty)::int AS q FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status IN ('assigned','onway','delayed') GROUP BY i.product_id),
             d AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'damage' AND damage_source = 'vehicle' GROUP BY product_id)
        SELECT p.id, p.name, COALESCE(s.q,0) + COALESCE(x.q,0) + COALESCE(d.q,0) - COALESCE(l.q,0) AS over
        FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN x ON x.product_id = p.id LEFT JOIN d ON d.product_id = p.id
@@ -472,10 +473,11 @@ async function carStock(tripId) {
           s AS (SELECT i.product_id, SUM(COALESCE(i.delivered_qty,0) + COALESCE(i.delivered_bonus,0))::int AS q
                 FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY i.product_id),
           d AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'damage' AND damage_source = 'vehicle' GROUP BY product_id),
-          x AS (SELECT x.product_id, SUM(x.qty)::int AS q FROM f_order_exchanges x JOIN f_orders o ON o.id = x.order_id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY x.product_id)
-     SELECT p.id AS product_id, p.name, p.image_url, COALESCE(l.q,0) AS loaded, COALESCE(s.q,0) AS sold, COALESCE(d.q,0) AS damaged, COALESCE(x.q,0) AS exchanged,
+          x AS (SELECT x.product_id, SUM(x.qty)::int AS q FROM f_order_exchanges x JOIN f_orders o ON o.id = x.order_id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY x.product_id),
+          r AS (SELECT i.product_id, SUM(i.qty + i.bonus_qty)::int AS q FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status IN ('assigned','onway','delayed') GROUP BY i.product_id)
+     SELECT p.id AS product_id, p.name, p.image_url, COALESCE(l.q,0) AS loaded, COALESCE(r.q,0) AS reserved, COALESCE(s.q,0) AS sold, COALESCE(d.q,0) AS damaged, COALESCE(x.q,0) AS exchanged,
             COALESCE(l.q,0) - COALESCE(s.q,0) - COALESCE(d.q,0) - COALESCE(x.q,0) AS left
-     FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN d ON d.product_id = p.id LEFT JOIN x ON x.product_id = p.id
+     FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN d ON d.product_id = p.id LEFT JOIN x ON x.product_id = p.id LEFT JOIN r ON r.product_id = p.id
      WHERE l.q IS NOT NULL ORDER BY p.id`,
     [tripId]
   );
@@ -570,8 +572,10 @@ router.get("/driver/prices", drive, async (req, res) => {
 // بيع لمحل: طلب بينعمل ويتسلّم بنفس اللحظة من اللي على السيارة
 router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
   const t = await myTrip(req, req.params.id);
-  if (!t || t.kind !== "sales") return bad(res, "الرحلة مش إلك.", 403);
-  if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
+  // بيع لمحل بيزبط من شغل المندوب ومن رحلة الطلبات العادية (زبون وقّفه عالطريق)
+  if (!t) return bad(res, "الرحلة مش إلك.", 403);
+  if (t.status === "planned") await startTrip(t);
+  else if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
   const b = req.body || {};
   // المحل: موجود أو جديد
   let c;
