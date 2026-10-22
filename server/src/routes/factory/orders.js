@@ -353,8 +353,10 @@ async function previewTrip({ vehicleId, orderIds, sort = false, date, departTime
   if (sort) stops = sortNearest(factory, stops);
   const existing = (await query(
     `SELECT t.id, t.extra_cartons, COALESCE((SELECT SUM(i.qty + i.bonus_qty) FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = t.id AND o.status IN ('assigned','onway','delayed') AND NOT (o.id = ANY($3::int[]))), 0)::int AS cartons
-     FROM f_trips t WHERE t.vehicle_id = $1 AND t.trip_date = $2 AND t.status IN ('planned','active') ORDER BY t.id LIMIT 1`,
-    [v.id, date, orderIds]
+     FROM f_trips t WHERE (t.vehicle_id = $1 AND t.trip_date = $2 AND t.status IN ('planned','active'))
+        OR (t.kind = 'sales' AND t.status = 'active' AND t.driver_id IS NOT NULL AND t.driver_id = $4 AND $2 = to_char((now() AT TIME ZONE 'Asia/Amman')::date, 'YYYY-MM-DD')::date)
+     ORDER BY (t.status = 'active') DESC, t.id LIMIT 1`,
+    [v.id, date, orderIds, v.driver_id]
   )).rows[0];
   const plan = planStops(factory, stops, { date, departTime });
   const newLoad = stops.reduce((s, o) => s + o.cartons, 0);

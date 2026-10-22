@@ -5,6 +5,7 @@ import PushCard from "../PushCard.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
 import { SalesStartCard, SalesDay } from "./Sales.jsx";
+import { Who, navUrl } from "./Who.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
@@ -88,10 +89,9 @@ export default function Drive() {
         </div>
       ))}
 
-      {data?.unsettled?.map((u) => (
-        <div key={u.id} className="fx-note warn">رحلة {u.vehicle_name} الماضية: لسا عليك تسلّم <b className="fx-num">{money(u.cash_due)}</b> دينار للمحاسب.</div>
-      ))}
-
+      {data?.unsettled?.length > 0 && (
+        <div className="fx-note warn">لسا عليك تسلّم <b className="fx-num">{money(data.unsettled.reduce((a, u) => a + Number(u.cash_due || 0), 0))}</b> دينار للمحاسب من {data.unsettled.length === 1 ? "رحلة ماضية" : `${data.unsettled.length} رحلات ماضية`}.</div>
+      )}
       {data && !t && (
         <Empty icon={FiTruck} title="ما في طلبات إلك اليوم" text="لما يوزعولك طلبات بتطلع هون وبيوصلك إشعار. أو اشتغل مندوب وبيع على المحلات." />
       )}
@@ -101,7 +101,7 @@ export default function Drive() {
       {t?.kind === "sales" && (
         <SalesDay t={t} stock={data.car_stock} canCredit={data.can_credit} reload={reload}
           onSold={(r) => { reload(); setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id }); }}
-          openSheet={(kind) => setSheet({ kind })} />
+          openSheet={(kind, o) => setSheet({ kind, o })} />
       )}
 
       {t && t.kind !== "sales" && (
@@ -232,28 +232,6 @@ export default function Drive() {
   );
 }
 
-// مين الزبون: صورة المحل، الاسم، المسؤول، العنوان، الدين والملاحظات
-function Who({ o, big }) {
-  const bal = Number(o.customer_balance) || 0;
-  return (
-    <div className={`fx-who ${big ? "big" : ""}`}>
-      {o.photo_url
-        ? <a href={o.photo_url} target="_blank" rel="noreferrer" className="ph"><img src={o.photo_url} alt={`محل ${o.customer_name}`} /></a>
-        : <span className="ph none">{(o.customer_name || "؟").trim()[0]}</span>}
-      <div className="tx">
-        <b className="nm">{o.customer_name}{o.seq_no ? <small> #{o.seq_no}</small> : null}</b>
-        {o.contact_name && <span>👤 {o.contact_name}</span>}
-        {(o.city || o.address) && <span>📍 {[o.city, o.address].filter(Boolean).join(" · ")}</span>}
-        {o.phone && <span dir="ltr" style={{ textAlign: "end" }}>{o.phone} ☎</span>}
-        {bal > 0 && <span className="debt">عليه من قبل {money(bal)} دينار</span>}
-        {o.customer_notes && <span className="note">📝 {o.customer_notes}</span>}
-        {o.notes && o.notes !== "بيع مندوب" && <span className="note">📦 {o.notes}</span>}
-      </div>
-    </div>
-  );
-}
-
-const navUrl = (o) => `https://www.google.com/maps/dir/?api=1&destination=${o.lat ? `${o.lat},${o.lng}` : encodeURIComponent(`${o.city || ""} الأردن`)}`;
 
 function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const fx = useFx();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FiShoppingCart, FiPlus, FiSearch, FiPackage, FiAlertTriangle } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { deliveredCartons } from "./StopSheet.jsx";
+import { Who } from "./Who.jsx";
 import { useFx, Sheet, Err, Act, SignaturePad, ProductArt, getLocation, money, num, time } from "../ui.jsx";
 
 // ============================================================
@@ -37,6 +38,8 @@ export function SalesDay({ t, stock, canCredit, reload, onSold, openSheet }) {
   const [sheet, setSheet] = useState(null);
   const left = (stock || []).reduce((a, x) => a + Math.max(0, x.left), 0);
   const sold = t.stops.filter((o) => o.status === "delivered");
+  // طلبات من الإدارة وهو شغال مندوب
+  const orders = t.stops.filter((o) => ["assigned", "onway", "delayed"].includes(o.status));
   const soldTotal = sold.reduce((a, o) => a + Number(o.delivered_total || 0), 0);
   const active = t.status === "active";
 
@@ -46,6 +49,19 @@ export function SalesDay({ t, stock, canCredit, reload, onSold, openSheet }) {
         <b>{active ? "مندوب اليوم 🛒" : "خلّصت شغل المندوب ✓"}</b>
         <span>{t.vehicle_name} · بعت لـ {sold.length} محل · {money(soldTotal)} دينار</span>
       </div>
+
+      {orders.length > 0 && (
+        <div className="fx-drv-step fx-sales-orders">
+          <span className="lbl">📦 طلبات إلك من الإدارة ({orders.length}) — من البضاعة اللي معك</span>
+          {orders.map((o) => (
+            <button key={o.id} className="fx-plain fx-sales-order" onClick={() => openSheet("stop", o)}>
+              <Who o={o} />
+              <span className="sub">{o.items.map((i) => `${num(i.qty)} ${i.name}`).join("، ")}{o.en_route_at ? " · 🚚 رايح عليه" : ""}</span>
+              <span className="fx-btn ok block">سلّمه / انطلق لعنده</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {active && (
         <div className="fx-drv-step go">

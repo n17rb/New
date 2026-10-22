@@ -474,6 +474,16 @@ router.post("/driver/sales/start", drive, async (req, res) => {
     [v.id, req.user.id, jordanDate()]
   )).rows[0];
   const n = await addLoad(t, items, req.user.id);
+  // طلباته اللي لسا ما طلعت بتنضم لشغل المندوب (بيسلّمها من اللي حمّله)
+  const moved = await query(
+    `UPDATE f_orders SET trip_id = $1, status = 'onway', updated_at = now()
+     WHERE status = 'assigned' AND trip_id IN (SELECT id FROM f_trips WHERE driver_id = $2 AND status = 'planned' AND trip_date <= $3) RETURNING id`,
+    [t.id, req.user.id, jordanDate()]
+  );
+  if (moved.rowCount) {
+    await query("UPDATE f_trips SET status = 'cancelled' WHERE driver_id = $1 AND status = 'planned' AND trip_date <= $2 AND NOT EXISTS (SELECT 1 FROM f_orders o WHERE o.trip_id = f_trips.id AND o.status NOT IN ('cancelled'))", [req.user.id, jordanDate()]);
+    await recomputeEta(t.id, { fromNow: true });
+  }
   await pushManagers({ title: `🛒 ${req.user.full_name} طلع مندوب اليوم`, body: `${v.name} · حمّل ${n} كرتونة للبيع على المحلات.`, url: "/f/trips", tag: `ts-${t.id}` });
   res.json({ ok: true, trip_id: t.id });
 });
