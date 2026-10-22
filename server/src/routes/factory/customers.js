@@ -2,7 +2,8 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
-import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand } from "./lib.js";
+import { smartFilter } from "../../utils/smartSearch.js";
+import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers } from "./lib.js";
 
 // ============================================================
 // المصنع: الزباين، أسعارهم الخاصة، كشف الحساب، الدفعات، والرسائل
@@ -31,11 +32,7 @@ router.get("/customers", view, async (req, res) => {
   const q = String(req.query.q || "").trim();
   const params = [];
   let where = "c.active";
-  if (q) {
-    params.push(`%${q}%`);
-    where += ` AND (c.name ILIKE $1 OR c.phone ILIKE $1 OR c.city ILIKE $1 OR c.contact_name ILIKE $1 OR c.seq_no::text = TRIM(LEADING '#' FROM $${params.length + 1}))`;
-    params.push(q);
-  }
+  // البحث صار ذكي (بيتحمّل الأخطاء الإملائية) — منجيب الكل ومنرتّب حسب القرب
   if (req.query.line) {
     params.push(Number(req.query.line));
     where += ` AND c.line_id = $${params.length}`;
@@ -47,9 +44,10 @@ router.get("/customers", view, async (req, res) => {
             (SELECT MAX(created_at) FROM f_orders o WHERE o.customer_id = c.id) AS last_order_at,
             (SELECT MIN(created_at) FROM f_ledger g WHERE g.customer_id = c.id AND g.kind = 'invoice' AND g.created_at > COALESCE((SELECT MAX(created_at) FROM f_ledger p WHERE p.customer_id = c.id AND p.kind = 'payment'), 'epoch')) AS oldest_unpaid_at
      FROM f_customers c LEFT JOIN f_lines l ON l.id = c.line_id
-     WHERE ${where} ORDER BY ${q ? "(c.seq_no::text = TRIM(LEADING '#' FROM $2)) DESC, " : ""}c.name LIMIT 500`,
+     WHERE ${where} ORDER BY c.name ${q ? "" : "LIMIT 500"}`,
     params
   );
+  if (q) r.rows = smartFilter(r.rows, q).slice(0, 500);
   const showMoney = can(req.user, "f_money") || can(req.user, "f_customers") || can(req.user, "f_home");
   res.json(r.rows.map((c) => ({ ...withRegion(c), balance: showMoney ? Number(c.balance) : undefined, credit_limit: Number(c.credit_limit) })));
 });
@@ -282,9 +280,10 @@ router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customer
     customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null,
     chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300), userId: req.user.id,
   });
-  await queueMessage({ customerId: c.id, kind: "payment", data: { amount, balance }, userId: req.user.id });
+  const message_id = await queueMessage({ customerId: c.id, kind: "payment", data: { amount, balance }, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CUSTOMER_PAYMENT", recordType: "f_customer", recordId: c.id, newValue: { amount, method } });
-  res.json({ ok: true, balance });
+  await pushManagers({ title: `💵 ${c.name} دفع ${amount.toFixed(2)} د.أ`, body: `${balance > 0.009 ? `باقي عليه ${balance.toFixed(2)}` : "سدّ كل الدين ✓"} · قبضها ${req.user.full_name}.`, url: "/f/debts", tag: `pay-${c.id}`, except: req.user.id });
+  res.json({ ok: true, balance, message_id });
 });
 
 // تعديل رصيد يدوي (بسبب) — للحسابات

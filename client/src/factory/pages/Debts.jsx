@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { FiPrinter, FiSearch, FiMessageCircle, FiCheckSquare, FiSquare } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
-import { useFx, useLoad, Err, Loading, Empty, Act, SendMessages, money, date } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, SendMessages, money, date } from "../ui.jsx";
+import { smartFilter } from "../smartSearch.js";
 
 // ============================================================
 // الديون: مين عليه وقديش ومن إمتى — بتنطبع، وبتذكّر بلطف برسالة محترمة
@@ -17,11 +18,16 @@ export function DebtsView({ page = false }) {
   const [sort, setSort] = useState("big");
   const [sel, setSel] = useState(() => new Set());
   const [msgs, setMsgs] = useState(null);
+  const [paying, setPaying] = useState(null);
+  const canPay = fx.can("f_money", "edit") || fx.can("f_customers", "edit");
   const canRemind = fx.can("f_money", "edit") || fx.can("f_customers", "edit") || fx.can("f_home");
 
   const list = useMemo(() => {
     const n = q.trim();
-    const xs = (data?.customers || []).filter((c) => matchRegion(c, region) && (!n || c.name.includes(n) || (c.phone || "").includes(n) || String(c.seq_no || "") === n || (c.city || "").includes(n)));
+    const inRegion = (data?.customers || []).filter((c) => matchRegion(c, region));
+    // بحث ذكي (بيتحمّل الأخطاء الإملائية) — وإذا في بحث بنرتّب حسب الأقرب
+    if (n) return smartFilter(inRegion, n);
+    const xs = inRegion;
     return xs.sort((a, b) => (sort === "old" ? b.days - a.days : sort === "name" ? a.name.localeCompare(b.name, "ar") : b.balance - a.balance));
   }, [data, q, region, sort]);
   const total = list.reduce((a, c) => a + c.balance, 0);
@@ -93,7 +99,10 @@ export function DebtsView({ page = false }) {
                 </span>
                 <span className="amt">
                   <b className={c.days > 60 || c.over_limit ? "old" : ""}>{money(c.balance)}</b>
-                  {canRemind && c.phone && <Act className="fx-btn sm fx-noprint" onClick={() => remind([c.id])}><FiMessageCircle /> ذكّره</Act>}
+                  <span className="fx-row fx-noprint" style={{ gap: 6, flexWrap: "nowrap" }}>
+                    {canPay && <button className="fx-btn sm ok" onClick={() => setPaying(c)}>💵 دفع</button>}
+                    {canRemind && c.phone && <Act className="fx-btn sm" onClick={() => remind([c.id])}><FiMessageCircle /> ذكّره</Act>}
+                  </span>
                 </span>
               </div>
             ))}
@@ -110,8 +119,62 @@ export function DebtsView({ page = false }) {
           )}
         </>
       )}
+      {paying && <PaySheet c={paying} onClose={() => setPaying(null)} onDone={(r) => { setPaying(null); reload(); if (r?.message_id) setMsgs([r.message_id]); }} />}
       {msgs && <SendMessages ids={msgs} title="رسائل تذكير لطيفة — اكبس «ابعت» لكل وحدة" onClose={() => { setMsgs(null); reload(); }} />}
     </div>
+  );
+}
+
+// الزبون دفع من دينه: كامل أو جزء، كاش أو شيك أو تحويل — وبتطلع رسالة شكر فيها رصيده الجديد
+const METHODS = [["cash", "كاش"], ["cheque", "شيك"], ["transfer", "تحويل"]];
+export function PaySheet({ c, onClose, onDone }) {
+  const fx = useFx();
+  const bal = Number(c.balance) || 0;
+  const [full, setFull] = useState(true);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("cash");
+  const [chq, setChq] = useState("");
+  const [chqDate, setChqDate] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const amt = full ? bal : Number(amount) || 0;
+  const after = Math.round((bal - amt) * 100) / 100;
+  return (
+    <Sheet title={`دفعة من ${c.name}`} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-pay-total"><span>عليه هلأ</span><b>{money(bal)} <small>د.أ</small></b></div>
+        <div className="fx-pay-modes">
+          <button type="button" className={full ? "on" : ""} onClick={() => setFull(true)}>✓ دفع كامل</button>
+          <button type="button" className={!full ? "on" : ""} onClick={() => setFull(false)}>دفع جزء</button>
+        </div>
+        {!full && (
+          <label className="fx-field">قديش دفع؟
+            <input className="fx-input fx-num" style={{ fontSize: 22, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+          </label>
+        )}
+        <div className="fx-chips">{METHODS.map(([k, l]) => <button key={k} type="button" className={`fx-chip ${method === k ? "on" : ""}`} onClick={() => setMethod(k)}>{l}</button>)}</div>
+        {method === "cheque" && (
+          <div className="fx-grid2">
+            <label className="fx-field">رقم الشيك<input className="fx-input" value={chq} onChange={(e) => setChq(e.target.value)} /></label>
+            <label className="fx-field">تاريخ الصرف<input className="fx-input" type="date" value={chqDate} onChange={(e) => setChqDate(e.target.value)} /></label>
+          </div>
+        )}
+        <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <div className="fx-pay-sum">
+          <span>دفع <b>{money(amt)}</b></span>
+          {after > 0.005 ? <span className="debt">بيضل عليه <b>{money(after)}</b></span> : after < -0.005 ? <span className="ok">بيصير إله <b>{money(-after)}</b></span> : <span className="ok">سدّ كل الدين ✓</span>}
+        </div>
+        <Err msg={err} />
+        <Act className="fx-btn ok block fx-huge" disabled={!(amt > 0) || (method === "cheque" && !chq)} onClick={async () => {
+          setErr("");
+          try {
+            const r = await fapi.payment(c.id, { amount: amt, method, cheque_no: chq || undefined, cheque_date: chqDate || undefined, note });
+            fx.toast(r.balance > 0.009 ? `انسجّلت — بيضل عليه ${money(r.balance)}` : "انسجّلت — سدّ كل الدين ✓");
+            onDone(r);
+          } catch (e) { setErr(e.message); }
+        }}>✓ استلمت {money(amt)} دينار</Act>
+      </div>
+    </Sheet>
   );
 }
 

@@ -1,370 +1,92 @@
 // ============================================================
-// البحث الذكي عن العملاء
-// بيفهم جمل مثل: «عمارة 5 طابق ثاني»، «ع5 ط2 ش7»، «شارع الكندي»،
-// «أبو أحمد الرابية»، «0791»، ويحوّلها لشروط بحث.
+// بحث ذكي بالعربي: بيلاقي الزبون حتى لو في أخطاء إملائية
+// (أ/إ/ا، ة/ه، ى/ي، بدون «ال»، حرف ناقص أو زايد أو غلط، أرقام عربية، جزء من التلفون أو الرقم)
+// نفس الملف موجود بالواجهة: client/src/factory/smartSearch.js — إذا عدّلت واحد عدّل الثاني
 // ============================================================
+const AR_DIGITS = { "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9", "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9" };
 
-// توحيد الكتابة العربية: أ/إ/آ ← ا، ة ← ه، ى ← ي، بدون تشكيل ولا تطويل، والأرقام الهندية ← إنجليزية
-export function normalizeArabic(text) {
-  return String(text || "")
-    .replace(/[ً-ْٰـ]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ة/g, "ه")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+export function normAr(s) {
+  return String(s ?? "")
     .toLowerCase()
+    .replace(/[٠-٩۰-۹]/g, (d) => AR_DIGITS[d])
+    .replace(/[ً-ٰٟـ]/g, "") // تشكيل وتطويل
+    .replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/ؤ/g, "و").replace(/ئ/g, "ي").replace(/ء/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
+// أحرف بتتلخبط بالكتابة/اللفظ
+const loose = (w) => w.replace(/ث/g, "س").replace(/ذ/g, "ز").replace(/ظ/g, "ض").replace(/ط/g, "ت").replace(/ص/g, "س").replace(/ق/g, "ك").replace(/ه$/g, "");
+const noAl = (w) => (w.length > 4 && w.startsWith("ال") ? w.slice(2) : w);
+const words = (s) => normAr(s).split(" ").filter(Boolean).map(noAl);
 
-// نفس التوحيد بس داخل SQL (عشان نقارن العمود والكلمة بنفس الطريقة)
-export function sqlNormalize(column) {
-  return `translate(lower(coalesce(${column}, '')), 'أإآٱةىؤئ٠١٢٣٤٥٦٧٨٩ـًٌٍَُِّْ', 'ااااهيوي0123456789')`;
+// مسافة التعديل (مع قلب حرفين جنب بعض = غلطة وحدة: هاشم/هشام)
+function lev(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
 }
 
-// أرقام الطوابق بالكلام
-const ORDINALS = {
-  0: ["ارضي", "الارضي", "ارضيه", "تسويه", "g"],
-  1: ["اول", "الاول", "اولى", "الاولى"],
-  2: ["ثاني", "الثاني", "تاني", "التاني", "ثانيه"],
-  3: ["ثالث", "الثالث", "تالت", "التالت", "ثالثه"],
-  4: ["رابع", "الرابع", "رابعه"],
-  5: ["خامس", "الخامس", "خامسه"],
-  6: ["سادس", "السادس", "سادسه"],
-  7: ["سابع", "السابع", "سابعه"],
-  8: ["ثامن", "الثامن", "تامن"],
-  9: ["تاسع", "التاسع"],
-  10: ["عاشر", "العاشر"],
-};
-const ORDINAL_TO_NUM = {};
-for (const [n, words] of Object.entries(ORDINALS)) for (const w of words) ORDINAL_TO_NUM[w] = Number(n);
-
-const KEYWORDS = {
-  building: ["عماره", "عمارة", "العماره", "بنايه", "البنايه", "مبنى", "المبنى", "مبني", "بيت", "رقم العماره", "ع", "بناء"],
-  floor: ["طابق", "الطابق", "ط", "دور", "الدور", "طابقه"],
-  apartment: ["شقه", "الشقه", "شقة", "ش", "شق"],
-  street: ["شارع", "الشارع", "ش.", "طريق"],
-  phone: ["تلفون", "هاتف", "موبايل", "رقم"],
-};
-const KEY_LOOKUP = {};
-for (const [field, words] of Object.entries(KEYWORDS)) {
-  for (const w of words) KEY_LOOKUP[normalizeArabic(w)] = field;
+// قديش كلمة البحث قريبة من كلمة بالاسم (0..1)
+function wordScore(q, w) {
+  if (!q || !w) return 0;
+  if (w === q) return 1;
+  if (w.startsWith(q)) return q.length >= 2 ? 0.95 : 0.6;
+  if (w.includes(q) && q.length >= 3) return 0.85;
+  const lq = loose(q), lw = loose(w);
+  if (lw === lq || (lw.startsWith(lq) && lq.length >= 2)) return 0.9;
+  // غلطة إملائية: نقارن مع أول جزء من الكلمة بنفس الطول تقريبًا
+  const part = lw.slice(0, Math.max(lq.length, Math.min(lw.length, lq.length + 1)));
+  const d = Math.min(lev(lq, lw), lev(lq, part));
+  const allowed = lq.length <= 3 ? 0 : lq.length <= 5 ? 1 : lq.length <= 8 ? 2 : 3;
+  if (d > allowed) return 0;
+  return 0.85 - (d / Math.max(lq.length, 1)) * 0.4;
 }
 
-const FILLERS = new Set(["رقم", "نمره", "نمرة", "نمر", "#"]);
-
-// كلمات ما إلها معنى بالبحث
-const STOP_WORDS = new Set(["انا", "عند", "في", "من", "على", "عن", "اللي", "الي", "يلي", "هو", "هي", "رقم", "بال", "و", "يا", "زبون", "عميل", "ساكن", "ساكنه"]);
-
-function parseNumberToken(token) {
-  if (/^\d+$/.test(token)) return Number(token);
-  const t = token.replace(/^ال/, "");
-  if (ORDINAL_TO_NUM[token] != null) return ORDINAL_TO_NUM[token];
-  if (ORDINAL_TO_NUM[t] != null) return ORDINAL_TO_NUM[t];
-  return null;
+// النتيجة: 0 = مش هو، 1 = بالزبط
+export function smartScore(query, item, fields = ["name", "contact_name", "city", "address"]) {
+  const raw = normAr(query);
+  if (!raw) return 1;
+  const digits = raw.replace(/\D/g, "");
+  const onlyNum = /^#?\d+$/.test(String(query).trim().replace(/[٠-٩]/g, (d) => AR_DIGITS[d]));
+  // رقم الزبون أو التلفون
+  if (onlyNum) {
+    if (String(item.seq_no ?? "") === digits) return 1;
+    const ph = String(item.phone || "").replace(/\D/g, "");
+    if (digits.length >= 3 && (ph.includes(digits) || ph.includes(digits.replace(/^962/, "0")) || `962${ph.slice(1)}`.includes(digits))) return 0.9;
+    return 0;
+  }
+  const qw = words(query);
+  const hay = fields.flatMap((f) => words(item[f]));
+  if (!hay.length) return 0;
+  // «ابوعلي» = «أبو علي»: بنقارن بدون فراغات كمان
+  const qJoined = loose(raw.replace(/ /g, ""));
+  if (qJoined.length >= 4 && fields.some((f) => loose(normAr(item[f]).replace(/ /g, "")).includes(qJoined))) return 0.88;
+  let sum = 0;
+  for (const q of qw) {
+    let best = 0;
+    for (const w of hay) { const s = wordScore(q, w); if (s > best) best = s; if (best === 1) break; }
+    if (best === 0) return 0; // كل كلمة بالبحث لازم تطابق إشي
+    sum += best;
+  }
+  return sum / qw.length;
 }
 
-// رقم عمارة/شقة مع حرف: «9ج»، «ج9»، «9 ج»، «9-ج»
-const LETTER = "[a-zء-ي]";
-function readCode(tokens, idx) {
-  const tok = tokens[idx];
-  if (tok == null) return null;
-  let m = tok.match(new RegExp(`^(\\d+)(${LETTER})$`)) || null;
-  if (m) return { num: Number(m[1]), letter: m[2], used: 1 };
-  m = tok.match(new RegExp(`^(${LETTER})(\\d+)$`));
-  if (m && !KEY_LOOKUP[m[1]]) return { num: Number(m[2]), letter: m[1], used: 1 };
-  if (/^\d+$/.test(tok)) {
-    const next = tokens[idx + 1];
-    // «9 ج» — حرف لحاله بعد الرقم (مش كلمة مفتاحية مثل ط أو ش)
-    if (next && new RegExp(`^${LETTER}$`).test(next) && !KEY_LOOKUP[next]) {
-      return { num: Number(tok), letter: next, used: 2 };
-    }
-  }
-  return null;
-}
-
-// يفصل «ع5» و«ط2» و«عماره5» لكلمة + رقم
-function splitGlued(tokens) {
-  const out = [];
-  for (const tok of tokens) {
-    const m = tok.match(/^([^\d]+?)(\d+[a-zء-ي]?)$/);
-    if (m && KEY_LOOKUP[m[1]]) {
-      out.push(m[1], m[2]);
-    } else {
-      out.push(tok);
-    }
-  }
-  return out;
-}
-
-/**
- * يحلل نص البحث.
- * يرجّع { building, floor, apartment, street[], phoneDigits, sequential, regionWords[], terms[], understood[] }
- */
-export function parseSearch(raw, regionNames = []) {
-  const text = normalizeArabic(raw).replace(/[،,؛;:()\-_/\\|]+/g, " ");
-  const result = {
-    building: null,
-    floor: null,
-    apartment: null,
-    street: [],
-    phoneDigits: null,
-    regions: [],
-    terms: [],
-    codes: [],
-    buildingLetter: null,
-    apartmentLetter: null,
-    understood: [],
-  };
-  if (!text) return result;
-
-  // أرقام تلفون مكتوبة بفراغات: «079 123 4567»
-  const digitsOnly = text.replace(/\s+/g, "");
-  if (/^\+?\d{4,}$/.test(digitsOnly)) {
-    result.phoneDigits = digitsOnly.replace(/^\+/, "");
-    result.understood.push({ label: "تلفون أو رقم تسلسلي", value: result.phoneDigits });
-    return result;
-  }
-
-  const normalizedRegions = regionNames
-    .map((name) => ({ name, norm: normalizeArabic(name) }))
-    .filter((r) => r.norm)
-    .sort((a, b) => b.norm.length - a.norm.length);
-
-  // المناطق (حتى لو اسمها كلمتين مثل «أم السماق»)
-  let rest = ` ${text} `;
-  for (const r of normalizedRegions) {
-    const variants = [r.norm, r.norm.replace(/^ال/, "")];
-    for (const v of variants) {
-      if (v.length < 2) continue;
-      const pattern = ` ${v} `;
-      const withAl = ` ال${v} `;
-      if (rest.includes(pattern) || rest.includes(withAl)) {
-        result.regions.push(r.name);
-        rest = rest.replace(pattern, " ").replace(withAl, " ");
-        result.understood.push({ label: "المنطقة", value: r.name });
-        break;
-      }
-    }
-  }
-
-  const tokens = splitGlued(rest.trim().split(" ").filter(Boolean));
-
-  for (let i = 0; i < tokens.length; i++) {
-    const tok = tokens[i];
-    const field = KEY_LOOKUP[tok];
-
-    if (field === "street") {
-      // كل اللي بعد «شارع» لحد أول كلمة مفتاحية ثانية = اسم الشارع
-      const words = [];
-      while (i + 1 < tokens.length && !KEY_LOOKUP[tokens[i + 1]] && !/^\d+$/.test(tokens[i + 1])) {
-        words.push(tokens[++i]);
-      }
-      if (words.length) {
-        result.street.push(words.join(" "));
-        result.understood.push({ label: "الشارع", value: words.join(" ") });
-      }
-      continue;
-    }
-
-    if (field === "building" || field === "floor" || field === "apartment") {
-      // «عمارة رقم 5» / «طابق نمرة 2» — نتخطى الكلمة اللي بالنص
-      while (i + 1 < tokens.length && FILLERS.has(tokens[i + 1])) i++;
-      if (field === "building" || field === "apartment") {
-        const code = readCode(tokens, i + 1);
-        if (code) {
-          i += code.used;
-          result[field] = code.num;
-          result[`${field}Letter`] = code.letter;
-          result.understood.push({ label: field === "building" ? "عمارة" : "شقة", value: `${code.num}${code.letter}` });
-          continue;
-        }
-      }
-      const next = tokens[i + 1];
-      const num = next != null ? parseNumberToken(next) : null;
-      // «ش» لحالها ممكن تكون شارع أو شقة: إذا بعدها رقم = شقة، إذا بعدها كلمة = شارع
-      if (num == null && (tok === "ش" || tok === "ش.") && next && !KEY_LOOKUP[next]) {
-        const words = [];
-        while (i + 1 < tokens.length && !KEY_LOOKUP[tokens[i + 1]] && !/^\d+$/.test(tokens[i + 1])) words.push(tokens[++i]);
-        result.street.push(words.join(" "));
-        result.understood.push({ label: "الشارع", value: words.join(" ") });
-        continue;
-      }
-      if (num != null) {
-        i++;
-        result[field] = num;
-        const labels = { building: "عمارة", floor: "طابق", apartment: "شقة" };
-        const shown = field === "floor" && num === 0 ? "أرضي" : String(num);
-        result.understood.push({ label: labels[field], value: shown });
-        continue;
-      }
-      // كلمة مفتاحية بدون رقم — نتجاهلها
-      continue;
-    }
-
-    if (field === "phone") continue;
-
-    // «طابق ثاني» مكتوبة كـ «الثاني» لحالها بعد رقم عمارة؟ ما بنخمّن — بتصير كلمة بحث عادية
-    if (STOP_WORDS.has(tok)) continue;
-
-    // «9ج» لحالها بدون كلمة قبلها = عمارة أو شقة
-    const freeCode = readCode(tokens, i);
-    if (freeCode) {
-      i += freeCode.used - 1;
-      result.codes.push(`${freeCode.num}${freeCode.letter}`);
-      result.understood.push({ label: "عمارة أو شقة", value: `${freeCode.num}${freeCode.letter}` });
-      continue;
-    }
-
-    // رقم لحاله بدون كلمة قبله
-    if (/^\d+$/.test(tok)) {
-      if (tok.length >= 4) {
-        result.phoneDigits = tok;
-        result.understood.push({ label: "تلفون أو رقم تسلسلي", value: tok });
-      } else {
-        result.terms.push(tok);
-        result.understood.push({ label: "رقم", value: tok });
-      }
-      continue;
-    }
-
-    if (tok.length >= 1) {
-      result.terms.push(tok);
-    }
-  }
-
-  const words = result.terms.filter((t) => !/^\d+$/.test(t));
-  if (words.length) result.understood.push({ label: "كلمات", value: words.join(" ") });
-
-  return result;
-}
-
-// قيم الطابق المكتوبة بالكلام اللي بتعني نفس الرقم
-export function floorWords(num) {
-  return ORDINALS[num] || [];
-}
-
-/**
- * يحوّل نتيجة التحليل لشروط SQL.
- * columns: أسماء الأعمدة (مع الاسم المستعار للجدول)
- * startIndex: رقم أول باراميتر
- */
-export function buildSearchSql(parsed, startIndex = 1) {
-  const conds = [];
-  const params = [];
-  const p = (v) => {
-    params.push(v);
-    return `$${startIndex + params.length - 1}`;
-  };
-  const digitsOf = (col) => `regexp_replace(${sqlNormalize(col)}, '[^0-9]', '', 'g')`;
-
-  // الرقم مع الحرف بشكل مضغوط: «عمارة 9 - ج» ← «9ج»
-  const compactOf = (col) =>
-    `regexp_replace(regexp_replace(${sqlNormalize(col)}, '(عماره|بنايه|مبني|شقه|رقم)', '', 'g'), '[^0-9a-zء-ي]', '', 'g')`;
-  const codeMatch = (col, num, letter) => {
-    const a = p(`${num}${letter}`);
-    const b = p(`${letter}${num}`);
-    return `(${compactOf(col)} = ${a} OR ${compactOf(col)} = ${b})`;
-  };
-
-  if (parsed.building != null) {
-    if (parsed.buildingLetter) {
-      conds.push(`(${codeMatch("l.building_number", parsed.building, parsed.buildingLetter)} OR ${codeMatch("l.building_name", parsed.building, parsed.buildingLetter)})`);
-    } else {
-      // «عمارة 9» بتجيب 9 و 9أ و 9ج كمان
-      const ph = p(String(parsed.building));
-      conds.push(`(${digitsOf("l.building_number")} = ${ph} OR ${sqlNormalize("l.building_name")} ~ ('(^|[^0-9])' || ${ph} || '([^0-9]|$)'))`);
-    }
-  }
-
-  if (parsed.floor != null) {
-    const num = parsed.floor;
-    const words = floorWords(num);
-    const numPh = p(String(num));
-    const wordsPh = p(words);
-    conds.push(`(
-      ${digitsOf("l.floor")} = ${numPh}
-      OR EXISTS (SELECT 1 FROM unnest(${wordsPh}::text[]) w WHERE ${sqlNormalize("l.floor")} LIKE '%' || w || '%')
-    )`);
-  }
-
-  if (parsed.apartment != null) {
-    if (parsed.apartmentLetter) {
-      conds.push(codeMatch("l.apartment", parsed.apartment, parsed.apartmentLetter));
-    } else {
-      const ph = p(String(parsed.apartment));
-      conds.push(`${digitsOf("l.apartment")} = ${ph}`);
-    }
-  }
-
-  for (const code of parsed.codes) {
-    const num = code.match(/\d+/)[0];
-    const letter = code.replace(/\d+/, "");
-    conds.push(`(${codeMatch("l.building_number", num, letter)} OR ${codeMatch("l.building_name", num, letter)} OR ${codeMatch("l.apartment", num, letter)})`);
-  }
-
-  for (const s of parsed.street) {
-    const ph = p(s);
-    conds.push(`${sqlNormalize("l.street")} LIKE '%' || ${ph} || '%'`);
-  }
-
-  if (parsed.regions.length) {
-    const ph = p(parsed.regions);
-    conds.push(`r.name = ANY(${ph}::text[])`);
-  }
-
-  if (parsed.phoneDigits) {
-    const d = parsed.phoneDigits;
-    // «79123» بدون الصفر بالأول = «079123»
-    const local = d.startsWith("962") ? "0" + d.slice(3) : d.startsWith("7") ? "0" + d : d;
-    const intl = d.startsWith("0") ? "962" + d.slice(1) : d.startsWith("7") ? "962" + d : d;
-    const localPh = p(local);
-    const intlPh = p(intl);
-    const seqPh = p(d.replace(/^0+/, "") || "0");
-    conds.push(`(
-      regexp_replace(coalesce(c.phone_display, ''), '[^0-9]', '', 'g') LIKE ${localPh} || '%'
-      OR c.phone_normalized LIKE ${intlPh} || '%'
-      OR regexp_replace(coalesce(c.phone_alt, ''), '[^0-9]', '', 'g') LIKE ${localPh} || '%'
-      OR ltrim(c.sequential_number, '0') = ${seqPh}
-    )`);
-  }
-
-  // كل كلمة لازم تنلاقى بمكان ما: الاسم، الشارع، اسم العمارة، الملاحظات، الجهة...
-  for (const term of parsed.terms) {
-    const ph = p(term);
-    if (/^\d+$/.test(term)) {
-      conds.push(`(
-        ltrim(c.sequential_number, '0') = ltrim(${ph}, '0')
-        OR ${digitsOf("l.building_number")} = ${ph}
-        OR ${digitsOf("l.apartment")} = ${ph}
-        ${term.length >= 3 ? `OR regexp_replace(coalesce(c.phone_display, ''), '[^0-9]', '', 'g') LIKE '%' || ${ph} || '%'` : ""}
-      )`);
-      continue;
-    }
-    conds.push(`(
-      ${sqlNormalize("c.name")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("l.street")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("l.building_name")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("l.side")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("l.access_notes")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("l.preferred_delivery_note")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("c.notes")} LIKE '%' || ${ph} || '%'
-      OR ${sqlNormalize("r.name")} LIKE '%' || ${ph} || '%'
-    )`);
-  }
-
-  // ترتيب: الاسم اللي بيبدأ بالكلمة أول
-  let rankSql = null;
-  if (parsed.terms.length) {
-    const firstWord = parsed.terms.find((t) => !/^\d+$/.test(t));
-    if (firstWord) {
-      const ph = p(firstWord);
-      rankSql = `CASE WHEN ${sqlNormalize("c.name")} LIKE ${ph} || '%' THEN 0 WHEN ${sqlNormalize("c.name")} LIKE '%' || ${ph} || '%' THEN 1 ELSE 2 END`;
-    }
-  }
-
-  return { conds, params, rankSql };
+export function smartFilter(list, query, fields) {
+  if (!normAr(query)) return list;
+  return list
+    .map((x) => [x, smartScore(query, x, fields)])
+    .filter(([, s]) => s >= 0.5)
+    .sort((a, b) => b[1] - a[1])
+    .map(([x]) => x);
 }
