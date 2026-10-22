@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FiTruck, FiPhone, FiNavigation, FiAlertTriangle, FiPlus, FiMessageCircle, FiCheck, FiPlay } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
@@ -6,6 +6,7 @@ import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
 import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList, PayBox } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
+import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
@@ -21,6 +22,11 @@ export default function Drive() {
   const [me, setMe] = useState(null);
   const [busy, setBusy] = useState(false);
   const t = data?.trip;
+
+  // لما الصادر يخلص (رجعت الشبكة) منحدّث الشاشة
+  const boxN = useOutbox().items.length;
+  const prevN = useRef(boxN);
+  useEffect(() => { if (boxN < prevN.current) { reload(); } prevN.current = boxN; }, [boxN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadExps = useCallback(() => fapi.myExpenses().then(setExps).catch(() => {}), []);
   useEffect(() => { loadExps(); }, [loadExps]);
@@ -44,6 +50,7 @@ export default function Drive() {
 
   const done = (r) => {
     setSheet(null);
+    if (r?.queued) return; // بينبعت لحاله لما ترجع الشبكة
     reload();
     loadExps();
     if (r?.invoice_token) {
@@ -54,7 +61,10 @@ export default function Drive() {
     else if (r?.message_id) setMsgs([r.message_id]);
   };
 
-  const stops = t?.stops || [];
+  // اللي انحفظ على التلفون (بدون شبكة) بيبين كأنه خلص
+  const box = useOutbox();
+  const queuedDone = new Map(box.items.filter((x) => x.kind === "deliver" || x.kind === "fail").map((x) => [x.ref, x.kind]));
+  const stops = (t?.stops || []).map((o) => (queuedDone.has(o.id) && !["delivered", "failed"].includes(o.status) ? { ...o, status: queuedDone.get(o.id) === "deliver" ? "delivered" : "failed", queued: true } : o));
   const open = stops.filter((o) => ["assigned", "onway"].includes(o.status));
   const current = t?.status === "active" ? open.find((o) => o.en_route_at) : null;
   const next = current ? null : open[0];
@@ -76,6 +86,8 @@ export default function Drive() {
   return (
     <div className="fx-page">
       <PushCard who="driver" />
+      <OutboxBar />
+      {data?.offline && <div className="fx-note warn">📶 ما في شبكة — عم تشوف آخر نسخة محفوظة. شغلك بينحفظ على التلفون وبينبعت لحاله.</div>}
       <Err msg={error} />
       {!data && !error && <Loading />}
 
@@ -100,7 +112,7 @@ export default function Drive() {
 
       {t?.kind === "sales" && (
         <SalesDay t={t} stock={data.car_stock} canCredit={data.can_credit} reload={reload}
-          onSold={(r) => { reload(); setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id }); }}
+          onSold={(r) => { if (r?.queued) return; reload(); setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id }); }}
           openSheet={(kind, o) => setSheet({ kind, o })} />
       )}
 
@@ -259,12 +271,14 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
     const loc = await getLocation(5000);
     try {
       // الدين فوق السقف ما بيوقف السائق — بيوصل تنبيه للإدارة لحاله
-      const r = await fapi.deliver(o.id, {
+      const q = await sendOrQueue({ kind: "deliver", ref: o.id, label: `تسليم ${o.customer_name}`, path: `/driver/orders/${o.id}/deliver`, body: {
         items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
         add_items: Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
         exchanges: exchangeList(exch),
         cash: cashN, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
-      });
+      } });
+      if (q.queued) { fx.toast("📶 ما في شبكة — التسليم انحفظ على التلفون وبينبعت لحاله أول ما ترجع"); onDone({ queued: true }); return; }
+      const r = q.data;
       fx.toast(r.remaining_stops ? `انسجل التسليم. باقي ${r.remaining_stops} وقفات.` : "انسجل التسليم. خلصت كل الوقفات!");
       onDone(r);
     } catch (e) { setErr(e.message); }
@@ -358,12 +372,12 @@ function FailSheet({ o, onClose, onDone }) {
     <Sheet title={`ما تم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
         <div className="fx-chips">{FAILS.map((r) => <button key={r} className={`fx-chip ${reason === r ? "on" : ""}`} onClick={() => setReason(r)}>{r}</button>)}</div>
-        <PhotoInput label="صوّر المحل" hint="إثبات إنك وصلت" value={photo} onChange={setPhoto} kind="fail" />
-        <Act className="fx-btn pri block" disabled={!reason || !photo} onClick={async () => {
+        <PhotoInput label="صوّر المحل (اختياري)" hint="إثبات إنك وصلت" value={photo} onChange={setPhoto} kind="fail" />
+        <Act className="fx-btn pri block" disabled={!reason} onClick={async () => {
           const loc = await getLocation(5000);
-          const r = await fapi.fail(o.id, { reason, photo_url: photo, lat: loc?.lat, lng: loc?.lng });
-          fx.toast("انسجل ووصل للإدارة");
-          onDone(r);
+          const q = await sendOrQueue({ kind: "fail", ref: o.id, label: `ما تم: ${o.customer_name}`, path: `/driver/orders/${o.id}/fail`, body: { reason, photo_url: photo, lat: loc?.lat, lng: loc?.lng } });
+          fx.toast(q.queued ? "📶 انحفظ على التلفون وبينبعت لحاله" : "انسجل ووصل للإدارة");
+          onDone(q.queued ? { queued: true } : q.data);
         }}>سجّل وبلّغ الإدارة</Act>
       </div>
     </Sheet>
@@ -432,8 +446,8 @@ function ExpenseSheet({ kinds, onClose, onDone }) {
         <PhotoInput label="صوّر الفاتورة (اختياري)" value={photo} onChange={setPhoto} kind="receipt" />
         <div className="fx-note">المصروف بينخصم من الكاش اللي بتسلّمه. إذا الإدارة رفضته بيرجع عليك.</div>
         <Act className="fx-btn pri block" disabled={!(Number(amount) > 0)} onClick={async () => {
-          await fapi.addExpense({ kind, amount, liters, photo_url: photo, note });
-          fx.toast("انبعت للإدارة للموافقة");
+          const q = await sendOrQueue({ kind: "expense", label: `مصروف ${kind} ${amount}`, path: "/driver/expenses", body: { kind, amount, liters, photo_url: photo, note } });
+          fx.toast(q.queued ? "📶 المصروف انحفظ على التلفون وبينبعت لحاله" : "انبعت للإدارة للموافقة");
           onDone();
         }}>ابعت للإدارة</Act>
       </div>
@@ -456,3 +470,26 @@ function CashSheet({ t, onClose }) {
   );
 }
 
+
+// عمليات محفوظة على التلفون بتستنى الشبكة
+function OutboxBar() {
+  const box = useOutbox();
+  const [busy, setBusy] = useState(false);
+  if (!box.items.length && !box.failed.length) return null;
+  return (
+    <div className="fx-stack" style={{ gap: 8 }}>
+      {box.items.length > 0 && (
+        <div className="fx-outbox">
+          <span>📶 <b>{box.items.length}</b> {box.items.length === 1 ? "عملية محفوظة" : "عمليات محفوظة"} على التلفون — بتنبعت لحالها أول ما ترجع الشبكة.</span>
+          <button className="fx-btn sm" disabled={busy} onClick={async () => { setBusy(true); await flush().catch(() => {}); setBusy(false); }}>{busy ? "عم ببعت…" : "ابعت هلأ"}</button>
+        </div>
+      )}
+      {box.failed.map((f) => (
+        <div key={f.key} className="fx-note crit fx-row" style={{ justifyContent: "space-between" }}>
+          <span>ما انقبلت: {f.label} — {f.error}</span>
+          <button className="fx-link" onClick={() => dismissFailed(f.key)}>تمام</button>
+        </div>
+      ))}
+    </div>
+  );
+}

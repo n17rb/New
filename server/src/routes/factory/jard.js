@@ -80,7 +80,7 @@ async function buildJard(date, driverId = null) {
       invoices: delivered.sort((a, b) => new Date(a.delivered_at) - new Date(b.delivered_at)).map((o) => ({
         id: o.id, customer_name: o.customer_name, city: o.city, phone: o.phone, delivered_at: o.delivered_at,
         total: Number(o.delivered_total || 0), cash: Number(o.cash_paid || 0), debt: round2(Number(o.delivered_total || 0) - Number(o.cash_paid || 0)),
-        invoice_token: o.invoice_token, proof_photo: o.proof_photo, signed: !!o.signature, sale: o.notes === "بيع مندوب",
+        invoice_token: o.invoice_token, proof_photo: o.proof_photo, edited_at: o.edited_at, edited_by_name: o.edited_by_name, signed: !!o.signature, sale: o.notes === "بيع مندوب",
         items: o.items.map((i) => ({ name: i.name, qty: i.delivered_qty ?? i.qty, ordered: i.qty, bonus: i.delivered_bonus ?? i.bonus_qty ?? 0, damaged: i.damaged_qty || 0, price: i.price })),
         exchanges: (o.exchanges || []).map((x) => ({ name: x.name, qty: x.qty })),
       })),

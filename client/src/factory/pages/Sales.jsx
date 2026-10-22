@@ -3,6 +3,7 @@ import { FiShoppingCart, FiPlus, FiSearch, FiPackage, FiAlertTriangle } from "re
 import { fapi } from "../fapi.js";
 import { deliveredCartons } from "./StopSheet.jsx";
 import { Who } from "./Who.jsx";
+import { sendOrQueue } from "../outbox.js";
 import { useFx, Sheet, Err, Act, ProductArt, getLocation, money, num, time } from "../ui.jsx";
 
 // ============================================================
@@ -315,11 +316,13 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
     setErr("");
     const loc = await getLocation(5000);
     try {
-      const r = await fapi.salesSell(t.id, {
+      const q = await sendOrQueue({ kind: "sell", ref: t.id, label: `بيع لـ ${shop.name}`, path: `/driver/sales/${t.id}/sell`, body: {
         customer_id: shop.new ? undefined : shop.id,
         new_customer: shop.new ? { name: shop.name, phone: shop.phone } : undefined,
         items, exchanges: exchangeList(exch), cash: cashN, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
-      });
+      } });
+      if (q.queued) { fx.toast("📶 ما في شبكة — البيعة انحفظت على التلفون وبتنبعت لحالها"); onDone({ queued: true }); return; }
+      const r = q.data;
       fx.toast(`انباع لـ ${r.customer_name} ✓`);
       onDone(r);
     } catch (e) {

@@ -992,3 +992,25 @@ CREATE TABLE IF NOT EXISTS f_order_exchanges (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_f_exch_order ON f_order_exchanges(order_id);
+
+-- نفس العملية ما بتنسجّل مرتين (كبستين، أو إعادة إرسال بعد ما رجعت الشبكة)
+CREATE TABLE IF NOT EXISTS f_idem (
+  key VARCHAR(64) NOT NULL,
+  user_id INTEGER NOT NULL,
+  status INTEGER,
+  response JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (key, user_id)
+);
+
+-- تصحيح فاتورة بعد التسليم: مين صحّحها وليش، وشو كانت وشو صارت
+CREATE TABLE IF NOT EXISTS f_order_edits (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES f_orders(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL,
+  before JSONB,
+  after JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_order_edits ON f_order_edits(order_id);
