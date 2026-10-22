@@ -22,4 +22,42 @@ router.post("/resolve-link", async (req, res) => {
   }
 });
 
+// ============================================================
+// خريطة جوجل الحقيقية (Map Tiles API) — نفس شكل خرائط جوجل، بلون فاتح مريح
+// المفتاح: GOOGLE_MAPS_KEY بـRender (فعّل «Map Tiles API» بنفس مشروع جوجل، وقيّد المفتاح على دومين التطبيق)
+// ============================================================
+const MAP_STYLE = [
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#cfe6f7" }] },
+  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#f5f8fb" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#e4eef8" }] },
+];
+let mapSession = null;
+router.get("/map-session", async (req, res) => {
+  const key = process.env.GOOGLE_MAPS_KEY;
+  if (!key) return res.json({ enabled: false });
+  if (mapSession && Date.now() < mapSession.until) return res.json({ enabled: true, key, session: mapSession.session });
+  try {
+    const r = await fetch(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mapType: "roadmap", language: "ar", region: "JO", scale: "scaleFactor2x", highDpi: true, styles: MAP_STYLE }),
+    });
+    const j = await r.json();
+    if (!j.session) {
+      console.error("map session:", r.status, j?.error?.message || "");
+      return res.json({ enabled: false });
+    }
+    // الجلسة بتعيش أسبوعين — منجدّدها قبل بيوم
+    const exp = Number(j.expiry) * 1000 || Date.now() + 13 * 86400000;
+    mapSession = { session: j.session, until: exp - 86400000 };
+    res.json({ enabled: true, key, session: j.session });
+  } catch (e) {
+    res.json({ enabled: false });
+  }
+});
+
 export default router;

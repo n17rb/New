@@ -156,7 +156,7 @@ export default function Orders() {
 }
 
 export function itemsLine(o) {
-  return o.items.map((i) => `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}`).join("، ");
+  return o.items.map((i) => (i.qty > 0 ? `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}` : `🎁 ${num(i.bonus_qty)} ${i.name} بونص`)).join("، ");
 }
 
 function OrderRow({ o, selectable, on, onToggle, onInfo }) {
@@ -187,7 +187,9 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
 
 // ---------- طلب جديد / تعديل ----------
 const OPEN_ST = ["new", "assigned", "onway", "delayed"];
-const toItems = (o) => o.items.map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual }));
+const toItems = (o) => o.items.filter((i) => i.qty > 0).map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual }));
+// أسطر «بونص حر» (صنف ببلاش بدون شراء)
+const toFree = (o) => Object.fromEntries((o?.items || []).filter((i) => i.qty === 0 && i.bonus_qty > 0).map((i) => [i.product_id, i.bonus_qty]));
 
 export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
   const fx = useFx();
@@ -197,6 +199,7 @@ export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
   const [list, setList] = useState([]);
   const [cust, setCust] = useState(orderProp ? { id: orderProp.customer_id, name: orderProp.customer_name, city: orderProp.city } : customer || null);
   const [items, setItems] = useState(orderProp ? toItems(orderProp) : []);
+  const [freeB, setFreeB] = useState(() => toFree(orderProp));
   const [due, setDue] = useState(orderProp?.due_date || today());
   const [urgent, setUrgent] = useState(!!orderProp?.urgent);
   const [notes, setNotes] = useState(orderProp?.notes || "");
@@ -214,6 +217,7 @@ export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
   function editExisting(o) {
     setOrder(o);
     setItems(toItems(o));
+    setFreeB(toFree(o));
     setDue(o.due_date || today());
     setUrgent(!!o.urgent);
     setNotes(o.notes || "");
@@ -230,7 +234,10 @@ export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
 
   async function save(allowDuplicate = false) {
     setErr("");
-    const body = { customer_id: cust?.id, items: items.filter((i) => i.product_id && Number(i.qty) > 0).map((i) => ({ ...i, bonus_qty: i.bonus_manual ? Number(i.bonus_qty) || 0 : undefined })), due_date: due, urgent, notes, allow_duplicate: allowDuplicate };
+    const body = { customer_id: cust?.id, items: [
+      ...items.filter((i) => i.product_id && Number(i.qty) > 0).map((i) => ({ ...i, bonus_qty: i.bonus_manual ? Number(i.bonus_qty) || 0 : undefined })),
+      ...Object.entries(freeB).filter(([, n]) => Number(n) > 0).map(([pid, n]) => ({ product_id: Number(pid), qty: 0, bonus_qty: Number(n), bonus_manual: true })),
+    ], due_date: due, urgent, notes, allow_duplicate: allowDuplicate };
     try {
       if (order) {
         const r = await fapi.updateOrder(order.id, body);
@@ -293,6 +300,7 @@ export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
         )}
 
         {cust && <ProductPicker products={products} items={items} setItems={setItems} customerId={cust.id} />}
+        {cust && fx.canAction("give_bonus") && <FreeBonus products={products} value={freeB} onChange={setFreeB} />}
 
         <div className="fx-field">موعد التوصيل
           <div className="fx-chips fx-due">
@@ -391,6 +399,34 @@ export function ProductPicker({ products, items, setItems, customerId, noBonus =
         );
       })}
     </>
+  );
+}
+
+// 🎁 بونص حر: أي صنف ببلاش مع الطلب (مثلًا على ١٠٠ كرتونة: كبير + وسط + بيبي)
+export function FreeBonus({ products, value, onChange }) {
+  const [open, setOpen] = useState(Object.keys(value).length > 0);
+  if (!open) return <button type="button" className="fx-link" style={{ justifySelf: "start" }} onClick={() => setOpen(true)}>🎁 بدك تعطيه بونص من صنف ثاني؟</button>;
+  return (
+    <div className="fx-exch" style={{ background: "#effaf3", borderColor: "#b7e2c7" }}>
+      <span className="hd" style={{ color: "#14653a" }}>🎁 بونص ببلاش — على أي صنف</span>
+      {Object.keys(value).map((pid) => {
+        const p = products.find((x) => x.id === Number(pid));
+        const n = Number(value[pid]) || 0;
+        return (
+          <div key={pid} className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
+            <ProductArt p={p} size={34} /><b className="fx-grow">{p?.name}</b>
+            <div className="fx-stepper">
+              <button type="button" dir="ltr" onClick={() => onChange((v) => { const x = { ...v, [pid]: Math.max(0, n - 1) }; if (!x[pid]) delete x[pid]; return x; })}>−</button>
+              <input className="fx-input" type="number" inputMode="numeric" min="0" value={value[pid]} onChange={(e) => onChange((v) => ({ ...v, [pid]: e.target.value }))} aria-label={`بونص ${p?.name}`} />
+              <button type="button" dir="ltr" onClick={() => onChange((v) => ({ ...v, [pid]: n + 1 }))}>+</button>
+            </div>
+          </div>
+        );
+      })}
+      <div className="fx-chips">
+        {products.filter((p) => !(String(p.id) in value)).map((p) => <button key={p.id} type="button" className="fx-chip" onClick={() => onChange((v) => ({ ...v, [p.id]: 5 }))}>+ {p.name}</button>)}
+      </div>
+    </div>
   );
 }
 

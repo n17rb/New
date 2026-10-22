@@ -58,6 +58,9 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
   const [showInv, setShowInv] = useState(false);
   const [showDet, setShowDet] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [editLoad, setEditLoad] = useState(false);
+  const fx = useFx();
+  const canLoad = !mine && (fx.can("f_dispatch", "edit") || fx.can("f_stock", "edit")) && d.trips.some((t) => ["planned", "active", "returned"].includes(t.status) && !t.returns_received_at);
   const toSettle = S.trips.length > 0;
   const vehicles = [...new Set(d.trips.map((t) => t.vehicle_name))].join("، ");
   const returned = d.trips.some((t) => t.returns_received_at);
@@ -116,6 +119,7 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
         <button className="fx-btn ok block fx-big" onClick={() => setSettling(true)}>💵 استلمت من {d.driver_name.split(" ")[0]} — تسوية</button>
       )}
       {!mine && !toSettle && S.active > 0 && <div className="fx-note">لسا شغال. لما يكبس «رجعت للمصنع» بيطلعلك زر التسوية هون.</div>}
+      {editLoad && <LoadEditSheet d={d} reload={reload} onClose={() => setEditLoad(false)} />}
       {settling && <SettleSheet d={d} canReview={canReview} reload={reload} onClose={() => setSettling(false)} />}
 
       {/* بعد ما يتسكّر الحساب: التفاصيل بتتطوى (وبتضل بالطباعة) */}
@@ -141,7 +145,10 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
       {/* البضاعة */}
       {d.goods.length > 0 && (
         <div className="fx-card">
-          <h3 style={{ marginTop: 0 }}>البضاعة</h3>
+          <div className="fx-row" style={{ justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>البضاعة</h3>
+            {canLoad && <button className="fx-btn sm fx-noprint" onClick={() => setEditLoad(true)}>✏️ عدّل الحمولة</button>}
+          </div>
           <small className="fx-muted">يرجع = طلع − سلّم − بونص − بدل تالف − تالف</small>
           <div className="fx-jard-goods">
             {d.goods.map((g) => (
@@ -223,6 +230,49 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
         </div>
       )}
     </section>
+  );
+}
+
+// تعديل الحمولة (الإدارة بس): كم صار على السيارة من كل صنف
+function LoadEditSheet({ d, reload, onClose }) {
+  const fx = useFx();
+  const trips = d.trips.filter((t) => ["planned", "active", "returned"].includes(t.status) && !t.returns_received_at);
+  const [tid, setTid] = useState(trips[0]?.id);
+  const t = trips.find((x) => x.id === tid) || trips[0];
+  const [vals, setVals] = useState({});
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => { setVals(Object.fromEntries((t?.goods || []).map((g) => [g.product_id, String(g.loaded)]))); }, [tid]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!t) return null;
+  const names = Object.fromEntries([...fx.boot.products.map((p) => [p.id, p.name]), ...t.goods.map((g) => [g.product_id, g.name])]);
+  const ids = Object.keys(vals);
+  return (
+    <Sheet title={`حمولة ${t.vehicle_name}`} onClose={onClose}>
+      <div className="fx-stack">
+        {trips.length > 1 && <div className="fx-chips">{trips.map((x) => <button key={x.id} className={`fx-chip ${x.id === t.id ? "on" : ""}`} onClick={() => setTid(x.id)}>{x.kind === "sales" ? "مندوب" : "رحلة"} #{x.id}</button>)}</div>}
+        <div className="fx-note sky">اكتب كم صار على السيارة من كل صنف. الفرق بينسجّل طالع أو راجع من المستودع، والجرد بيتعدّل لحاله، والسائق بيوصله إشعار.</div>
+        {ids.map((pid) => {
+          const g = t.goods.find((x) => x.product_id === Number(pid));
+          return (
+            <label key={pid} className="fx-field">
+              <span>{names[pid]} {g ? <span className="fx-muted">(كان {num(g.loaded)} · سلّم {num(g.delivered + g.bonus + g.exchanged)})</span> : <span className="fx-muted">(جديد)</span>}</span>
+              <input className="fx-input fx-num" style={{ textAlign: "center", fontSize: 20, fontWeight: 800 }} type="number" inputMode="numeric" min="0" value={vals[pid]} onChange={(e) => setVals({ ...vals, [pid]: e.target.value })} />
+            </label>
+          );
+        })}
+        <div className="fx-chips">{fx.boot.products.filter((p) => p.active && !(String(p.id) in vals)).map((p) => <button key={p.id} className="fx-chip" onClick={() => setVals({ ...vals, [p.id]: "0" })}>+ {p.name}</button>)}</div>
+        <label className="fx-field">السبب (اختياري)<input className="fx-input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="مثلًا: رجع حمّل زيادة" /></label>
+        <Err msg={err} />
+        <Act className="fx-btn pri block fx-big" onClick={async () => {
+          setErr("");
+          try {
+            const r = await fapi.loadEdit(t.id, { reason, items: ids.map((pid) => ({ product_id: Number(pid), loaded: Number(vals[pid]) || 0 })) });
+            fx.toast(`انعدّلت الحمولة: ${r.changes.join("، ")}`);
+            onClose(); reload();
+          } catch (e) { setErr(e.message); }
+        }}>احفظ الحمولة</Act>
+      </div>
+    </Sheet>
   );
 }
 

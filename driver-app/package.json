@@ -9,7 +9,8 @@
   "dependencies": {
     "@capacitor/android": "^6.1.2",
     "@capacitor/core": "^6.1.2",
-    "@capacitor-community/background-geolocation": "^1.2.17"
+    "@capacitor-community/background-geolocation": "^1.2.17",
+    "@capacitor/push-notifications": "^6.0.2"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.1.2"

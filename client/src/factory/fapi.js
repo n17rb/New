@@ -100,6 +100,7 @@ export const fapi = {
   correctInvoice: (id, b) => post(`/orders/${id}/correct`, b),
   myJard: (o) => get(`/driver/jard${qs(o)}`),
   jardSettle: (b) => post("/jard/settle", b),
+  loadEdit: (id, b) => post(`/trips/${id}/load-edit`, b),
   driverCheck: (id, b) => post(`/driver/trips/${id}/check`, b),
   driverConfirmLoad: (id) => post(`/driver/trips/${id}/confirm-load`),
   driverStart: (id, b) => post(`/driver/trips/${id}/start`, b),

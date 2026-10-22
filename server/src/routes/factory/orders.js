@@ -89,8 +89,11 @@ export async function buildItems(customerId, rawItems, user) {
   const items = [];
   const manualOk = user ? canAction(user, "give_bonus") : false;
   for (const it of Array.isArray(rawItems) ? rawItems : []) {
-    const qty = Math.round(Number(it.qty));
-    if (!it.product_id || !(qty > 0)) continue;
+    const qty = Math.round(Number(it.qty)) || 0;
+    // سطر «بونص حر»: صنف ببلاش بدون ما ينشرى (مثلًا على ١٠٠ كرتونة: كبير + وسط + بيبي)
+    const freeOnly = qty === 0 && it.bonus_manual === true && Number(it.bonus_qty) > 0;
+    if (!it.product_id || !(qty > 0 || freeOnly)) continue;
+    if (freeOnly && !manualOk) throw new Error("ما عندك صلاحية تعطي بونص.");
     const p = (await query("SELECT id, name, active FROM f_products WHERE id = $1", [it.product_id])).rows[0];
     if (!p) throw new Error("منتج غير موجود.");
     const manual = manualOk && it.bonus_qty !== undefined && it.bonus_qty !== null && it.bonus_qty !== "" && it.bonus_manual === true;

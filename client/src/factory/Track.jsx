@@ -117,7 +117,7 @@ export function Invoice({ data, inApp = false }) {
           <tbody>
             {items.map((i, k) => (
               <Fragment key={k}>
-                <tr><td>{i.name}</td><td>{i.delivered_qty ?? i.qty}</td><td>{money(i.price)}</td><td>{money(i.line)}</td></tr>
+                {(i.delivered_qty ?? i.qty) > 0 && <tr><td>{i.name}</td><td>{i.delivered_qty ?? i.qty}</td><td>{money(i.price)}</td><td>{money(i.line)}</td></tr>}
                 {(i.delivered_bonus ?? i.bonus_qty) > 0 && <tr style={{ color: "var(--fx-ok)" }}><td>بونص {i.name}</td><td>{i.delivered_bonus ?? i.bonus_qty}</td><td>ببلاش</td><td>0.00</td></tr>}
               </Fragment>
             ))}

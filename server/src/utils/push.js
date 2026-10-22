@@ -1,4 +1,5 @@
 import { query } from "../db.js";
+import { sendFcm, fcmEnabled } from "./fcm.js";
 
 // مكتبة web-push بتنحمّل بشكل آمن: لو مش موجودة لأي سبب، السيرفر بيضل شغّال
 // والإشعارات بالتطبيق بتضل توصل — بس إشعارات الجهاز بتتوقف.
@@ -57,14 +58,25 @@ export function isPushAvailable() {
 
 // يبعث إشعار لكل أجهزة المستخدم. الاشتراكات المنتهية بتنحذف لحالها.
 export async function sendPushToUser(userId, { title = "موج", body, url = "/notifications", tag, icon } = {}) {
-  if (!webpush || !userId || !body) return;
-  await getVapidPublicKey();
+  if (!userId || !body) return;
+  if (!webpush && !fcmEnabled()) return;
+  if (webpush) await getVapidPublicKey().catch(() => {});
 
   const subs = await query("SELECT * FROM push_subscriptions WHERE user_id = $1", [userId]);
   const payload = JSON.stringify({ title, body, url, tag: tag || `n-${Date.now()}`, ...(icon ? { icon } : {}) });
 
   await Promise.all(
     subs.rows.map(async (s) => {
+      // تطبيق الأندرويد (Firebase)
+      if (s.endpoint.startsWith("fcm:")) {
+        try {
+          const r = await sendFcm(s.endpoint.slice(4), { title, body, url, tag });
+          if (r === "gone") await query("DELETE FROM push_subscriptions WHERE id = $1", [s.id]);
+          else if (r === "ok") await query("UPDATE push_subscriptions SET last_used_at = now() WHERE id = $1", [s.id]);
+        } catch (err) { console.error("fcm:", err.message); }
+        return;
+      }
+      if (!webpush) return;
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

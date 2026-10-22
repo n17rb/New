@@ -418,9 +418,28 @@ function CustomerView({ id, onClose, onEdit, onChanged, onOrder }) {
 
             </div>
           </details>
+          {fx.canAction("delete_customer") && <DeleteCustomer c={c} onDone={() => { onChanged(); onClose(); }} />}
         </div>
       )}
     </Sheet>
+  );
+}
+
+// حذف الزبون (للإدارة بس): بيتأكد مرتين، وفواتيره القديمة بتضل بالسجل
+function DeleteCustomer({ c, onDone }) {
+  const fx = useFx();
+  const [sure, setSure] = useState(false);
+  const [err, setErr] = useState("");
+  if (!sure) return <button className="fx-link" style={{ justifySelf: "start", color: "var(--fx-crit)" }} onClick={() => setSure(true)}>🗑️ احذف الزبون</button>;
+  return (
+    <div className="fx-note crit fx-stack">
+      <span>متأكد بدك تحذف <b>{c.name}</b>؟ بيختفي من القوائم، وفواتيره القديمة بتضل بالسجل والجرد.</span>
+      <Err msg={err} />
+      <div className="fx-grid2">
+        <Act className="fx-btn danger" onClick={async () => { setErr(""); try { await fapi.deleteCustomer(c.id); fx.toast(`انحذف ${c.name}`); onDone(); } catch (e) { setErr(e.message); } }}>إي، احذفه</Act>
+        <button className="fx-btn" onClick={() => setSure(false)}>لا، رجوع</button>
+      </div>
+    </div>
   );
 }
 

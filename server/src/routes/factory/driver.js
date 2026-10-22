@@ -216,15 +216,18 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   const byItem = new Map((b.items || []).map((i) => [Number(i.item_id), i]));
   let total = 0;
   const lines = [];
+  const bonusOk = canAction(req.user, "give_bonus");
   for (const it of o.items) {
     const x = byItem.get(it.id) || {};
     const dq = x.delivered_qty == null ? it.qty : Math.round(Number(x.delivered_qty));
     const dmg = Math.max(0, Math.round(Number(x.damaged_qty) || 0));
-    const bonus = it.bonus_qty || 0;
-    const db = x.delivered_bonus == null ? bonus : Math.round(Number(x.delivered_bonus));
+    // البونص بيمشي مع الكمية اللي انسلّمت فعلًا (حسب قاعدة البونص)، إلا إذا الإدارة حددته بإيدها بالطلب
+    const bonus = it.bonus_manual ? (it.bonus_qty || 0) : await bonusFor(o.customer_id, it.product_id, dq);
+    let db = x.delivered_bonus == null ? bonus : Math.round(Number(x.delivered_bonus));
     // الزبون ممكن ياخذ أقل أو أكثر من المطلوب (الزيادة من اللي على السيارة)
     if (!(dq >= 0) || dq > 100000) return bad(res, `كمية ${it.name} غير صحيحة.`);
-    if (!(db >= 0) || db > bonus) return bad(res, `بونص ${it.name} غير صحيح.`);
+    if (!(db >= 0) || db > 100000) return bad(res, `بونص ${it.name} غير صحيح.`);
+    if (db > bonus && !bonusOk) db = bonus; // بونص زيادة بس بصلاحية
     if (dmg > Math.max(0, it.qty + bonus - dq - db)) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
     total += dq * it.price; // البونص ببلاش: ما بينحسب بالفاتورة
     lines.push({ ...it, dq, dmg, db });
@@ -232,13 +235,16 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   // منتج ما كان بالطلب وأخذه الزبون من السيارة
   const added = [];
   for (const x of Array.isArray(b.add_items) ? b.add_items : []) {
-    const q = Math.round(Number(x.qty));
-    if (!x.product_id || !(q > 0) || q > 100000) continue;
+    const q = Math.max(0, Math.round(Number(x.qty)) || 0);
+    const freeB = Math.max(0, Math.round(Number(x.bonus)) || 0);
+    if (!x.product_id || q > 100000 || freeB > 100000) continue;
+    if (!q && !(freeB > 0 && bonusOk)) continue; // سطر بونص بس = بصلاحية
     const p = (await query("SELECT id, name FROM f_products WHERE id = $1 AND active", [x.product_id])).rows[0];
     if (!p) continue;
     const price = await priceFor(o.customer_id, p.id);
+    const bn = x.bonus !== undefined && bonusOk ? freeB : await bonusFor(o.customer_id, p.id, q);
     total += q * price;
-    added.push({ product_id: p.id, name: p.name, qty: q, price });
+    added.push({ product_id: p.id, name: p.name, qty: q, price, bonus: bn, manual: x.bonus !== undefined && bonusOk });
   }
   // استبدال تالف: أخذنا من الزبون كراتين تالفة وأعطيناه بدالها جديد (ما بينحسب بالفاتورة)
   const exchanges = [];
@@ -281,7 +287,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
       );
     }
     for (const a of added) {
-      await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, delivered_qty, bonus_qty, delivered_bonus) VALUES ($1,$2,$3,$4,$3,0,0)", [o.id, a.product_id, a.qty, a.price]);
+      await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, delivered_qty, bonus_qty, delivered_bonus, bonus_manual) VALUES ($1,$2,$3,$4,$3,$5,$5,$6)", [o.id, a.product_id, a.qty, a.price, a.bonus, a.manual]);
     }
     for (const l of lines) {
       await client.query("UPDATE f_order_items SET delivered_qty = $1, damaged_qty = $2, delivered_bonus = $3 WHERE id = $4", [l.dq, l.dmg, l.db, l.id]);
@@ -339,11 +345,11 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
     customerId: c.id, orderId: o.id, kind: "delivered",
-    data: { order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
+    data: { order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name, bonus: a.bonus }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });
-  const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0) + added.reduce((a, x) => a + x.qty, 0);
+  const cartons = lines.reduce((a, l) => a + l.dq + l.db, 0) + added.reduce((a, x) => a + x.qty + (x.bonus || 0), 0);
   const exTxt = exchanges.length ? ` · بدّل ${exchanges.reduce((a, x) => a + x.qty, 0)} تالف` : "";
   await pushManagers({
     title: sale ? `🛒 ${t.driver_name || "المندوب"} باع لـ ${c.name}` : `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
@@ -536,6 +542,8 @@ router.post("/driver/sales/start", drive, once(async (req, res) => {
 
 // رجع حمّل زيادة من المصنع
 router.post("/driver/sales/:id/load", drive, once(async (req, res) => {
+  // تغيير الحمولة بعد ما طلع = للإدارة بس
+  if (!can(req.user, "f_dispatch", "edit") && !can(req.user, "f_stock", "edit")) return bad(res, "تعديل الحمولة من الإدارة — كلّم المستودع.", 403);
   const t = await myTrip(req, req.params.id);
   if (!t || t.kind !== "sales") return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
@@ -616,6 +624,17 @@ router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
     const bonus = Math.min(await bonusFor(c.id, st.product_id, qty), st.left - qty);
     items.push({ product_id: st.product_id, name: st.name, qty, bonus, price: await priceFor(c.id, st.product_id) });
   }
+  // بونص حر على أي صنف (بصلاحية) — من اللي على السيارة
+  if (canAction(req.user, "give_bonus")) {
+    for (const x of Array.isArray(b.bonus_items) ? b.bonus_items : []) {
+      const qty = Math.round(Number(x.qty));
+      if (!x.product_id || !(qty > 0)) continue;
+      const st = left.get(Number(x.product_id));
+      const used = items.filter((i) => i.product_id === Number(x.product_id)).reduce((a, i) => a + i.qty + i.bonus, 0);
+      if (!st || qty > st.left - used) return bad(res, `ما معك ${st ? st.name : "هالصنف"} كفاية للبونص.`);
+      items.push({ product_id: st.product_id, name: st.name, qty: 0, bonus: qty, price: await priceFor(c.id, st.product_id), manual: true });
+    }
+  }
   const exch = [];
   for (const x of Array.isArray(b.exchanges) ? b.exchanges : []) {
     const qty = Math.round(Number(x.qty));
@@ -643,7 +662,7 @@ router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
     [c.id, t.id, jordanDate(), total, req.user.id]
   )).rows[0].id;
   for (const i of items) {
-    await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,false)", [oid, i.product_id, i.qty, i.price, i.bonus]);
+    await query("INSERT INTO f_order_items (order_id, product_id, qty, price, bonus_qty, bonus_manual) VALUES ($1,$2,$3,$4,$5,$6)", [oid, i.product_id, i.qty, i.price, i.bonus, true]);
   }
   const o = (await loadOrders("o.id = $1", [oid]))[0];
   // البيع كله أو ولا إشي: إذا التسليم ما زبط منشيل الطلب اللي انعمل

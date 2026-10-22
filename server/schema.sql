@@ -1014,3 +1014,9 @@ CREATE TABLE IF NOT EXISTS f_order_edits (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_f_order_edits ON f_order_edits(order_id);
+
+-- سطر «بونص حر» كميته المدفوعة صفر (بس بونص)
+ALTER TABLE f_order_items DROP CONSTRAINT IF EXISTS f_order_items_qty_check;
+DO $$ BEGIN
+  ALTER TABLE f_order_items ADD CONSTRAINT f_order_items_qty_check CHECK (qty >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
