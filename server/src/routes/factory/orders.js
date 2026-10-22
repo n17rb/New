@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
-import { planStops, sortNearest, km, pointOf } from "../../utils/factoryGeo.js";
+import { planStops, sortNearest, chainNearest, km, pointOf } from "../../utils/factoryGeo.js";
 import { canAction } from "../../permissions.js";
 import { sendPushToUser } from "../../utils/push.js";
 import { inferRegion } from "../../utils/jordanRegions.js";
@@ -30,7 +30,7 @@ function dayWord(date) {
 export async function loadOrders(where, params = []) {
   const r = await query(
     `SELECT o.*, to_char(o.due_date, 'YYYY-MM-DD') AS due_date,
-            c.name AS customer_name, c.seq_no, c.photo_url, c.maps_url, c.governorate, c.district, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
+            c.name AS customer_name, c.contact_name, c.notes AS customer_notes, c.seq_no, c.photo_url, c.maps_url, c.governorate, c.district, c.phone, c.city, c.address, c.lat, c.lng, c.balance AS customer_balance, c.credit_limit, c.pay_terms, c.line_id,
             t.vehicle_id, t.status AS trip_status, t.load_confirmed_at AS trip_loaded_at, t.driver_id, v.name AS vehicle_name, u.full_name AS driver_name,
             cb.full_name AS created_by_name, eb.full_name AS edited_by_name
      FROM f_orders o JOIN f_customers c ON c.id = o.customer_id
@@ -434,11 +434,16 @@ router.post("/trips", dispatch, async (req, res) => {
 // ترتيب الوقفات يدويًا أو من الأقرب للأبعد
 router.put("/trips/:id/stops", dispatch, async (req, res) => {
   let ids = (req.body?.order_ids || []).map(Number);
-  if (req.body?.sort) {
-    const orders = await loadOrders("o.trip_id = $1 AND o.status IN ('assigned','onway','delayed')", [req.params.id]);
-    ids = sortNearest(await factoryPoint(), orders).map((o) => o.id);
-  }
   let seq = 0;
+  if (req.body?.sort) {
+    // الرحلة شغالة؟ منبلّش من مكان السيارة هلأ، وإلا من المصنع
+    const tv = (await query("SELECT t.status, v.last_lat, v.last_lng FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [req.params.id])).rows[0];
+    const start = tv?.status === "active" && tv.last_lat != null ? [tv.last_lat, tv.last_lng] : await factoryPoint();
+    const orders = await loadOrders("o.trip_id = $1 AND o.status IN ('assigned','onway','delayed')", [req.params.id]);
+    ids = chainNearest(start, orders).map((o) => o.id);
+    // الوقفات اللي خلصت بتضل بأولها
+    seq = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('delivered','failed')", [req.params.id])).rows[0].n;
+  }
   for (const id of ids) await query("UPDATE f_orders SET stop_seq = $1 WHERE id = $2 AND trip_id = $3", [++seq, id, req.params.id]);
   const t = (await query("SELECT status FROM f_trips WHERE id = $1", [req.params.id])).rows[0];
   await recomputeEta(Number(req.params.id), { fromNow: t?.status === "active" });

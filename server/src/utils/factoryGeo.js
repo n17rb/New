@@ -81,6 +81,21 @@ export function planStops(factory, stops, { date, departTime = "08:00", startAt 
 }
 
 // ترتيب من الأقرب للأبعد عن المصنع
+// سلسلة: من نقطة البداية للأقرب، ومن عنده للأقرب منه… (أحسن من الترتيب حسب البعد عن البداية)
+export function chainNearest(start, stops) {
+  const left = [...stops];
+  const out = [];
+  let at = start;
+  while (left.length) {
+    let bi = 0, bd = Infinity;
+    left.forEach((s, i) => { const d = at ? km(at, pointOf(s)) : null; const v = d == null ? 9999 : d; if (v < bd) { bd = v; bi = i; } });
+    const [n] = left.splice(bi, 1);
+    out.push(n);
+    at = pointOf(n) || at;
+  }
+  return out;
+}
+
 export function sortNearest(factory, stops) {
   return [...stops].sort((a, b) => (km(factory, pointOf(a)) ?? 9999) - (km(factory, pointOf(b)) ?? 9999));
 }

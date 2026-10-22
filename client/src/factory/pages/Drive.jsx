@@ -126,8 +126,7 @@ export default function Drive() {
           {current && (
             <div className="fx-drv-step go">
               <span className="lbl">🚚 رايح على</span>
-              <b className="nm">{current.customer_name}</b>
-              <span className="sub">{[current.city, current.address].filter(Boolean).join(" · ")}</span>
+              <Who o={current} />
               {current.eta_at && <span className="eta">بتوصل حوالي <b>{time(current.eta_at)}</b></span>}
               <span className="sub">{current.items.map((i) => `${num(i.qty)} ${i.name}`).join("، ")}</span>
               <div className="fx-grid2">
@@ -142,8 +141,8 @@ export default function Drive() {
           {t.status === "active" && next && (
             <div className="fx-drv-step">
               <span className="lbl">الزبون {stops.findIndex((o) => o.id === next.id) + 1} من {stops.length}</span>
-              <b className="nm">{next.customer_name}</b>
-              <span className="sub">{[next.city, next.address].filter(Boolean).join(" · ")} · {num(next.cartons)} كرتونة</span>
+              <Who o={next} />
+              <span className="sub">{num(next.cartons)} كرتونة</span>
               <Act className="fx-btn pri block fx-huge" disabled={busy} onClick={() => act((loc) => fapi.driverGo(next.id, loc), "انحسب وقت وصولك")}>
                 <FiNavigation /> انطلق لعنده
               </Act>
@@ -170,15 +169,25 @@ export default function Drive() {
           {["planned", "active"].includes(t.status) && <TripsMap trips={[t]} live={mapLive} factory={factory} selected={null} onSelect={() => {}} height="34vh" />}
 
           <div className="fx-sec"><h2>زباينك بالترتيب</h2><span className="fx-muted" style={{ fontSize: 13 }}>{t.done}/{stops.length}</span></div>
+          {open.length > 1 && ["planned", "active"].includes(t.status) && (
+            <Act className="fx-btn sky block" disabled={busy} onClick={() => act((loc) => fapi.driverResort(t.id, loc), "ترتّبوا من مكانك: الأقرب فالأقرب")}>
+              📍 رتّب الباقي من مكاني
+            </Act>
+          )}
+          <small className="fx-muted">اكبس على أي زبون: تسلّمه أو تنطلق لعنده، بأي ترتيب بدك.</small>
           <div className="fx-drv-list">
             {stops.map((o, i) => {
               const isCur = current?.id === o.id;
+              const isDone = ["delivered", "failed"].includes(o.status);
               return (
-                <div key={o.id} className={`r ${isCur ? "cur" : ""} ${["delivered", "failed"].includes(o.status) ? "done" : ""}`}>
+                <button key={o.id} className={`r fx-plain ${isCur ? "cur" : ""} ${isDone ? "done" : ""}`} style={{ width: "100%", textAlign: "start" }}
+                  onClick={() => isDone
+                    ? (o.status === "delivered" && setInv({ o: { id: o.id, invoice_token: o.invoice_token, customer_name: o.customer_name, phone: o.phone } }))
+                    : setSheet({ kind: "stop", o })}>
                   <span className={`fx-n ${o.status === "delivered" ? "done" : o.status === "failed" ? "fail" : ""}`}>{o.status === "delivered" ? "✓" : o.status === "failed" ? "✗" : i + 1}</span>
                   <span className="t"><b>{o.customer_name}</b><small>{o.city} · {num(o.cartons)} كرتونة</small></span>
-                  <small className="tm">{o.status === "delivered" ? `سلّمت ${time(o.delivered_at)}` : o.status === "failed" ? "ما تم" : isCur && o.eta_at ? time(o.eta_at) : ""}</small>
-                </div>
+                  <small className="tm">{o.status === "delivered" ? `سلّمت ${time(o.delivered_at)}` : o.status === "failed" ? "ما تم" : isCur && o.eta_at ? time(o.eta_at) : "›"}</small>
+                </button>
               );
             })}
           </div>
@@ -194,12 +203,52 @@ export default function Drive() {
       )}
 
       {sheet?.kind === "deliver" && <DeliverSheet o={sheet.o} canCredit={data.can_credit} onClose={() => setSheet(null)} onDone={done} />}
+      {sheet?.kind === "stop" && (
+        <Sheet title={sheet.o.customer_name} onClose={() => setSheet(null)}>
+          <div className="fx-stack">
+            <Who o={sheet.o} big />
+            <span className="sub fx-muted">{sheet.o.items.map((i) => `${num(i.qty)} ${i.name}`).join("، ")}</span>
+            <button className="fx-btn ok block fx-huge" onClick={() => setSheet({ kind: "deliver", o: sheet.o })}><FiCheck /> تم التسليم</button>
+            {current?.id !== sheet.o.id && (
+              <Act className="fx-btn pri block" disabled={busy} onClick={async () => { const o = sheet.o; setSheet(null); await act((loc) => fapi.driverGo(o.id, loc), `انطلقت لعند ${o.customer_name}`); }}>
+                <FiNavigation /> انطلق لعنده هلأ
+              </Act>
+            )}
+            <div className="fx-grid2">
+              <a className="fx-btn sky" href={navUrl(sheet.o)} target="_blank" rel="noreferrer"><FiNavigation /> الطريق</a>
+              {sheet.o.phone ? <a className="fx-btn" href={`tel:${sheet.o.phone}`}><FiPhone /> اتصل</a> : <span />}
+            </div>
+            <button className="fx-link" onClick={() => setSheet({ kind: "fail", o: sheet.o })}>ما زبط التسليم؟</button>
+          </div>
+        </Sheet>
+      )}
       {sheet?.kind === "fail" && <FailSheet o={sheet.o} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "problem" && <ProblemSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "expense" && <ExpenseSheet kinds={exps?.kinds || []} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "cash" && t && <CashSheet t={t} onClose={() => setSheet(null)} />}
       {msgs && <SendMessages ids={msgs} title="ابعت للزبون وقت وصولك" onClose={() => setMsgs(null)} />}
       {inv && <InvoiceSheet o={inv.o} title={`✓ ${t?.kind === "sales" ? "انباع" : "انسلّم"} · ${inv.o.customer_name}`} onClose={() => setInv(null)} onSent={() => inv.msg && fapi.messageSent(inv.msg).catch(() => {})} />}
+    </div>
+  );
+}
+
+// مين الزبون: صورة المحل، الاسم، المسؤول، العنوان، الدين والملاحظات
+function Who({ o, big }) {
+  const bal = Number(o.customer_balance) || 0;
+  return (
+    <div className={`fx-who ${big ? "big" : ""}`}>
+      {o.photo_url
+        ? <a href={o.photo_url} target="_blank" rel="noreferrer" className="ph"><img src={o.photo_url} alt={`محل ${o.customer_name}`} /></a>
+        : <span className="ph none">{(o.customer_name || "؟").trim()[0]}</span>}
+      <div className="tx">
+        <b className="nm">{o.customer_name}{o.seq_no ? <small> #{o.seq_no}</small> : null}</b>
+        {o.contact_name && <span>👤 {o.contact_name}</span>}
+        {(o.city || o.address) && <span>📍 {[o.city, o.address].filter(Boolean).join(" · ")}</span>}
+        {o.phone && <span dir="ltr" style={{ textAlign: "end" }}>{o.phone} ☎</span>}
+        {bal > 0 && <span className="debt">عليه من قبل {money(bal)} دينار</span>}
+        {o.customer_notes && <span className="note">📝 {o.customer_notes}</span>}
+        {o.notes && o.notes !== "بيع مندوب" && <span className="note">📦 {o.notes}</span>}
+      </div>
     </div>
   );
 }
