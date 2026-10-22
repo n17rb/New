@@ -233,14 +233,13 @@ export default function Drive() {
 }
 
 
-function DeliverSheet({ o, canCredit, onClose, onDone }) {
+export function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const fx = useFx();
   const [qty, setQty] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.qty])));
   const [dmg, setDmg] = useState({});
   const [bon, setBon] = useState(() => Object.fromEntries(o.items.map((i) => [i.id, i.bonus_qty || 0])));
-  const [showDmg, setShowDmg] = useState(false);
+  const [extra, setExtra] = useState(""); // add | exch | dmg — الإشي الزيادة المفتوح
   const [added, setAdded] = useState({}); // منتجات زيادة أخذها الزبون من السيارة
-  const [showAdd, setShowAdd] = useState(false);
   const [exch, setExch] = useState({}); // استبدال تالف عند الزبون
   const extraProducts = fx.boot.products.filter((p) => p.active && !o.items.some((i) => i.product_id === p.id));
   // أسعار هالزبون (الخاصة) للمنتجات الزيادة — نفس اللي السيرفر بيحسبه
@@ -248,107 +247,103 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   useEffect(() => { fapi.driverPrices(o.customer_id).then(setPrices).catch(() => {}); }, [o.customer_id]);
   const total = Math.round((o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
     + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * Number(prices[pid] ?? fx.boot.products.find((p) => p.id === Number(pid))?.price ?? 0), 0)) * 100) / 100;
-  // الكاش بيمشي مع الفاتورة لحاله (لو غيّرت الكميات)، إلا إذا السائق كتب مبلغ بإيده
+  // الكاش بيمشي مع الفاتورة لحاله، إلا إذا اختار «دفع جزء» أو «كله دين»
   const [cashEdit, setCashEdit] = useState(() => (o.pay_terms === "credit" && canCredit ? "0" : null)); // null = دفع كامل
-  const cash = cashEdit ?? String(total);
-  const [photo, setPhoto] = useState(null);
-  const [overMsg, setOverMsg] = useState("");
-  const [err, setErr] = useState("");
-  const cashN = Number(cash) || 0;
+  const cashN = Number(cashEdit ?? total) || 0;
   const debt = Math.max(0, total - cashN);
+  const [photo, setPhoto] = useState(null);
+  const [err, setErr] = useState("");
 
-  async function send(confirm = false) {
+  async function send() {
     setErr("");
     const loc = await getLocation(5000);
     try {
+      // الدين فوق السقف ما بيوقف السائق — بيوصل تنبيه للإدارة لحاله
       const r = await fapi.deliver(o.id, {
         items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
         add_items: Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
         exchanges: exchangeList(exch),
-        cash: cashN, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
+        cash: cashN, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       });
       fx.toast(r.remaining_stops ? `انسجل التسليم. باقي ${r.remaining_stops} وقفات.` : "انسجل التسليم. خلصت كل الوقفات!");
       onDone(r);
-    } catch (e) {
-      if (/سقف|زبون كاش/.test(e.message)) setOverMsg(e.message);
-      else setErr(e.message);
-    }
+    } catch (e) { setErr(e.message); }
   }
+
+  const step = (val, set, label) => (
+    <div className="fx-stepper big">
+      <button type="button" dir="ltr" onClick={() => set(Math.max(0, (Number(val) || 0) - 1))} aria-label="ناقص">−</button>
+      <input className="fx-input" type="number" inputMode="numeric" min="0" value={val} onChange={(e) => set(e.target.value)} aria-label={label} />
+      <button type="button" dir="ltr" onClick={() => set((Number(val) || 0) + 1)} aria-label="زايد">+</button>
+    </div>
+  );
+  const hasDmg = Object.values(dmg).some((v) => Number(v) > 0);
 
   return (
     <Sheet title={`تسليم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
         {o.customer_balance > 0 && (
-          <div className="fx-debt-alert">
-            <span>⚠️ <b>{o.customer_name}</b> عليه دين قديم <b>{money(o.customer_balance)}</b> دينار. ذكّره بلطف.</span>
-          </div>
+          <div className="fx-debt-alert"><span>⚠️ عليه دين قديم <b>{money(o.customer_balance)}</b> دينار — ذكّره بلطف.</span></div>
         )}
-        <div className="fx-note sky">سلّم حسب اللي أخذه الزبون: نزّل أو زيد العدد. الفاتورة بتنحسب على اللي سلّمته.</div>
+
+        {/* الأساسي: كم سلّمت من كل صنف */}
         {o.items.map((i) => {
           const got = Number(qty[i.id]);
           const back = Number.isFinite(got) && got < i.qty ? i.qty - got : 0;
           const more = Number.isFinite(got) && got > i.qty ? got - i.qty : 0;
           return (
-          <label key={i.id} className="fx-field">
-            <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} />{i.name} <span className="fx-muted">(المطلوب {num(i.qty)})</span></span>
-            <div className="fx-stepper big">
-              <button type="button" dir="ltr" onClick={() => setQty({ ...qty, [i.id]: Math.max(0, (Number(qty[i.id]) || 0) - 1) })} aria-label="ناقص">−</button>
-              <input className="fx-input" type="number" inputMode="numeric" min="0" value={qty[i.id]} onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })} aria-label={`سلّم من ${i.name}`} />
-              <button type="button" dir="ltr" onClick={() => setQty({ ...qty, [i.id]: (Number(qty[i.id]) || 0) + 1 })} aria-label="زايد">+</button>
+            <div key={i.id} className="fx-field">
+              <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={i} size={36} /><b>{i.name}</b> <span className="fx-muted">(طلب {num(i.qty)})</span></span>
+              {step(qty[i.id], (v) => setQty((x) => ({ ...x, [i.id]: v })), `سلّم من ${i.name}`)}
+              {back > 0 && <small className="fx-dlv-hint warn">بيرجع معك {num(back)}</small>}
+              {more > 0 && <small className="fx-dlv-hint">+{num(more)} زيادة من السيارة</small>}
+              {i.bonus_qty > 0 && <small className="fx-dlv-hint ok">+ {num(bon[i.id])} بونص ببلاش {Number(bon[i.id]) !== i.bonus_qty ? "" : <button type="button" className="fx-link" onClick={() => setBon((x) => ({ ...x, [i.id]: 0 }))}>(ما أخذه)</button>}</small>}
             </div>
-            {back > 0 && <small style={{ color: "#b06a00", fontWeight: 600 }}>سلّمت {num(got)} بدل {num(i.qty)} · بيرجع معك {num(back)} كرتونة</small>}
-            {more > 0 && <small style={{ color: "var(--fx-navy)", fontWeight: 600 }}>أخذ {num(more)} زيادة من اللي معك بالسيارة</small>}
-            {i.bonus_qty > 0 && (
-              <span className="fx-bonus" style={{ marginTop: 6 }}>
-                + بونص ببلاش
-                <input className="fx-input" style={{ width: 80, padding: "6px 8px", textAlign: "center" }} type="number" inputMode="numeric" min="0" max={i.bonus_qty} value={bon[i.id]} onChange={(e) => setBon({ ...bon, [i.id]: e.target.value })} aria-label={`بونص ${i.name}`} />
-                كرتونة (ما بتنحسب بالفاتورة)
-              </span>
-            )}
-          </label>
           );
         })}
+
         {Object.keys(added).map((pid) => {
           const p = fx.boot.products.find((x) => x.id === Number(pid));
-          const q = Number(added[pid]) || 0;
           return (
             <div key={pid} className="fx-field">
-              <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={p} size={36} />{p?.name} <span className="fx-muted">(زيادة)</span></span>
-              <div className="fx-stepper big">
-                <button type="button" dir="ltr" onClick={() => setAdded((a) => { const n = { ...a, [pid]: Math.max(0, q - 1) }; if (!n[pid]) delete n[pid]; return n; })} aria-label="ناقص">−</button>
-                <input className="fx-input" type="number" inputMode="numeric" min="0" value={added[pid]} onChange={(e) => setAdded({ ...added, [pid]: e.target.value })} aria-label={`زيادة ${p?.name}`} />
-                <button type="button" dir="ltr" onClick={() => setAdded({ ...added, [pid]: q + 1 })} aria-label="زايد">+</button>
-              </div>
+              <span className="fx-row" style={{ flexWrap: "nowrap" }}><ProductArt p={p} size={36} /><b>{p?.name}</b> <span className="fx-muted">(زيادة)</span></span>
+              {step(added[pid], (v) => setAdded((a) => { const n = { ...a, [pid]: v }; if (v !== "" && !Number(v)) delete n[pid]; return n; }), `زيادة ${p?.name}`)}
             </div>
           );
         })}
-        {extraProducts.length > 0 && (!showAdd ? (
-          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowAdd(true)}>+ أخذ منتج زيادة من السيارة؟ (بينضاف عالفاتورة)</button>
-        ) : (
+
+        {extra === "add" && (
           <div className="fx-chips">
-            {extraProducts.filter((p) => !(String(p.id) in added)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setAdded({ ...added, [p.id]: 1 }); setShowAdd(false); }}>{p.name}</button>)}
+            {extraProducts.filter((p) => !(String(p.id) in added)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setAdded({ ...added, [p.id]: 1 }); setExtra(""); }}>+ {p.name}</button>)}
           </div>
-        ))}
-        <ExchangeEditor value={exch} onChange={setExch} products={fx.boot.products.filter((p) => p.active)} />
-        {!showDmg ? (
-          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowDmg(true)}>في كراتين تالفة من حمولتي؟</button>
-        ) : (
-          o.items.map((i) => (
-            <label key={i.id} className="fx-field">تالف من {i.name}
-              <input className="fx-input" type="number" inputMode="numeric" min="0" value={dmg[i.id] || ""} onChange={(e) => setDmg({ ...dmg, [i.id]: e.target.value })} />
-            </label>
-          ))
         )}
+        {(extra === "exch" || Object.keys(exch).length > 0) && (
+          <ExchangeEditor value={exch} onChange={setExch} products={fx.boot.products.filter((p) => p.active)} startOpen onClose={() => setExtra("")} />
+        )}
+        {(extra === "dmg" || hasDmg) && (
+          <div className="fx-exch" style={{ background: "#fdf2f2", borderColor: "#f5c2c2" }}>
+            <span className="hd" style={{ color: "#a32020" }}>تالف من حمولتي (انكسر بالسيارة)</span>
+            {o.items.map((i) => (
+              <label key={i.id} className="fx-field">{i.name}
+                <input className="fx-input" type="number" inputMode="numeric" min="0" value={dmg[i.id] || ""} placeholder="0" onChange={(e) => setDmg({ ...dmg, [i.id]: e.target.value })} />
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* إشي ثاني؟ كبسات صغيرة بس لما تحتاجها */}
+        <div className="fx-dlv-more">
+          {extraProducts.length > 0 && extra !== "add" && <button type="button" onClick={() => setExtra("add")}>+ منتج زيادة</button>}
+          {extra !== "exch" && !Object.keys(exch).length && <button type="button" onClick={() => setExtra("exch")}>🔁 بدل تالف</button>}
+          {extra !== "dmg" && !hasDmg && <button type="button" onClick={() => setExtra("dmg")}>انكسر معي</button>}
+        </div>
+
         <PayBox total={total} cash={cashEdit} onCash={setCashEdit} balance={o.customer_balance} canCredit={canCredit} />
-        <PhotoInput label="صوّر البضاعة عند الزبون (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
-        {overMsg && (
-          <div className="fx-note warn fx-stack">
-            <span>{overMsg}</span>
-            <Act className="fx-btn sm" onClick={() => send(true)}>كمّل وبلّغ الإدارة</Act>
-          </div>
-        )}
+        <PhotoInput label="صورة (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         <Err msg={err} />
-        <Act className="fx-btn pri block" onClick={() => send(false)}>أكّد التسليم</Act>
+        <Act className="fx-btn ok block fx-huge" disabled={debt > 0.005 && !canCredit} onClick={send}>
+          <FiCheck /> تم التسليم{debt > 0.005 ? ` · دين ${money(debt)}` : ""}
+        </Act>
       </div>
     </Sheet>
   );
