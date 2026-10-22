@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FiRepeat, FiPause, FiPlay, FiTrash2, FiEdit2 } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Err, Loading, Act, num, date, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Act, num, date, today, DateInput } from "../ui.jsx";
 
 // ============================================================
 // الطلبات الثابتة: «كل ١٠ أيام بيوصله ٣٠٠ شرنك» — النظام بيسجّل الطلب لحاله قبل موعده بيوم
@@ -36,8 +36,8 @@ export function RecurringSheet({ customer, rec, onClose, onSaved }) {
           <div className="fx-chips">
             <button className={`fx-chip ${start === today() ? "on" : ""}`} onClick={() => setStart(today())}>اليوم</button>
             <button className={`fx-chip ${start === tomorrow() ? "on" : ""}`} onClick={() => setStart(tomorrow())}>بكرا</button>
-            <input className="fx-input" style={{ width: "auto" }} type="date" value={start} onChange={(e) => setStart(e.target.value)} aria-label="التاريخ" />
           </div>
+          <DateInput value={start} onChange={setStart} ariaLabel="التاريخ" />
         </div>
 
         <div className="fx-note sky">

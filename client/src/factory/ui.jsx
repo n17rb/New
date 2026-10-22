@@ -399,3 +399,86 @@ export function HBar({ label, value, max, tone = "", suffix = "" }) {
     </div>
   );
 }
+
+// ============================================================
+// إدخال تاريخ بالأرقام بدل التقويم الإنجليزي: سنة (٤ أرقام) ← شهر ← يوم
+// بينقلك لحاله: الشهر «١» بيستنى (ممكن ١٠–١٢)، «٢»–«٩» بينقلك للأيام. وتحت بيكتب التاريخ بالعربي
+// ============================================================
+export const AR_MONTHS = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"];
+const AR_WEEK = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const toEn = (s) => String(s || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/\D/g, "");
+const pad2 = (s) => (s.length === 1 ? `0${s}` : s);
+export function arDate(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || "")) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  return `${AR_WEEK[dt.getUTCDay()]} ${d} ${AR_MONTHS[m - 1]} ${y}`;
+}
+
+export function DateInput({ value, onChange, quick = false, ariaLabel = "التاريخ" }) {
+  const parse = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v.split("-") : ["", "", ""]);
+  const [[y, m, d], setParts] = useState(() => parse(value));
+  const mRef = useRef(null), dRef = useRef(null), yRef = useRef(null);
+  // لو القيمة تغيّرت من برّا
+  useEffect(() => {
+    const cur = y && m && d ? `${y}-${pad2(m)}-${pad2(d)}` : "";
+    if ((value || "") !== cur && (value || cur)) setParts(parse(value));
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const emit = (yy, mm, dd) => {
+    setParts([yy, mm, dd]);
+    if (!yy && !mm && !dd) return onChange("");
+    if (yy.length !== 4 || !mm || !dd) return;
+    const M = Number(mm), D = Number(dd);
+    const last = M >= 1 && M <= 12 ? new Date(Date.UTC(Number(yy), M, 0)).getUTCDate() : 0;
+    if (M < 1 || M > 12 || D < 1 || D > last) return onChange(""); // تاريخ غلط ما بيمشي
+    onChange(`${yy}-${pad2(mm)}-${pad2(dd)}`);
+  };
+  const onY = (e) => {
+    const v = toEn(e.target.value).slice(0, 4);
+    emit(v, m, d);
+    if (v.length === 4) mRef.current?.focus();
+  };
+  const onM = (e) => {
+    let v = toEn(e.target.value).slice(0, 2);
+    if (v === "00") v = "0";
+    if (v.length === 2 && Number(v) > 12) v = v[1] === "0" ? "1" : `0${v[1]}`;
+    if (v.length === 1 && Number(v) > 1) { v = `0${v}`; }
+    emit(y, v, d);
+    if (v.length === 2) dRef.current?.focus();
+  };
+  const onD = (e) => {
+    let v = toEn(e.target.value).slice(0, 2);
+    if (v === "00") v = "0";
+    if (v.length === 1 && Number(v) > 3) v = `0${v}`;
+    if (v.length === 2 && Number(v) > 31) v = `0${v[1]}`;
+    emit(y, m, v);
+    if (v.length === 2) dRef.current?.blur();
+  };
+  const back = (prev) => (e) => { if (e.key === "Backspace" && !e.currentTarget.value) prev.current?.focus(); };
+  const iso = y.length === 4 && m && d ? `${y}-${pad2(m)}-${pad2(d)}` : "";
+  const ok = iso && value === iso;
+  const Mn = Number(m), lastDay = y.length === 4 && Mn >= 1 && Mn <= 12 ? new Date(Date.UTC(Number(y), Mn, 0)).getUTCDate() : 31;
+  const badDay = iso && !ok && Number(d) > lastDay;
+  const set = (iso2) => { setParts(parse(iso2)); onChange(iso2); };
+  const shift = (n) => new Date(Date.now() + n * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
+  return (
+    <div className="fx-date" role="group" aria-label={ariaLabel}>
+      <div className="boxes">
+        <label><small>السنة</small><input ref={yRef} className="fx-input" inputMode="numeric" dir="ltr" placeholder="2026" value={y} onChange={onY} onFocus={(e) => e.target.select()} /></label>
+        <label><small>الشهر</small><input ref={mRef} className="fx-input" inputMode="numeric" dir="ltr" placeholder="١–١٢" value={m} onChange={onM} onKeyDown={back(yRef)} onFocus={(e) => e.target.select()} /></label>
+        <label><small>اليوم</small><input ref={dRef} className="fx-input" inputMode="numeric" dir="ltr" placeholder="١–٣١" value={d} onChange={onD} onKeyDown={back(mRef)} onFocus={(e) => e.target.select()} /></label>
+      </div>
+      <small className={`said ${ok ? "ok" : badDay ? "bad" : (y || m || d) ? "wait" : ""}`}>
+        {ok ? `📅 ${arDate(iso)}` : badDay ? `${AR_MONTHS[Mn - 1]} فيه ${lastDay} يوم بس` : m && Number(m) >= 1 && Number(m) <= 12 ? `شهر ${Number(m)} = ${AR_MONTHS[Number(m) - 1]}` : (y || m || d) ? "كمّل التاريخ" : ""}
+      </small>
+      {quick && (
+        <div className="fx-chips">
+          <button type="button" className="fx-chip" onClick={() => set(shift(0))}>اليوم</button>
+          <button type="button" className="fx-chip" onClick={() => set(shift(1))}>بكرا</button>
+          <button type="button" className="fx-chip" onClick={() => set(shift(2))}>بعد بكرا</button>
+        </div>
+      )}
+    </div>
+  );
+}

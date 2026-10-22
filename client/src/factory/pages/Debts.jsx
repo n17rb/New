@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { FiPrinter, FiSearch, FiMessageCircle, FiCheckSquare, FiSquare } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
-import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, SendMessages, money, date } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, SendMessages, money, date, DateInput } from "../ui.jsx";
 import { smartFilter } from "../smartSearch.js";
 
 // ============================================================
@@ -156,7 +156,7 @@ export function PaySheet({ c, onClose, onDone }) {
         {method === "cheque" && (
           <div className="fx-grid2">
             <label className="fx-field">رقم الشيك<input className="fx-input" value={chq} onChange={(e) => setChq(e.target.value)} /></label>
-            <label className="fx-field">تاريخ الصرف<input className="fx-input" type="date" value={chqDate} onChange={(e) => setChqDate(e.target.value)} /></label>
+            <div className="fx-field">تاريخ الصرف<DateInput value={chqDate} onChange={setChqDate} ariaLabel="تاريخ الصرف" /></div>
           </div>
         )}
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
