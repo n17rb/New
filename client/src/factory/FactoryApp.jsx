@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "reac
 import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers, FiClipboard } from "react-icons/fi";
 import { canUser, canUserAction } from "../auth.jsx";
 import { fapi } from "./fapi.js";
+import { request } from "../api.js";
 import { FxContext } from "./ui.jsx";
 import { HelpSheet, Tour } from "./help.jsx";
 import { saveFactoryLogin } from "./FactoryLogin.jsx";
@@ -100,6 +101,25 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
     const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, [manager, location.pathname]);
+
+  // تطبيق الأندرويد: إشعارات Firebase (بترن حتى والتطبيق مسكّر)
+  useEffect(() => {
+    const PN = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.PushNotifications : null;
+    if (!PN || !/\bfcm\b/.test(navigator.userAgent)) return;
+    let subs = [];
+    (async () => {
+      try {
+        await PN.createChannel?.({ id: "orders", name: "الطلبات والرحلات", importance: 5, visibility: 1, vibration: true }).catch(() => {});
+        let perm = await PN.checkPermissions();
+        if (perm.receive !== "granted") perm = await PN.requestPermissions();
+        if (perm.receive !== "granted") return;
+        subs.push(await PN.addListener("registration", (t) => { request("/push/native", { method: "POST", body: { token: t.value } }).catch(() => {}); }));
+        subs.push(await PN.addListener("pushNotificationActionPerformed", (a) => { const u = a?.notification?.data?.url; if (u) navigate(u); }));
+        await PN.register();
+      } catch { /* بدون إشعارات */ }
+    })();
+    return () => subs.forEach((x) => x?.remove?.());
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // السائق: موقعه بيوصل كل دقيقة والتطبيق مفتوح
   const isDriver = can("f_drive", "edit");

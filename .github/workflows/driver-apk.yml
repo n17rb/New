@@ -35,6 +35,7 @@ jobs:
       - name: تجهيز مشروع أندرويد
         env:
           BUILD_NUMBER: ${{ github.run_number }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           npx cap add android
           node scripts/patch-android.js

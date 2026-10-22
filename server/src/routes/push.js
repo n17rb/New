@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getVapidPublicKey, isPushAvailable, sendPushToUser } from "../utils/push.js";
+import { fcmEnabled } from "../utils/fcm.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -28,6 +29,19 @@ router.post("/subscribe", async (req, res) => {
      ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh,
        auth = EXCLUDED.auth, user_agent = EXCLUDED.user_agent`,
     [req.user.id, endpoint, p256dh, auth, (req.headers["user-agent"] || "").slice(0, 300)]
+  );
+  res.json({ ok: true });
+});
+
+// تطبيق الأندرويد: توكن Firebase بينحفظ مع اشتراكات الجهاز (endpoint = fcm:<token>)
+router.get("/native-config", (req, res) => res.json({ enabled: fcmEnabled() }));
+router.post("/native", async (req, res) => {
+  const token = String(req.body?.token || "").trim();
+  if (token.length < 20 || token.length > 4000) return res.status(400).json({ error: "توكن غير صحيح." });
+  await query(
+    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent) VALUES ($1, $2, 'fcm', 'fcm', $3)
+     ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, user_agent = EXCLUDED.user_agent`,
+    [req.user.id, `fcm:${token}`, (req.headers["user-agent"] || "").slice(0, 300)]
   );
   res.json({ ok: true });
 });

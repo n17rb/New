@@ -37,4 +37,17 @@ let g = fs.readFileSync(gradlePath, "utf8");
 const code = Number(process.env.BUILD_NUMBER || 1);
 g = g.replace(/versionCode \d+/, `versionCode ${code}`).replace(/versionName "[^"]*"/, `versionName "1.0.${code}"`);
 fs.writeFileSync(gradlePath, g);
-console.log("android patched", { code });
+// إشعارات Firebase: ملف google-services.json (من GitHub Secret أو من المجلد) — وإذا موجود بنعلّم التطبيق إنه جاهز
+const gsSrc = [path.join(__dirname, "..", "google-services.json")].find((f) => fs.existsSync(f));
+const gsJson = process.env.GOOGLE_SERVICES_JSON || (gsSrc ? fs.readFileSync(gsSrc, "utf8") : "");
+const cfgPath = path.join(__dirname, "..", "capacitor.config.json");
+const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+cfg.android = cfg.android || {};
+if (gsJson.trim()) {
+  fs.writeFileSync(path.join(root, "app", "google-services.json"), gsJson);
+  cfg.android.appendUserAgent = "MawjDriver/1 fcm";
+} else {
+  cfg.android.appendUserAgent = "MawjDriver/1";
+}
+fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+console.log("android patched", { code, fcm: !!gsJson.trim() });
