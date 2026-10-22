@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { FiChevronRight, FiChevronLeft, FiPrinter, FiCheck, FiX } from "react-icons/fi";
+import { useEffect, useState } from "react";
+import { FiChevronRight, FiChevronLeft, FiChevronDown, FiPrinter, FiCheck, FiX } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Err, Loading, Empty, Act, money, num, time, date, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, money, num, time, date, today } from "../ui.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 
 // ============================================================
@@ -45,15 +45,19 @@ export default function Jard() {
       {!data && !error && <Loading />}
       {data && drivers.length === 0 && <Empty title="ما في شغل بهاليوم" text="لما سائق يطلع برحلة أو يشتغل مندوب بيطلع جرده هون." />}
 
-      {shown.map((d) => <DriverJard key={d.driver_id || 0} d={d} mine={mine} canReview={data.can_review} reload={reload} onInvoice={setInv} />)}
+      {shown.map((d) => <DriverJard key={d.driver_id || 0} d={d} mine={mine} canReview={data.can_review} canSettle={data.can_settle} reload={reload} onInvoice={setInv} />)}
 
       {inv && <InvoiceSheet o={inv} title={`فاتورة · ${inv.customer_name}`} onClose={() => setInv(null)} />}
     </div>
   );
 }
 
-function DriverJard({ d, mine, canReview, reload, onInvoice }) {
+function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
   const T = d.totals;
+  const S = d.settle || { trips: [], due: 0, older: 0, active: 0 };
+  const [showInv, setShowInv] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const toSettle = S.trips.length > 0;
   const vehicles = [...new Set(d.trips.map((t) => t.vehicle_name))].join("، ");
   const returned = d.trips.some((t) => t.returns_received_at);
   const allBack = d.trips.every((t) => t.returns_received_at || !t.load_confirmed);
@@ -70,10 +74,10 @@ function DriverJard({ d, mine, canReview, reload, onInvoice }) {
 
       {/* الأهم: كاش ومرتجع */}
       <div className="fx-jard-big">
-        <div className={`tile ${T.settled ? "ok" : "cash"}`}>
-          <small>{T.settled ? "سلّم كاش" : mine ? "عليك تسلّم" : "عليه يسلّم"}</small>
-          <b>{money(T.settled ? T.handed : T.due_open)}</b>
-          <small>دينار{T.settled && d.trips.some((t) => Number(t.money.diff)) ? ` · فرق ${money(d.trips.reduce((a, t) => a + Number(t.money.diff || 0), 0))}` : ""}</small>
+        <div className={`tile ${toSettle ? "cash" : S.active ? "wait" : "ok"}`}>
+          <small>{toSettle ? (mine ? "عليك تسلّم" : "عليه يسلّم") : S.active ? "لسا شغال" : "سلّم كاش"}</small>
+          <b>{money(toSettle ? S.due : S.active ? T.cash : T.handed)}</b>
+          <small>{toSettle && S.older > 0 ? `منها ${money(S.older)} من أيام قبل` : toSettle ? "دينار" : S.active ? "كاش معه لهلأ" : "دينار ✓"}</small>
         </div>
         <div className={`tile ${allBack && returned ? "ok" : "box"}`}>
           <small>{mine ? "رجّع للمستودع" : "لازم يرجّع"}</small>
@@ -81,6 +85,12 @@ function DriverJard({ d, mine, canReview, reload, onInvoice }) {
           <small>كرتونة{T.damaged_from_customers ? ` + ${num(T.damaged_from_customers)} تالف` : ""}</small>
         </div>
       </div>
+
+      {!mine && canSettle && toSettle && (
+        <button className="fx-btn ok block fx-big" onClick={() => setSettling(true)}>💵 استلمت من {d.driver_name.split(" ")[0]} — تسوية</button>
+      )}
+      {!mine && !toSettle && S.active > 0 && <div className="fx-note">لسا شغال. لما يكبس «رجعت للمصنع» بيطلعلك زر التسوية هون.</div>}
+      {settling && <SettleSheet d={d} canReview={canReview} reload={reload} onClose={() => setSettling(false)} />}
 
       {/* المصاري */}
       <div className="fx-card fx-jard-money">
@@ -129,34 +139,44 @@ function DriverJard({ d, mine, canReview, reload, onInvoice }) {
       )}
 
       {/* الفواتير تحت بعض */}
-      {T.invoices_count > 0 && <div className="fx-sec"><h2>الفواتير</h2><span className="fx-muted" style={{ fontSize: 13 }}>{T.invoices_count}</span></div>}
-      {d.trips.flatMap((t) => t.invoices).map((o) => (
-        <article key={o.id} className="fx-jard-inv">
-          <div className="hd">
-            <span className="t"><b>{o.customer_name}</b><small>#{o.id} · {time(o.delivered_at)}{o.city ? ` · ${o.city}` : ""}{o.sale ? " · بيع مندوب" : ""}</small></span>
-            <button className="fx-btn sm fx-noprint" onClick={() => onInvoice({ id: o.id, invoice_token: o.invoice_token, customer_name: o.customer_name, phone: o.phone })}>الفاتورة</button>
-          </div>
-          <div className="lines">
-            {o.items.filter((i) => i.qty > 0).map((i, k) => (
-              <div key={k} className="ln"><span>{num(i.qty)} × {i.name}{i.qty !== i.ordered ? <small> (الطلب {num(i.ordered)})</small> : null}</span><b>{money(i.qty * i.price)}</b></div>
-            ))}
-            {o.items.filter((i) => i.bonus > 0).map((i, k) => (
-              <div key={`b${k}`} className="ln ok"><span>+ {num(i.bonus)} {i.name} بونص</span><b>ببلاش</b></div>
-            ))}
-            {o.exchanges.map((x, k) => (
-              <div key={`x${k}`} className="ln ex"><span>🔁 بدّلنا {num(x.qty)} {x.name} تالف بجديد</span><b>ببلاش</b></div>
-            ))}
-            {o.items.filter((i) => i.damaged > 0).map((i, k) => (
-              <div key={`d${k}`} className="ln bad"><span>تالف رجع معه {num(i.damaged)} {i.name}</span><b>—</b></div>
-            ))}
-          </div>
-          <div className="ft">
-            <span>المجموع <b>{money(o.total)}</b></span>
-            <span>كاش <b>{money(o.cash)}</b></span>
-            {o.debt > 0 ? <span className="debt">دين <b>{money(o.debt)}</b></span> : <span className="paid">مدفوعة ✓</span>}
-          </div>
-        </article>
-      ))}
+      {T.invoices_count > 0 && (
+        <button className={`fx-jard-invbtn fx-noprint ${showInv ? "on" : ""}`} onClick={() => setShowInv(!showInv)} aria-expanded={showInv}>
+          <span>🧾 الفواتير اللي سلّمها <b>({T.invoices_count})</b></span>
+          <span className="amt">{money(T.invoices)}</span>
+          <FiChevronDown className="chev" />
+        </button>
+      )}
+      <div className={`fx-jard-invs ${showInv ? "" : "closed"}`}>
+        {d.trips.flatMap((t) => t.invoices).map((o) => (
+          <article key={o.id} className="fx-jard-inv">
+            <div className="hd">
+              <span className="t"><b>{o.customer_name}</b><small>#{o.id} · {time(o.delivered_at)}{o.city ? ` · ${o.city}` : ""}{o.sale ? " · بيع مندوب" : ""}</small></span>
+              <button className="fx-btn sm fx-noprint" onClick={() => onInvoice({ id: o.id, invoice_token: o.invoice_token, customer_name: o.customer_name, phone: o.phone })}>الفاتورة</button>
+            </div>
+            <div className="lines">
+              {o.items.filter((i) => i.qty > 0).map((i, k) => (
+                <div key={k} className="ln"><span>{num(i.qty)} × {i.name}{i.qty !== i.ordered ? <small> (الطلب {num(i.ordered)})</small> : null}</span><b>{money(i.qty * i.price)}</b></div>
+              ))}
+              {o.items.filter((i) => i.bonus > 0).map((i, k) => (
+                <div key={`b${k}`} className="ln ok"><span>+ {num(i.bonus)} {i.name} بونص</span><b>ببلاش</b></div>
+              ))}
+              {o.exchanges.map((x, k) => (
+                <div key={`x${k}`} className="ln ex"><span>🔁 بدّلنا {num(x.qty)} {x.name} تالف بجديد</span><b>ببلاش</b></div>
+              ))}
+              {o.items.filter((i) => i.damaged > 0).map((i, k) => (
+                <div key={`d${k}`} className="ln bad"><span>تالف رجع معه {num(i.damaged)} {i.name}</span><b>—</b></div>
+              ))}
+            </div>
+            <div className="ft">
+              <span>المجموع <b>{money(o.total)}</b></span>
+              <span>كاش <b>{money(o.cash)}</b></span>
+              {o.debt > 0 ? <span className="debt">دين <b>{money(o.debt)}</b></span> : <span className="paid">مدفوعة ✓</span>}
+            </div>
+          </article>
+        ))}
+
+        {showInv && T.invoices_count > 2 && <button className="fx-link fx-noprint" style={{ justifySelf: "center" }} onClick={() => setShowInv(false)}>▴ سكّر الفواتير</button>}
+      </div>
 
       {d.trips.some((t) => t.failed.length || t.open.length) && (
         <div className="fx-card">
@@ -165,6 +185,61 @@ function DriverJard({ d, mine, canReview, reload, onInvoice }) {
         </div>
       )}
     </section>
+  );
+}
+
+// تسوية: المصاريف أول (وافق/ارفض)، بعدين قديش استلمت فعلًا
+function SettleSheet({ d, canReview, reload, onClose }) {
+  const fx = useFx();
+  const S = d.settle;
+  const exps = S.trips.flatMap((t) => t.expenses_list);
+  const pending = exps.filter((e) => e.status === "pending");
+  const okExp = exps.filter((e) => e.status === "approved").reduce((a, e) => a + e.amount, 0);
+  const cash = S.trips.reduce((a, t) => a + t.cash, 0);
+  const [handed, setHanded] = useState(String(S.due));
+  const [touched, setTouched] = useState(false);
+  useEffect(() => { if (!touched) setHanded(String(S.due)); }, [S.due, touched]);
+  const h = Number(handed) || 0;
+  const diff = Math.round((S.due - h) * 100) / 100;
+  const [err, setErr] = useState("");
+  return (
+    <Sheet title={`تسوية مع ${d.driver_name}`} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-card">
+          <div className="fx-kv"><span>كاش انقبض من الزباين</span><b>{money(cash)}</b></div>
+          <div className="fx-kv"><span>− مصاريف موافق عليها</span><b>{money(okExp)}</b></div>
+          {pending.length > 0 && <div className="fx-kv warn"><span>− مصاريف بستنى قرارك</span><b>{money(pending.reduce((a, e) => a + e.amount, 0))}</b></div>}
+          <div className="fx-kv total"><span>المطلوب منه</span><b>{money(S.due)} د.أ</b></div>
+          {S.trips.length > 1 && <small className="fx-muted">من {S.trips.length} رحلات{S.older > 0 ? ` (منها ${money(S.older)} من أيام قبل)` : ""}</small>}
+        </div>
+
+        {pending.length > 0 && (
+          <div className="fx-stack" style={{ gap: 10 }}>
+            <b>١. قرّر بالمصاريف</b>
+            {pending.map((e) => <ExpenseRow key={e.id} e={e} canReview={canReview} reload={reload} />)}
+            {!canReview && <div className="fx-note warn">ما عندك صلاحية توافق على المصاريف — خلي المسؤول يوافق أول.</div>}
+          </div>
+        )}
+
+        <label className="fx-sf">{pending.length ? "٢. " : ""}قديش استلمت منه فعلًا؟
+          <input className="fx-input fx-num" style={{ fontSize: 24, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" value={handed}
+            onChange={(e) => { setTouched(true); setHanded(e.target.value); }} />
+        </label>
+        {handed !== "" && (diff > 0
+          ? <div className="fx-note warn">ناقص <b>{money(diff)}</b> دينار — بينسجّل عهدة عليه.</div>
+          : diff < 0 ? <div className="fx-note sky">زيادة <b>{money(-diff)}</b> دينار — بتنسجّل إله.</div>
+          : <div className="fx-note ok">مطابق ✓</div>)}
+        <Err msg={err} />
+        <Act className="fx-btn ok block fx-big" disabled={pending.length > 0 || handed === ""} onClick={async () => {
+          setErr("");
+          try {
+            const r = await fapi.jardSettle({ driver_id: d.driver_id, handed: h });
+            fx.toast(r.diff > 0 ? `انسجّل — ناقص ${money(r.diff)} عهدة عليه` : "انسجّلت التسوية ✓");
+            onClose(); reload();
+          } catch (e) { setErr(e.message); }
+        }}>✓ استلمت {money(h)} دينار — سكّر الحساب</Act>
+      </div>
+    </Sheet>
   );
 }
 

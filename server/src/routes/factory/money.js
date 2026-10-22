@@ -19,6 +19,24 @@ router.get("/money/settlements", viewMoney, async (req, res) => {
 });
 
 // المحاسب استلم الكاش من السائق
+export async function settleTrip(t, handed, user) {
+  const required = round2(t.cash_due);
+  const diff = round2(required - handed);
+  await query(
+    "UPDATE f_trips SET required_cash = $1, handed_cash = $2, cash_diff = $3, settled_by = $4, settled_at = now() WHERE id = $5",
+    [required, handed, diff, user.id, t.id]
+  );
+  if (diff !== 0 && t.driver_id) {
+    await query(
+      "INSERT INTO f_driver_ledger (driver_id, kind, amount, trip_id, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)",
+      [t.driver_id, diff > 0 ? "shortage" : "surplus", diff, t.id, diff > 0 ? `نقص كاش: المطلوب ${required.toFixed(2)} والمسلّم ${handed.toFixed(2)}` : `زيادة كاش ${(-diff).toFixed(2)}`, user.id]
+    );
+  }
+  await logActivity({ userId: user.id, action: "F_TRIP_CASH", recordType: "f_trip", recordId: t.id, newValue: { required, handed, diff } });
+  await maybeClose(t.id);
+  return { required, handed, diff };
+}
+
 router.post("/money/trips/:id/cash", editMoney, async (req, res) => {
   const t = (await loadTrips("t.id = $1", [req.params.id]))[0];
   if (!t) return bad(res, "الرحلة غير موجودة.", 404);
@@ -26,22 +44,9 @@ router.post("/money/trips/:id/cash", editMoney, async (req, res) => {
   if (t.settled_at) return bad(res, "الكاش انستلم من قبل.");
   const handed = round2(req.body?.handed);
   if (!(handed >= 0)) return bad(res, "اكتب المبلغ اللي استلمته.");
-  const required = round2(t.cash_due);
-  const diff = round2(required - handed);
-  await query(
-    "UPDATE f_trips SET required_cash = $1, handed_cash = $2, cash_diff = $3, settled_by = $4, settled_at = now() WHERE id = $5",
-    [required, handed, diff, req.user.id, t.id]
-  );
-  if (diff !== 0 && t.driver_id) {
-    await query(
-      "INSERT INTO f_driver_ledger (driver_id, kind, amount, trip_id, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)",
-      [t.driver_id, diff > 0 ? "shortage" : "surplus", diff, t.id, diff > 0 ? `نقص كاش: المطلوب ${required.toFixed(2)} والمسلّم ${handed.toFixed(2)}` : `زيادة كاش ${(-diff).toFixed(2)}`, req.user.id]
-    );
-  }
+  const { required, diff } = await settleTrip(t, handed, req.user);
   if (diff > 0) await alert({ level: "crit", kind: "cash_short", ref: t.id, title: `نقص ${diff.toFixed(2)} د.أ بكاش ${t.driver_name || "السائق"}`, body: `المحصّل ${t.collected.toFixed(2)} − مصاريف ${t.expenses_total.toFixed(2)} = ${required.toFixed(2)}، والمسلّم ${handed.toFixed(2)}. انسجّل عهدة.` });
   else await alert({ level: "ok", kind: "cash_ok", ref: t.id, title: `${t.driver_name || "السائق"} سلّم ${handed.toFixed(2)} د.أ`, body: `المحصّل ${t.collected.toFixed(2)} − مصاريف ${t.expenses_total.toFixed(2)}.${diff < 0 ? ` زيادة ${(-diff).toFixed(2)}.` : " مطابق."}` });
-  await logActivity({ userId: req.user.id, action: "F_TRIP_CASH", recordType: "f_trip", recordId: t.id, newValue: { required, handed, diff } });
-  await maybeClose(t.id);
   res.json({ ok: true, required, handed, diff });
 });
 
