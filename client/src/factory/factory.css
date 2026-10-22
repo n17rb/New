@@ -681,3 +681,9 @@ a.fx-pill { text-decoration: none; }
 .fx-search svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--fx-muted); }
 .fx-search .fx-input { padding-inline-start: 36px; width: 100%; }
 .fx-sales-sig summary { cursor: pointer; color: var(--fx-muted); font-size: 14px; padding: 4px 0; }
+
+/* الخريطة ما تطلع فوق النوافذ (Leaflet بيعطي طبقاته z-index 400–1000) */
+.fx-live-map { position: relative; z-index: 0; isolation: isolate; }
+.fx-sheet { overflow-x: hidden; }
+.fx-stepper.big { grid-template-columns: 56px minmax(0, 1fr) 56px; }
+.fx-stepper.big .fx-input { min-width: 0; width: 100%; }
