@@ -847,3 +847,11 @@ a.fx-pill { text-decoration: none; }
 .fx-pay-sum { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: var(--fx-surface-2); font-size: 15px; }
 .fx-pay-sum .debt { color: #b06a00; font-weight: 700; }
 .fx-pay-sum .ok { color: #14653a; font-weight: 700; }
+
+/* تسليم أبسط */
+.fx-dlv-hint { font-size: 13px; font-weight: 600; color: var(--fx-navy, #0456a2); }
+.fx-dlv-hint.warn { color: #b06a00; }
+.fx-dlv-hint.ok { color: #14653a; }
+.fx-dlv-hint .fx-link { font-size: 12.5px; padding: 0; }
+.fx-dlv-more { display: flex; flex-wrap: wrap; gap: 8px; }
+.fx-dlv-more button { border: 1px dashed #b9cde2; background: #f7fbff; color: var(--fx-navy, #0456a2); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }

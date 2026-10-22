@@ -135,14 +135,14 @@ export function SalesDay({ t, stock, canCredit, reload, onSold, openSheet }) {
 }
 
 // استبدال تالف عند الزبون: بنوخذ منه التالف وبنعطيه بداله جديد ببلاش — بيطلع بالفاتورة
-export function ExchangeEditor({ value, onChange, products }) {
-  const [open, setOpen] = useState(Object.keys(value).length > 0);
+export function ExchangeEditor({ value, onChange, products, startOpen = false, onClose }) {
+  const [open, setOpen] = useState(startOpen || Object.keys(value).length > 0);
   if (!open) return <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setOpen(true)}>🔁 عند الزبون تالف بدك تبدّله؟ (ببلاش)</button>;
   const ids = Object.keys(value);
   return (
     <div className="fx-exch">
       <span className="hd">🔁 استبدال تالف — ببلاش، ما بيغيّر الفاتورة</span>
-      <small>أخذت منه كراتين تالفة وأعطيته بدالها جديد ببلاش. ما بتنحسب عليه، وبتطلع بالفاتورة، والتالف رجّعه للمستودع.</small>
+      <small>اختار الصنف وكم كرتونة بدّلت.</small>
       {ids.map((pid) => {
         const p = products.find((x) => String(x.id ?? x.product_id) === pid);
         return (
@@ -157,7 +157,7 @@ export function ExchangeEditor({ value, onChange, products }) {
           <button key={p.id ?? p.product_id} className="fx-chip" onClick={() => onChange({ ...value, [p.id ?? p.product_id]: 1 })}>+ {p.name}</button>
         ))}
       </div>
-      {ids.length === 0 && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setOpen(false)}>ما في تالف</button>}
+      {ids.length === 0 && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => { setOpen(false); onClose?.(); }}>ما في تالف</button>}
     </div>
   );
 }
@@ -301,7 +301,6 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
   const [prices, setPrices] = useState(null);
   const [cash, setCash] = useState(null); // null = كاش كامل
   const [exch, setExch] = useState({});
-  const [over, setOver] = useState("");
   const [err, setErr] = useState("");
 
   useEffect(() => { fapi.driverPrices(shop.new ? null : shop.id).then(setPrices).catch(() => setPrices({})); }, [shop]);
@@ -319,13 +318,12 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
       const r = await fapi.salesSell(t.id, {
         customer_id: shop.new ? undefined : shop.id,
         new_customer: shop.new ? { name: shop.name, phone: shop.phone } : undefined,
-        items, exchanges: exchangeList(exch), cash: cashN, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
+        items, exchanges: exchangeList(exch), cash: cashN, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       });
       fx.toast(`انباع لـ ${r.customer_name} ✓`);
       onDone(r);
     } catch (e) {
-      if (e.data?.code === "OVER_LIMIT") setOver(e.message);
-      else setErr(e.message);
+      setErr(e.message);
     }
   }
 
@@ -350,14 +348,8 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
         ))}
         <ExchangeEditor value={exch} onChange={setExch} products={avail} />
         <PayBox total={total} cash={cash} onCash={setCash} balance={shop.balance} canCredit={canCredit} />
-        {over && (
-          <div className="fx-note warn fx-stack">
-            <span>{over}</span>
-            <Act className="fx-btn sm" onClick={() => sell(true)}>كمّل وبلّغ الإدارة</Act>
-          </div>
-        )}
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={(!items.length && !exchangeList(exch).length) || (debt > 0 && !canCredit)} onClick={() => sell(false)}>
+        <Act className="fx-btn ok block fx-huge" disabled={(!items.length && !exchangeList(exch).length) || (debt > 0 && !canCredit)} onClick={() => sell()}>
           بيع{total ? ` · ${money(total)} دينار` : ""}
         </Act>
       </div>
