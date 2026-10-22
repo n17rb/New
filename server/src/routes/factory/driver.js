@@ -207,7 +207,6 @@ router.post("/driver/orders/:id/deliver", drive, async (req, res) => {
   if (t.status === "planned") await startTrip(t);
   else if (t.status !== "active") return bad(res, "الرحلة مش شغالة.");
   const b = req.body || {};
-  if (!b.signature && !b.photo_url) return bad(res, "خلي الزبون يوقّع، أو صوّر البضاعة عنده.");
   return deliverOrder(req, res, o, t, b);
 });
 

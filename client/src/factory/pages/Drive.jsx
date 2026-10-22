@@ -6,7 +6,7 @@ import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
 import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -246,11 +246,9 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const total = o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
     + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * (fx.boot.products.find((p) => p.id === Number(pid))?.price || 0), 0);
   const [cash, setCash] = useState(() => (o.pay_terms === "credit" ? "" : String(Math.round(total * 100) / 100)));
-  const [sig, setSig] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [overMsg, setOverMsg] = useState("");
   const [err, setErr] = useState("");
-  const onSig = useCallback((v) => setSig(v), []);
   const cashN = Number(cash) || 0;
   const debt = Math.max(0, total - cashN);
 
@@ -262,7 +260,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
         items: o.items.map((i) => ({ item_id: i.id, delivered_qty: Number(qty[i.id]) || 0, damaged_qty: Number(dmg[i.id]) || 0, delivered_bonus: Number(bon[i.id]) || 0 })),
         add_items: Object.entries(added).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) })),
         exchanges: exchangeList(exch),
-        cash: cashN, signature: sig, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
+        cash: cashN, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
       });
       fx.toast(r.remaining_stops ? `انسجل التسليم. باقي ${r.remaining_stops} وقفات.` : "انسجل التسليم. خلصت كل الوقفات!");
       onDone(r);
@@ -346,7 +344,6 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
           <div className="fx-kv"><span>رصيده بعد الفاتورة</span><b>{money(o.customer_balance + debt - Math.max(0, cashN - total))}</b></div>
         </div>
         {debt > 0 && !canCredit && <div className="fx-note crit">ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.</div>}
-        <SignaturePad onChange={onSig} />
         <PhotoInput label="صوّر البضاعة عند الزبون (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         {overMsg && (
           <div className="fx-note warn fx-stack">
@@ -355,7 +352,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
           </div>
         )}
         <Err msg={err} />
-        <Act className="fx-btn pri block" disabled={!sig && !photo} onClick={() => send(false)}>أكّد التسليم</Act>
+        <Act className="fx-btn pri block" onClick={() => send(false)}>أكّد التسليم</Act>
       </div>
     </Sheet>
   );
