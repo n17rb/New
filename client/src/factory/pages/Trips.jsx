@@ -3,7 +3,7 @@ import { LIVE_COLORS } from "./Live.jsx";
 import TripsMap, { TRIP_COLORS } from "./TripsMap.jsx";
 import { FiArrowUp, FiArrowDown, FiClock, FiNavigation, FiPhone } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, TRIP_STATUS, SendMessages, Reload, money, num, time, date, dateTime, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, TRIP_STATUS, SendMessages, Reload, money, num, time, date, dateTime, today, DateInput, arDate } from "../ui.jsx";
 import { TransferSheet, itemsLine } from "./Orders.jsx";
 import { StopSheet, deliveredCartons } from "./StopSheet.jsx";
 
@@ -47,8 +47,11 @@ export default function Trips() {
     <div className="fx-page">
       <div className="fx-chead">
         <h1>الرحلات</h1>
-        <input className="fx-input" style={{ width: 150 }} type="date" value={day || today()} onChange={(e) => setDay(e.target.value === today() ? "" : e.target.value)} aria-label="اليوم" />
       </div>
+      <details className="fx-trips-day">
+        <summary>📅 {day ? arDate(day) : "اليوم"} <span className="fx-muted">— غيّر اليوم</span></summary>
+        <DateInput value={day || today()} onChange={(v) => v && setDay(v === today() ? "" : v)} quick ariaLabel="اليوم" />
+      </details>
       <Err msg={error} />
       {!data && !error && <Loading />}
 

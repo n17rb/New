@@ -6,7 +6,7 @@ import { OrderSheet } from "./Orders.jsx";
 import { RecurringCard } from "./Recurring.jsx";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
 import { GOVERNORATES, inferRegion } from "../regions.js";
-import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime, DateInput } from "../ui.jsx";
 
 const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع", adjust: "تعديل", opening: "رصيد افتتاحي" };
 
@@ -442,7 +442,7 @@ function PaymentSheet({ c, onClose, onSaved }) {
         {method === "cheque" && (
           <div className="fx-grid2">
             <label className="fx-field">رقم الشيك<input className="fx-input" value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} /></label>
-            <label className="fx-field">تاريخ الصرف<input className="fx-input" type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)} /></label>
+            <div className="fx-field">تاريخ الصرف<DateInput value={chequeDate} onChange={setChequeDate} ariaLabel="تاريخ الصرف" /></div>
           </div>
         )}
         <label className="fx-field">ملاحظة<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>

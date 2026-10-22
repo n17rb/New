@@ -858,3 +858,16 @@ a.fx-pill { text-decoration: none; }
 .fx-outbox { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: #eef6fd; border: 1.5px dashed #9cc7ea; color: #0b3f73; font-size: 14px; }
 .fx-outbox span { flex: 1; }
 .fx-edited { color: #8a5a00; font-size: 12px; font-weight: 700; margin-inline-start: 6px; }
+
+/* إدخال التاريخ بالأرقام */
+.fx-date { display: grid; gap: 6px; }
+.fx-date .boxes { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 8px; }
+.fx-date label { display: grid; gap: 3px; font-weight: 600; }
+.fx-date label small { font-size: 12px; color: var(--fx-muted); text-align: center; }
+.fx-date .fx-input { text-align: center; font-size: 20px; font-weight: 800; padding: 8px 4px; min-width: 0; font-variant-numeric: tabular-nums; }
+.fx-date .said { font-size: 13.5px; color: var(--fx-muted); min-height: 18px; }
+.fx-date .said.ok { color: #14653a; font-weight: 700; }
+.fx-date .said.wait { color: #b06a00; }
+.fx-trips-day summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.fx-trips-day[open] summary { margin-bottom: 8px; }
+.fx-date .said.bad { color: var(--fx-crit); font-weight: 700; }

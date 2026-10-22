@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiPlus, FiMapPin, FiUpload, FiChevronLeft, FiGift } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, Sheet, Tip, Err, Act, LocationPicker, ProductArt, money, num } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Act, LocationPicker, ProductArt, money, num, DateInput } from "../ui.jsx";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: "موقفة" };
@@ -258,8 +258,8 @@ function VehicleSheet({ v, onClose }) {
           {fx.boot.drivers.length === 0 && <small>ما في حسابات سائقين. ضيفهم من «حسابات الموظفين» بدور «سائق».</small>}
         </label>
         <div className="fx-grid2">
-          <label className="fx-field">الترخيص بيخلص<input className="fx-input" type="date" value={f.license_expires} onChange={set("license_expires")} /></label>
-          <label className="fx-field">التأمين بيخلص<input className="fx-input" type="date" value={f.insurance_expires} onChange={set("insurance_expires")} /></label>
+          <div className="fx-field">الترخيص بيخلص<DateInput value={f.license_expires || ""} onChange={(v) => setF((x) => ({ ...x, license_expires: v }))} ariaLabel="الترخيص بيخلص" /></div>
+          <div className="fx-field">التأمين بيخلص<DateInput value={f.insurance_expires || ""} onChange={(v) => setF((x) => ({ ...x, insurance_expires: v }))} ariaLabel="التأمين بيخلص" /></div>
         </div>
         <small className="fx-muted">بيوصلك تنبيه قبل ٣٠ يوم، وتنبيه أحمر قبل ٧ أيام ويوم ما يخلص. لما تجدّده عدّل التاريخ هون.</small>
         <div className="fx-chips">{Object.entries(VSTATUS).map(([k, l]) => <button key={k} className={`fx-chip ${f.status === k ? "on" : ""}`} onClick={() => setF({ ...f, status: k })}>{l}</button>)}</div>

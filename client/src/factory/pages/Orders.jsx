@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle, FiEdit2, FiX, FiTruck, FiChevronLeft } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today, DateInput } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
 import { FiGift } from "react-icons/fi";
@@ -298,8 +298,8 @@ export function OrderSheet({ order: orderProp, customer, onClose, onSaved }) {
           <div className="fx-chips fx-due">
             <button className={`fx-chip ${due === today() ? "on" : ""}`} onClick={() => setDue(today())}>اليوم</button>
             <button className={`fx-chip ${due === tomorrow() ? "on" : ""}`} onClick={() => setDue(tomorrow())}>بكرا</button>
-            <input className="fx-input" style={{ width: "auto" }} type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="تاريخ" />
           </div>
+          <DateInput value={due} onChange={setDue} ariaLabel="تاريخ التوصيل" />
         </div>
         <label className="fx-row"><input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} /> مستعجل</label>
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
