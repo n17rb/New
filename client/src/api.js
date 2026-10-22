@@ -217,6 +217,7 @@ export const api = {
   downloadBackupSnapshot: (id) => downloadFile(`/backup/${id}/download`, `backup-${id}.json`),
 
   resolveMapsLink: (url) => request("/geocode/resolve-link", { method: "POST", body: { url } }),
+  placeInfo: (body) => request("/geocode/place", { method: "POST", body }),
 
   getReportsSummary: (period) => request(`/reports/summary?period=${period}`),
 

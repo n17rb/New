@@ -1020,3 +1020,6 @@ ALTER TABLE f_order_items DROP CONSTRAINT IF EXISTS f_order_items_qty_check;
 DO $$ BEGIN
   ALTER TABLE f_order_items ADD CONSTRAINT f_order_items_qty_check CHECK (qty >= 0);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- المحافظة (بتنعبّى لحالها من موقع الزبون)
+ALTER TABLE customer_locations ADD COLUMN IF NOT EXISTS governorate VARCHAR(80);

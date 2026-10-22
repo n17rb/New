@@ -338,6 +338,7 @@ function LocationSection({ customer, canManage, onChanged }) {
   const [latitude, setLatitude] = useState(customer.latitude || null);
   const [longitude, setLongitude] = useState(customer.longitude || null);
   const [pastedLink, setPastedLink] = useState("");
+  const [governorate, setGovernorate] = useState(customer.governorate || "");
   const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -367,9 +368,20 @@ function LocationSection({ customer, canManage, onChanged }) {
         setLongitude(lng);
         setPastedLink("");
 
-        if (!street.trim()) {
-          const detectedStreet = await reverseGeocodeStreet(lat, lng);
-          if (detectedStreet) setStreet(detectedStreet);
+        // المنطقة والمحافظة والشارع بيتعبّوا لحالهم
+        try {
+          const info = await api.placeInfo({ latitude: lat, longitude: lng });
+          if (!regionId && !newRegionName) {
+            if (info.region_id) setRegionId(String(info.region_id));
+            else if (info.region_name) setNewRegionName(info.region_name);
+          }
+          if (!street.trim() && info.street) setStreet(info.street);
+          if (info.governorate) setGovernorate(info.governorate);
+        } catch {
+          if (!street.trim()) {
+            const detectedStreet = await reverseGeocodeStreet(lat, lng);
+            if (detectedStreet) setStreet(detectedStreet);
+          }
         }
         setLocating(false);
       },
@@ -402,7 +414,25 @@ function LocationSection({ customer, canManage, onChanged }) {
     setError("");
     setSuccess("");
     try {
-      let finalRegionId = regionId || null;
+      // رابط جديد وما في منطقة: منعرف المنطقة من الرابط
+      let autoRegionName = "";
+      let autoRegionId = null;
+      let autoGov = governorate;
+      if (pastedLink.trim() && !regionId && !newRegionName.trim()) {
+        try {
+          const info = await api.placeInfo({ url: pastedLink.trim() });
+          if (info.region_id) setRegionId(String(info.region_id));
+          autoRegionName = info.region_id ? "" : info.region_name || "";
+          autoRegionId = info.region_id || null;
+          autoGov = info.governorate || autoGov;
+          if (!street.trim() && info.street) setStreet(info.street);
+        } catch { /* الرابط بينحفظ زي ما هو */ }
+      }
+      let finalRegionId = regionId || autoRegionId;
+      if (!newRegionName.trim() && autoRegionName) {
+        const created = await api.createRegion({ name: autoRegionName });
+        finalRegionId = created.id;
+      }
       if (newRegionName.trim()) {
         const created = await api.createRegion({ name: newRegionName.trim() });
         finalRegionId = created.id;
@@ -445,6 +475,7 @@ function LocationSection({ customer, canManage, onChanged }) {
         latitude: finalLat,
         longitude: finalLng,
         maps_url: finalMapsUrl,
+        governorate: autoGov || undefined,
       });
 
       setSuccess("تم حفظ الموقع والعنوان بنجاح.");
