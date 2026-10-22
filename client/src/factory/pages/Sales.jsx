@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { FiShoppingCart, FiPlus, FiSearch, FiPackage, FiAlertTriangle } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { deliveredCartons } from "./StopSheet.jsx";
 import { Who } from "./Who.jsx";
-import { useFx, Sheet, Err, Act, SignaturePad, ProductArt, getLocation, money, num, time } from "../ui.jsx";
+import { useFx, Sheet, Err, Act, ProductArt, getLocation, money, num, time } from "../ui.jsx";
 
 // ============================================================
 // شغل المندوب: حمّل ← بيع لمحل ← بيع لمحل … ← رجعت للمصنع
@@ -267,10 +267,8 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
   const [prices, setPrices] = useState(null);
   const [cash, setCash] = useState(null); // null = كاش كامل
   const [exch, setExch] = useState({});
-  const [sig, setSig] = useState(null);
   const [over, setOver] = useState("");
   const [err, setErr] = useState("");
-  const onSig = useCallback((v) => setSig(v), []);
 
   useEffect(() => { fapi.driverPrices(shop.new ? null : shop.id).then(setPrices).catch(() => setPrices({})); }, [shop]);
 
@@ -287,7 +285,7 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
       const r = await fapi.salesSell(t.id, {
         customer_id: shop.new ? undefined : shop.id,
         new_customer: shop.new ? { name: shop.name, phone: shop.phone } : undefined,
-        items, exchanges: exchangeList(exch), cash: cashN, signature: sig, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
+        items, exchanges: exchangeList(exch), cash: cashN, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: confirm,
       });
       fx.toast(`انباع لـ ${r.customer_name} ✓`);
       onDone(r);
@@ -326,10 +324,6 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
           {debt > 0 && <div className="fx-kv bad"><span>بيصير عليه دين</span><b>{money(debt)}</b></div>}
         </div>
         {debt > 0 && !canCredit && <div className="fx-note crit">ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.</div>}
-        <details className="fx-sales-sig">
-          <summary>توقيع صاحب المحل (اختياري)</summary>
-          <SignaturePad onChange={onSig} />
-        </details>
         {over && (
           <div className="fx-note warn fx-stack">
             <span>{over}</span>
