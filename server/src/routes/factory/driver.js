@@ -299,6 +299,26 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   } finally {
     client.release();
   }
+  // سلّم أكثر من اللي انسجّل إنه طلع على السيارة؟ معناها في تحميل ما انسجّل — منسجّله هلأ عشان المستودع والجرد يضلوا مزبوطين
+  if (t.load_confirmed_at) {
+    const over = (await query(
+      `WITH l AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'load' GROUP BY product_id),
+            s AS (SELECT i.product_id, SUM(COALESCE(i.delivered_qty,0) + COALESCE(i.delivered_bonus,0))::int AS q FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY i.product_id),
+            x AS (SELECT x.product_id, SUM(x.qty)::int AS q FROM f_order_exchanges x JOIN f_orders o ON o.id = x.order_id WHERE o.trip_id = $1 AND o.status = 'delivered' GROUP BY x.product_id),
+            d AS (SELECT product_id, SUM(qty)::int AS q FROM f_stock_moves WHERE trip_id = $1 AND kind = 'damage' AND damage_source = 'vehicle' GROUP BY product_id)
+       SELECT p.id, p.name, COALESCE(s.q,0) + COALESCE(x.q,0) + COALESCE(d.q,0) - COALESCE(l.q,0) AS over
+       FROM f_products p LEFT JOIN l ON l.product_id = p.id LEFT JOIN s ON s.product_id = p.id LEFT JOIN x ON x.product_id = p.id LEFT JOIN d ON d.product_id = p.id
+       WHERE COALESCE(s.q,0) + COALESCE(x.q,0) + COALESCE(d.q,0) > COALESCE(l.q,0)`,
+      [t.id]
+    )).rows;
+    for (const r of over) {
+      await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,'تحميل ما انسجّل (بان من التسليم)',$5)", [r.id, r.over, t.id, t.vehicle_id, req.user.id]);
+    }
+    if (over.length) {
+      await alert({ level: "warn", kind: "load_fix", ref: t.id, title: `${t.driver_name || "السائق"} سلّم أكثر من المحمّل`, body: `${over.map((r) => `${r.over} ${r.name}`).join("، ")} — انسجّلوا طالعين من المستودع. تأكد من التحميل.` });
+    }
+  }
+
   // الموقع بعيد عن الزبون؟
   if (b.lat && c.lat) {
     const d = km([Number(b.lat), Number(b.lng)], [c.lat, c.lng]);

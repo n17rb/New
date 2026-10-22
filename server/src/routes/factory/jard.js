@@ -57,8 +57,9 @@ async function buildJard(date, driverId = null) {
       row(r.product_id, name).returned += r.qty;
     }
     const goods = [...per.values()].map((g) => {
-      const back = t.load_confirmed_at ? g.loaded - g.delivered - g.bonus - g.exchanged - g.damaged : 0;
-      return { ...g, back: Math.max(0, back), short: t.returns_received_at ? Math.max(0, back - g.returned) : null };
+      const back = g.loaded - g.delivered - g.bonus - g.exchanged - g.damaged;
+      // سلّم أكثر من اللي انسجّل إنه طلع = تحميل ما انسجّل
+      return { ...g, back: Math.max(0, back), over: Math.max(0, -back), short: t.returns_received_at ? Math.max(0, back - g.returned) : null };
     });
 
     const invoicesTotal = round2(delivered.reduce((a, o) => a + Number(o.delivered_total || 0), 0));
@@ -108,8 +109,8 @@ async function buildJard(date, driverId = null) {
     const sum = (f) => round2(d.trips.reduce((a, t) => a + (f(t) || 0), 0));
     const goods = new Map();
     for (const t of d.trips) for (const g of t.goods) {
-      const x = goods.get(g.product_id) || { product_id: g.product_id, name: g.name, loaded: 0, delivered: 0, bonus: 0, exchanged: 0, damaged: 0, back: 0, returned: 0 };
-      for (const k of ["loaded", "delivered", "bonus", "exchanged", "damaged", "back", "returned"]) x[k] += g[k];
+      const x = goods.get(g.product_id) || { product_id: g.product_id, name: g.name, loaded: 0, delivered: 0, bonus: 0, exchanged: 0, damaged: 0, back: 0, returned: 0, over: 0 };
+      for (const k of ["loaded", "delivered", "bonus", "exchanged", "damaged", "back", "returned", "over"]) x[k] += g[k];
       goods.set(g.product_id, x);
     }
     const open = d.trips.filter((t) => !t.settled_at);

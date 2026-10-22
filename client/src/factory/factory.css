@@ -833,3 +833,4 @@ a.fx-pill { text-decoration: none; }
 .fx-jard-invs { display: grid; gap: 10px; }
 .fx-jard-invs.closed { display: none; }
 @media print { .fx-jard-invs.closed { display: grid; } }
+.fx-jard-goods .over { color: #a32020; background: #fdecec; border-radius: 10px; padding: 4px 8px; font-size: 12.5px; }
