@@ -63,3 +63,65 @@ export function validRegion(governorate, district) {
   const g = GOVERNORATES[governorate] ? governorate : null;
   return { governorate: g, district: g && district && String(district).trim() ? String(district).trim().slice(0, 60) : null };
 }
+
+// ============================================================
+// من الموقع (lat/lng) ← المحافظة واللواء واسم المنطقة — لحاله، بدون ما حدا يكتب
+// (من خرائط OpenStreetMap، وإذا ما زبطت: أقرب منطقة معروفة)
+// ============================================================
+const KNOWN = {
+  "عمّان": [31.9539, 35.9106], "سحاب": [31.8722, 36.0047], "ماركا": [31.98, 35.99], "القويسمة": [31.91, 35.95], "وادي السير": [31.95, 35.82],
+  "ناعور": [31.87, 35.83], "الجيزة": [31.70, 35.95], "الموقر": [31.80, 36.11], "صويلح": [32.02, 35.84],
+  "الزرقاء": [32.0728, 36.088], "الرصيفة": [32.0178, 36.0464], "الهاشمية": [32.13, 36.11],
+  "إربد": [32.5556, 35.85], "الرمثا": [32.559, 36.0069], "الشجرة": [32.64, 35.94], "الطرّة": [32.638, 35.989], "الحصن": [32.48, 35.88],
+  "سحم": [32.69, 35.77], "دير أبي سعيد": [32.50, 35.68], "المزار الشمالي": [32.47, 35.79], "الطيبة": [32.54, 35.71], "المشارع": [32.44, 35.60],
+  "المفرق": [32.3429, 36.208], "جرش": [32.2803, 35.8993], "عجلون": [32.3326, 35.7517], "كفرنجة": [32.30, 35.70],
+  "السلط": [32.0392, 35.7272], "الفحيص": [31.98, 35.77], "عين الباشا": [32.06, 35.83], "دير علا": [32.19, 35.62], "الشونة الجنوبية": [31.90, 35.62],
+  "مادبا": [31.716, 35.7939], "ذيبان": [31.50, 35.78], "الكرك": [31.1853, 35.7048], "مؤتة": [31.09, 35.70], "الطفيلة": [30.8375, 35.6042],
+  "معان": [30.1962, 35.734], "وادي موسى": [30.32, 35.48], "الشوبك": [30.52, 35.56], "العقبة": [29.5321, 35.0063],
+};
+function nearestKnown(lat, lng) {
+  let best = null, bd = Infinity;
+  for (const [name, [a, b]] of Object.entries(KNOWN)) {
+    const d = (a - lat) ** 2 + ((b - lng) * Math.cos((lat * Math.PI) / 180)) ** 2;
+    if (d < bd) { bd = d; best = name; }
+  }
+  return best;
+}
+
+export async function reverseRegion(lat, lng) {
+  lat = Number(lat); lng = Number(lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !lat) return null;
+  let a = null;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 6000);
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1&accept-language=ar`, {
+      headers: { "User-Agent": "Mawj-Factory/1.0 (water delivery app, Jordan)" }, signal: ctl.signal,
+    });
+    clearTimeout(timer);
+    if (r.ok) a = (await r.json())?.address || null;
+  } catch { /* بنكمّل بأقرب منطقة */ }
+
+  let governorate = null, district = null, city = null;
+  if (a) {
+    const strip = (s) => String(s || "").replace(/^(محافظة|محافظه|لواء|قضاء|ناحية|بلدية|منطقة)\s+/, "").trim();
+    const gName = strip(a.state);
+    governorate = GOV_INDEX.get(norm(gName)) || (/العاصمة|العاصمه/.test(a.state || "") ? "عمّان" : null);
+    const dHit = DISTRICT_INDEX.get(norm(strip(a.county))) || DISTRICT_INDEX.get(norm(strip(a.state_district)));
+    if (dHit && (!governorate || dHit[0] === governorate)) { governorate = dHit[0]; district = dHit[1]; }
+    city = strip(a.neighbourhood || a.suburb || a.village || a.town || a.hamlet || a.city_district || a.municipality || a.city) || null;
+    // اسم البلدة بيعرّفنا اللواء إذا الخريطة ما عطته
+    for (const n of [a.village, a.town, a.suburb, a.city_district, a.municipality, a.city].filter(Boolean)) {
+      if (district) break;
+      const t = TOWN_INDEX.get(norm(strip(n)));
+      if (t && (!governorate || t[0] === governorate)) { governorate = t[0]; district = t[1]; }
+    }
+  }
+  if (!governorate) {
+    const k = nearestKnown(lat, lng);
+    const r = inferRegion(k);
+    governorate = r.governorate; district = district || r.district; city = city || k;
+  }
+  if (governorate && !district) district = GOVERNORATES[governorate][0];
+  return { governorate, district, city: city ? city.slice(0, 60) : null };
+}

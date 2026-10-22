@@ -17,6 +17,7 @@ const Recurring = lazy(() => import("./pages/Recurring.jsx"));
 const Density = lazy(() => import("./pages/Density.jsx"));
 const Invoices = lazy(() => import("./pages/Invoices.jsx"));
 const Jard = lazy(() => import("./pages/Jard.jsx"));
+const Debts = lazy(() => import("./pages/Debts.jsx"));
 const Drive = lazy(() => import("./pages/Drive.jsx"));
 const Customers = lazy(() => import("./pages/Customers.jsx"));
 const Stock = lazy(() => import("./pages/Stock.jsx"));
@@ -177,6 +178,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
                 <Route path="/f/density" element={<Density />} />
                 {(can("f_orders") || can("f_dispatch") || can("f_money") || can("f_home")) && <Route path="/f/invoices" element={<Invoices />} />}
                 {(can("f_stock") || can("f_production") || can("f_home")) && <Route path="/f/stock" element={<Stock />} />}
+                {(can("f_money") || can("f_customers") || can("f_home")) && <Route path="/f/debts" element={<Debts />} />}
                 {(isDriver || can("f_money") || can("f_home") || can("f_stock") || can("f_dispatch")) && <Route path="/f/jard" element={<Jard />} />}
                 {(can("f_money") || can("f_home")) && <Route path="/f/money" element={<Money />} />}
                 {(can("f_reports") || can("f_home")) && <Route path="/f/reports" element={<Reports />} />}

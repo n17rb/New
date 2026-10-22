@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
-import { inferRegion, validRegion } from "../../utils/jordanRegions.js";
+import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
 import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand } from "./lib.js";
 
 // ============================================================
@@ -160,11 +160,17 @@ export async function cleanCustomer(b) {
   const photo_url = str(b.photo_url, 500);
   if (photo_url && !/^https:\/\//i.test(photo_url)) throw new Error("الصورة غير صحيحة.");
   let region = validRegion(b.governorate, b.district);
-  if (!region.governorate) region = inferRegion(b.city);
+  let city = b.city;
+  // ما في محافظة؟ منعرفها لحالها من الموقع، وإلا من اسم المنطقة
+  if (!region.governorate && Number.isFinite(lat) && lat) {
+    const r = await reverseRegion(lat, lng);
+    if (r?.governorate) { region = { governorate: r.governorate, district: r.district }; if (!str(city)) city = r.city; }
+  }
+  if (!region.governorate) region = inferRegion(city);
   return {
     governorate: region.governorate, district: region.district,
     seq_no, photo_url, maps_url,
-    name, contact_name: str(b.contact_name, 100), phone: phoneClean(b.phone), city: str(b.city, 60), address: str(b.address, 300),
+    name, contact_name: str(b.contact_name, 100), phone: phoneClean(b.phone), city: str(city, 60), address: str(b.address, 300),
     line_id: b.line_id ? Number(b.line_id) : null, lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null,
     kind: str(b.kind, 30), pay_terms: b.pay_terms === "credit" ? "credit" : "cash",
     credit_limit: Math.max(0, Number(b.credit_limit) || 0), notes: str(b.notes, 500),
@@ -181,6 +187,13 @@ async function savePrices(client, customerId, prices) {
     }
   }
 }
+
+// من الموقع ← المحافظة واللواء والمنطقة (لما تختار موقع الزبون)
+router.post("/customers-region", async (req, res) => {
+  const r = await reverseRegion(req.body?.lat, req.body?.lng);
+  if (!r) return bad(res, "الموقع غير صحيح.");
+  res.json(r);
+});
 
 router.post("/customers", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }

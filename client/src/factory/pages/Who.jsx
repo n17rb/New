@@ -15,7 +15,7 @@ export function Who({ o, big }) {
         {o.contact_name && <span>👤 {o.contact_name}</span>}
         {(o.city || o.address) && <span>📍 {[o.city, o.address].filter(Boolean).join(" · ")}</span>}
         {o.phone && <span dir="ltr" style={{ textAlign: "end" }}>{o.phone} ☎</span>}
-        {bal > 0 && <span className="debt">عليه من قبل {money(bal)} دينار</span>}
+        {bal > 0 && <span className="debt">⚠️ عليه دين قديم <b>{money(bal)}</b> دينار — ذكّره بلطف</span>}
         {o.customer_notes && <span className="note">📝 {o.customer_notes}</span>}
         {o.notes && o.notes !== "بيع مندوب" && <span className="note">📦 {o.notes}</span>}
       </div>

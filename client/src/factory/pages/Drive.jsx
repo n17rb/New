@@ -275,6 +275,12 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   return (
     <Sheet title={`تسليم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
+        {o.customer_balance > 0 && (
+          <div className="fx-debt-alert">
+            <span>⚠️ <b>{o.customer_name}</b> عليه دين قديم <b>{money(o.customer_balance)}</b> دينار. ذكّره بلطف — إذا بدّه يدفع، زيده على الكاش.</span>
+            <button type="button" className="fx-btn sm" onClick={() => setCash(String(Math.round((total + o.customer_balance) * 100) / 100))}>دفع الفاتورة + الدين ({money(total + o.customer_balance)})</button>
+          </div>
+        )}
         <div className="fx-note sky">سلّم حسب اللي أخذه الزبون: نزّل أو زيد العدد. الفاتورة بتنحسب على اللي سلّمته.</div>
         {o.items.map((i) => {
           const got = Number(qty[i.id]);

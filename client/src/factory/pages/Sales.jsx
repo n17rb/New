@@ -301,7 +301,12 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
     <Sheet title={`بيع: ${shop.name}`} onClose={onClose}>
       <div className="fx-stack">
         <button className="fx-link" style={{ justifySelf: "start" }} onClick={onBack}>غيّر المحل</button>
-        {shop.balance > 0 && <div className="fx-note warn">عليه من قبل {money(shop.balance)} دينار.</div>}
+        {shop.balance > 0 && (
+          <div className="fx-debt-alert">
+            <span>⚠️ <b>{shop.name}</b> عليه دين قديم <b>{money(shop.balance)}</b> دينار. ذكّره بلطف — إذا بدّه يدفع، زيده على الكاش.</span>
+            <button type="button" className="fx-btn sm" onClick={() => setCash(String(Math.round((total + Number(shop.balance)) * 100) / 100))}>دفع الفاتورة + الدين ({money(total + Number(shop.balance))})</button>
+          </div>
+        )}
         {avail.map((x) => (
           <label key={x.product_id} className="fx-field">
             <span className="fx-row" style={{ flexWrap: "nowrap" }}>
