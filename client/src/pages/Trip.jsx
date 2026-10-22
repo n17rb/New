@@ -775,11 +775,11 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
     onCancel();
   }
   function payCoupons() {
-    if (!enoughCoupons) {
+    // زبون ما إله رصيد بالنظام = كوبون ورقي مباشرة بدون سؤال.
+    // السؤال بيطلع بس لما يكون إله رصيد ناقص (عشان تعرف إنه رح ينخصم من رصيده)
+    if (!enoughCoupons && balance > 0) {
       const ok = window.confirm(
-        balance > 0
-          ? `رصيده بالنظام ${balance} كوبون بس.\nإذا استلمت منه ${eligibleQty} كوبون: بنخصم ${balance} من رصيده، و${paper} بتنحسب كوبونات ورقية.\n\nتأكيد؟`
-          : `ما إله رصيد كوبونات بالنظام.\nإذا استلمت منه ${eligibleQty} كوبون ورقي، بتنحسب بجرد السيارة.\n\nتأكيد؟`
+        `رصيده بالنظام ${balance} كوبون بس.\nإذا استلمت منه ${eligibleQty} كوبون: بنخصم ${balance} من رصيده، و${paper} بتنحسب كوبونات ورقية.\n\nتأكيد؟`
       );
       if (!ok) return;
     }
