@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, logActivity } from "../../db.js";
 import { canAction } from "../../permissions.js";
-import { need, needAny, bad, round2, alert, closeAlerts, jordanDate, pushTo } from "./lib.js";
+import { need, needAny, bad, round2, alert, closeAlerts, jordanDate, pushTo, queueMessage, ensureTrackToken } from "./lib.js";
 import { loadTrips } from "./orders.js";
 import { maybeClose, expectedReturns } from "./stock.js";
 
@@ -81,7 +81,8 @@ router.post("/money/expenses/:id/reject", (req, res) => reviewExpense(req, res, 
 // ---------- الديون ----------
 router.get("/money/debts", needAny(["f_money"], ["f_customers"], ["f_home"]), async (req, res) => {
   const r = await query(
-    `SELECT c.id, c.name, c.phone, c.city, c.balance, c.credit_limit, l.name AS line_name,
+    `SELECT c.id, c.seq_no, c.name, c.phone, c.city, c.governorate, c.district, c.balance, c.credit_limit, l.name AS line_name,
+            (SELECT MAX(created_at) FROM f_messages m WHERE m.customer_id = c.id AND m.kind = 'debt') AS reminded_at,
             (SELECT MAX(created_at) FROM f_ledger p WHERE p.customer_id = c.id AND p.kind = 'payment') AS last_payment_at,
             (SELECT MIN(g.created_at) FROM f_ledger g WHERE g.customer_id = c.id AND g.kind IN ('invoice','opening')
                AND g.created_at > COALESCE((SELECT MAX(p.created_at) FROM f_ledger p WHERE p.customer_id = c.id AND p.kind = 'payment' AND p.balance_after <= 0), 'epoch')) AS since
@@ -100,6 +101,19 @@ router.get("/money/debts", needAny(["f_money"], ["f_customers"], ["f_home"]), as
      WHERE g.method = 'cheque' AND g.cheque_date >= CURRENT_DATE - 7 ORDER BY g.cheque_date LIMIT 50`
   );
   res.json({ total: round2(list.reduce((s, c) => s + c.balance, 0)), buckets, customers: list, cheques: cheques.rows.map((x) => ({ ...x, amount: Number(x.amount) })) });
+});
+
+// تذكير لطيف بالدين (واحد أو كثير): رسالة محترمة مع رابط كشف الحساب
+router.post("/money/debts/remind", needAny(["f_money", "edit"], ["f_customers", "edit"], ["f_home"]), async (req, res) => {
+  const ids = (req.body?.customer_ids || []).map(Number).filter(Boolean).slice(0, 300);
+  if (!ids.length) return bad(res, "اختار زبون.");
+  const cs = (await query("SELECT id, name, phone, balance FROM f_customers WHERE id = ANY($1::int[]) AND active AND balance > 0.009 AND phone IS NOT NULL AND phone <> ''", [ids])).rows;
+  const out = [];
+  for (const c of cs) {
+    const track = await ensureTrackToken(c.id);
+    out.push(await queueMessage({ customerId: c.id, kind: "debt", data: { name: c.name, balance: Number(c.balance), track }, userId: req.user.id }));
+  }
+  res.json({ ids: out, skipped: ids.length - cs.length });
 });
 
 // ---------- السائقين: الكاش اللي معهم هلأ والعُهد ----------

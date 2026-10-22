@@ -772,3 +772,52 @@ a.fx-pill { text-decoration: none; }
 .fx-exch { display: grid; gap: 10px; padding: 12px; border-radius: 16px; background: #f6f2ff; border: 1px solid #ddd2fb; }
 .fx-exch .hd { color: #5b3cc4; font-weight: 700; }
 .fx-exch small { color: #6b5aa8; }
+
+/* اسم الزبون + رقمه جنبه */
+.fx-name-seq { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 10px; align-items: end; }
+.fx-name-seq .fx-num { text-align: center; font-weight: 800; }
+.fx-auto-region { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: #eef6fd; border: 1px solid #cfe3f5; }
+.fx-auto-region .ic { font-size: 20px; }
+.fx-auto-region .t { flex: 1; display: grid; min-width: 0; }
+.fx-auto-region .t b { font-size: 15px; }
+.fx-auto-region .t small { color: var(--fx-muted); font-size: 12.5px; }
+
+/* ---------- الديون ---------- */
+.fx-print-only { display: none; }
+.fx-debts-total { display: grid; gap: 12px; padding: 16px; border-radius: 20px; background: #fff8e6; border: 1px solid #f3d48a; }
+.fx-debts-total > div:first-child { display: grid; gap: 2px; }
+.fx-debts-total > div:first-child b { font-size: 34px; color: #8a5a00; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.fx-debts-total > div:first-child b span { font-size: 16px; }
+.fx-debts-total small { color: #8a6d2a; font-size: 13px; }
+.fx-debts-total .ages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.fx-debts-total .ages span { display: grid; gap: 2px; background: #fff; border-radius: 12px; padding: 8px 6px; text-align: center; }
+.fx-debts-total .ages small { font-size: 11px; color: var(--fx-muted); }
+.fx-debts-total .ages b { font-size: 14px; }
+.fx-debts-total .ages .old b { color: var(--fx-crit); }
+.fx-debts-list { background: #fff; border-radius: 18px; padding: 2px 12px; border: 1px solid var(--fx-line); }
+.fx-debts-list .d { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px dashed var(--fx-line); }
+.fx-debts-list .d:last-child { border-bottom: 0; }
+.fx-debts-list .d.on { background: #f3f9ff; }
+.fx-debts-list .chk { font-size: 22px; color: var(--fx-navy); flex: none; }
+.fx-debts-list .t { flex: 1; display: grid; gap: 1px; min-width: 0; }
+.fx-debts-list .t b { font-size: 16px; }
+.fx-debts-list .t b .fx-seq { margin-inline-end: 6px; }
+.fx-debts-list .t small { color: var(--fx-muted); font-size: 12.5px; }
+.fx-debts-list .t small.old { color: var(--fx-crit); }
+.fx-debts-list .t small.rem { color: #14653a; }
+.fx-debts-list .amt { display: grid; justify-items: end; gap: 6px; }
+.fx-debts-list .amt > b { font-size: 19px; font-variant-numeric: tabular-nums; }
+.fx-debts-list .amt > b.old { color: var(--fx-crit); }
+@media print {
+  .fx-print-only { display: block; }
+  .fx-debts-ph { display: grid; gap: 4px; text-align: center; margin-bottom: 10px; }
+  .fx-debts-ph b { font-size: 22px; }
+  .fx-debts-pt { display: flex; justify-content: space-between; font-size: 18px; border-top: 2px solid #000; padding-top: 8px; }
+  .fx-debts-list { border: 0; padding: 0; }
+  .fx-debts-list .d { break-inside: avoid; border-bottom: 1px solid #bbb; padding: 6px 0; }
+  .fx-debts-total { background: #fff; border-color: #999; }
+  .fx-h1 { display: none; }
+}
+.fx-debt-alert { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: #fff4e0; border: 1.5px solid #f0b429; color: #7a4f00; font-size: 14px; line-height: 1.6; }
+.fx-debt-alert .fx-btn { justify-self: start; }
+.fx-who .debt { background: #fff4e0; border: 1px solid #f0b429; border-radius: 10px; padding: 4px 8px; }

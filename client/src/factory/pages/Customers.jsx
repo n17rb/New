@@ -115,35 +115,32 @@ function CustomerEdit({ c, onClose, onSaved }) {
   return (
     <Sheet title={c ? `تعديل ${c.name}` : "زبون جديد"} onClose={onClose}>
       <div className="fx-stack fx-simple">
-        <label className="fx-sf">اسم المحل
-          <input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: بقالة الأمل" />
-        </label>
+        <div className="fx-name-seq">
+          <label className="fx-sf">اسم الزبون / المحل
+            <input className="fx-input" value={f.name} onChange={set("name")} placeholder="مثلًا: بقالة الأمل" />
+          </label>
+          <label className="fx-sf">الرقم
+            <input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.seq_no} placeholder="تلقائي"
+              onChange={(e) => { seqTouched.current = true; setF({ ...f, seq_no: e.target.value.replace(/[^\d]/g, "") }); }} />
+          </label>
+        </div>
         <label className="fx-sf">رقم التلفون
           <input className="fx-input" inputMode="tel" dir="ltr" value={f.phone} onChange={set("phone")} placeholder="07XXXXXXXX" />
         </label>
-        <div className="fx-sf">المنطقة
-          <input className="fx-input" list="fx-cities" value={f.city} placeholder="مثلًا: الشجرة"
-            onChange={(e) => { const city = e.target.value; const r = inferRegion(city); setF((x) => ({ ...x, city, ...(r.governorate && !x.region_manual ? { governorate: r.governorate, district: r.district } : {}) })); }} />
-          <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
-          <RegionPick f={f} setF={setF} />
-        </div>
 
         <div className="fx-sf">الموقع
           <SimpleLocation f={f} setF={setF} />
         </div>
+        <AutoRegion f={f} setF={setF} />
 
         <div className="fx-sf"><span>صورة المحل <span className="opt">(اختياري)</span></span>
           <BuildingPhoto value={f.photo_url} onChange={(u) => setF((x) => ({ ...x, photo_url: u }))} />
         </div>
 
         <details className="fx-sf-more" open={!!c && (c.pay_terms === "credit" || (c.prices || []).length > 0)}>
-          <summary>تفاصيل زيادة <span className="opt">(العنوان، رقم الزبون، الدين...)</span></summary>
+          <summary>تفاصيل زيادة <span className="opt">(العنوان، صاحب المحل، الدين، الأسعار...)</span></summary>
           <div className="fx-stack" style={{ marginTop: 12 }}>
             <label className="fx-sf">العنوان بالتفصيل<input className="fx-input" value={f.address} onChange={set("address")} placeholder="الشارع، العمارة، جنب..." /></label>
-            <label className="fx-sf">رقم الزبون
-              <input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.seq_no} placeholder="تلقائي"
-                onChange={(e) => { seqTouched.current = true; setF({ ...f, seq_no: e.target.value.replace(/[^\d]/g, "") }); }} />
-            </label>
             <label className="fx-sf">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
             {fx.boot.lines.length > 0 && (
               <label className="fx-sf">الخط
@@ -181,6 +178,50 @@ function CustomerEdit({ c, onClose, onSaved }) {
         <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}>احفظ الزبون</Act>
       </div>
     </Sheet>
+  );
+}
+
+// المنطقة واللواء والمحافظة: بيطلعوا لحالهم من الموقع — بدون ما تكتب إشي
+function AutoRegion({ f, setF }) {
+  const fx = useFx();
+  const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const key = f.lat !== "" && f.lat != null ? `${Number(f.lat).toFixed(5)},${Number(f.lng).toFixed(5)}` : "";
+  const last = useRef(key && f.governorate ? key : "");
+  useEffect(() => {
+    if (!key || key === last.current || f.region_manual) return;
+    last.current = key;
+    setBusy(true);
+    fapi.customerRegion(f.lat, f.lng)
+      .then((r) => setF((x) => ({ ...x, governorate: r.governorate || x.governorate, district: r.district || x.district, city: r.city || x.city })))
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const has = f.governorate || f.city;
+  if (!edit && key) {
+    return (
+      <div className="fx-auto-region">
+        <span className="ic">📍</span>
+        <span className="t">
+          {busy ? <span className="fx-muted">بنعرف المنطقة من الموقع…</span> : has ? (
+            <><b>{f.city || f.district}</b><small>{[f.district && `لواء ${f.district.replace(/^قصبة /, "")}`, f.governorate && `محافظة ${f.governorate}`].filter(Boolean).join(" · ")}</small></>
+          ) : <span className="fx-muted">ما عرفنا المنطقة</span>}
+        </span>
+        <button type="button" className="fx-link" onClick={() => setEdit(true)}>تعديل</button>
+      </div>
+    );
+  }
+  if (!edit && !key) {
+    return <button type="button" className="fx-link" style={{ justifySelf: "start" }} onClick={() => setEdit(true)}>ما في موقع؟ اكتب المنطقة</button>;
+  }
+  return (
+    <div className="fx-sf">المنطقة
+      <input className="fx-input" list="fx-cities" value={f.city} placeholder="مثلًا: الشجرة"
+        onChange={(e) => { const city = e.target.value; const r = inferRegion(city); setF((x) => ({ ...x, city, ...(r.governorate && !x.region_manual ? { governorate: r.governorate, district: r.district } : {}) })); }} />
+      <datalist id="fx-cities">{fx.boot.cities.map((x) => <option key={x} value={x} />)}</datalist>
+      <RegionPick f={f} setF={setF} />
+    </div>
   );
 }
 

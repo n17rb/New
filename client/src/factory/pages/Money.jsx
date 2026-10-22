@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fapi } from "../fapi.js";
+import { DebtsView } from "./Debts.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, SendMessages, Reload, HBar, money, num, date, dateTime } from "../ui.jsx";
 
 export default function Money() {
@@ -115,59 +116,7 @@ function Expenses() {
 }
 
 function Debts() {
-  const fx = useFx();
-  const { data, error } = useLoad(() => fapi.debts(), []);
-  const [msgs, setMsgs] = useState(null);
-  const max = data ? Math.max(1, ...Object.values(data.buckets)) : 1;
-  return (
-    <>
-      <Tip id="debts">الديون مقسّمة حسب عمرها. اكبس «ذكّره» وبتطلع رسالة تذكير لطيفة جاهزة للواتساب.</Tip>
-      <Err msg={error} />
-      {!data && !error && <Loading />}
-      {data && (
-        <>
-          <div className="fx-card fx-stack">
-            <span className="fx-muted">مجموع الديون</span>
-            <b style={{ fontSize: 26, color: "var(--fx-navy)" }} className="fx-num">{money(data.total)} د.أ</b>
-            <HBar label="أقل من ٣٠ يوم" value={data.buckets["0-30"]} max={max} />
-            <HBar label="٣١ – ٦٠ يوم" value={data.buckets["31-60"]} max={max} />
-            <HBar label="٦١ – ٩٠ يوم" value={data.buckets["61-90"]} max={max} tone="over" />
-            <HBar label="أكثر من ٩٠ يوم" value={data.buckets["90+"]} max={max} tone="over" />
-          </div>
-          {data.cheques.length > 0 && (
-            <>
-              <div className="fx-sec"><h2>شيكات قريبة</h2></div>
-              <div className="fx-list">
-                {data.cheques.map((c) => <div key={c.id} className="fx-item"><span className="t"><b>{c.customer_name}</b><span>شيك {c.cheque_no} · يصرف {date(c.cheque_date?.slice?.(0, 10) || c.cheque_date)}</span></span><b>{money(-c.amount)}</b></div>)}
-              </div>
-            </>
-          )}
-          <div className="fx-sec"><h2>الزباين ({data.customers.length})</h2></div>
-          <div className="fx-list">
-            {data.customers.length === 0 && <div className="fx-item"><span className="fx-muted">ولا زبون عليه دين.</span></div>}
-            {data.customers.map((c) => (
-              <div key={c.id} className="fx-item">
-                <span className="t">
-                  <b>{c.name}</b>
-                  <span>{c.city || ""} · من {c.days} يوم{c.over_limit ? " · فوق السقف" : ""}</span>
-                </span>
-                <span className="end">
-                  <b className="fx-num" style={{ color: c.days > 60 || c.over_limit ? "var(--fx-crit)" : "inherit" }}>{money(c.balance)}</b>
-                  {c.phone && (fx.can("f_customers", "edit") || fx.can("f_home")) ? (
-                    <Act className="fx-link" onClick={async () => {
-                      const r = await fapi.sendMessage({ customer_ids: [c.id], body: `تذكير لطيف: رصيد حسابك عنا ${money(c.balance)} دينار. بنشكرك على تعاملك معنا.` });
-                      setMsgs(r.ids);
-                    }}>ذكّره</Act>
-                  ) : null}
-                </span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {msgs && <SendMessages ids={msgs} title="تذكير بالدين" onClose={() => setMsgs(null)} />}
-    </>
-  );
+  return <DebtsView />;
 }
 
 function Drivers() {
