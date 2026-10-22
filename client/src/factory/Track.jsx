@@ -86,6 +86,17 @@ function Orders({ data }) {
   );
 }
 
+// الزبون بينزّل فاتورته PDF من الرابط
+function PdfBtn({ data }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button className="fx-btn pri block fx-noprint" disabled={busy} onClick={async () => {
+      setBusy(true);
+      try { const { shareInvoicePdf } = await import("./invoicePdf.js"); await shareInvoicePdf(data); } finally { setBusy(false); }
+    }}>{busy ? "بجهّز الملف…" : "⬇️ نزّل الفاتورة PDF"}</button>
+  );
+}
+
 // الرصيد بكلام مفهوم بدل السالب
 export const balWord = (n) => { const v = Number(n || 0); return v > 0.009 ? `${money(v)} د.أ عليك` : v < -0.009 ? `${money(-v)} د.أ إلك عنّا` : "0.00 — مسكّر ✓"; };
 
@@ -124,6 +135,7 @@ export function Invoice({ data, inApp = false }) {
         {inv.balance_after != null && <div className="fx-kv"><span>رصيد حسابك الكلي</span><b>{balWord(inv.balance_after)}</b></div>}
       </div>
       {inv.signature && <div className="fx-card"><span className="fx-muted">توقيع المستلم</span><img src={inv.signature} alt="التوقيع" style={{ width: "100%", maxHeight: 120, objectFit: "contain" }} /></div>}
+      {!inApp && <PdfBtn data={data} />}
       {inv.track_token && !inApp && <a className="fx-btn sky block fx-noprint" href={`/t/${inv.track_token}`}>كل طلباتي وكشف حسابي</a>}
       <p className="fx-muted" style={{ textAlign: "center", margin: 0 }}>{brand.name}{brand.phone ? ` · ${brand.phone}` : ""}</p>
     </div>
