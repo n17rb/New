@@ -326,6 +326,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   } else if (b.lat && !c.lat) {
     await query("UPDATE f_customers SET lat = $1, lng = $2 WHERE id = $3", [Number(b.lat), Number(b.lng), c.id]);
   }
+  if (debt > 0 && !overLimit) await alert({ level: "warn", kind: "new_debt", ref: c.id, title: `💳 ${c.name} دفع ${cash.toFixed(2)} من ${total.toFixed(2)}`, body: `صار عليه دين ${debt.toFixed(2)} د.أ — رصيده الكلي ${balance.toFixed(2)}. مع ${t.driver_name || "السائق"}.` });
   if (overLimit) await alert({ level: "crit", kind: "credit", ref: c.id, title: `دين فوق السقف — ${c.name}`, body: `صار عليه ${balance.toFixed(2)} د.أ بعد تسليم طلب #${o.id} مع ${t.driver_name || "السائق"}.` });
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
