@@ -834,3 +834,16 @@ a.fx-pill { text-decoration: none; }
 .fx-jard-invs.closed { display: none; }
 @media print { .fx-jard-invs.closed { display: grid; } }
 .fx-jard-goods .over { color: #a32020; background: #fdecec; border-radius: 10px; padding: 4px 8px; font-size: 12.5px; }
+
+/* الدفع عند التسليم */
+.fx-pay { display: grid; gap: 10px; padding: 14px; border-radius: 18px; background: #fff; border: 1px solid var(--fx-line); }
+.fx-pay-total { display: flex; justify-content: space-between; align-items: baseline; }
+.fx-pay-total span { color: var(--fx-muted); font-weight: 600; }
+.fx-pay-total b { font-size: 26px; color: var(--fx-navy, #0456a2); font-variant-numeric: tabular-nums; }
+.fx-pay-total small { font-size: 14px; }
+.fx-pay-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fx-pay-modes button { min-height: 48px; border-radius: 14px; border: 1.5px solid var(--fx-line); background: var(--fx-surface-2); font: inherit; font-weight: 700; font-size: 14.5px; color: var(--fx-ink, #102A43); cursor: pointer; }
+.fx-pay-modes button.on { background: var(--fx-navy, #0456a2); border-color: var(--fx-navy, #0456a2); color: #fff; }
+.fx-pay-sum { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: var(--fx-surface-2); font-size: 15px; }
+.fx-pay-sum .debt { color: #b06a00; font-weight: 700; }
+.fx-pay-sum .ok { color: #14653a; font-weight: 700; }

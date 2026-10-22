@@ -4,7 +4,7 @@ import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
-import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList } from "./Sales.jsx";
+import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList, PayBox } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
@@ -249,9 +249,8 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const total = Math.round((o.items.reduce((s, i) => s + (Number(qty[i.id]) || 0) * i.price, 0)
     + Object.entries(added).reduce((s, [pid, q]) => s + (Number(q) || 0) * Number(prices[pid] ?? fx.boot.products.find((p) => p.id === Number(pid))?.price ?? 0), 0)) * 100) / 100;
   // الكاش بيمشي مع الفاتورة لحاله (لو غيّرت الكميات)، إلا إذا السائق كتب مبلغ بإيده
-  const [cashEdit, setCashEdit] = useState(null);
-  const cash = cashEdit ?? (o.pay_terms === "credit" ? "" : String(total));
-  const setCash = (v) => setCashEdit(v);
+  const [cashEdit, setCashEdit] = useState(() => (o.pay_terms === "credit" && canCredit ? "0" : null)); // null = دفع كامل
+  const cash = cashEdit ?? String(total);
   const [photo, setPhoto] = useState(null);
   const [overMsg, setOverMsg] = useState("");
   const [err, setErr] = useState("");
@@ -281,8 +280,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
       <div className="fx-stack">
         {o.customer_balance > 0 && (
           <div className="fx-debt-alert">
-            <span>⚠️ <b>{o.customer_name}</b> عليه دين قديم <b>{money(o.customer_balance)}</b> دينار. ذكّره بلطف — إذا بدّه يدفع، زيده على الكاش.</span>
-            <button type="button" className="fx-btn sm" onClick={() => setCash(String(Math.round((total + o.customer_balance) * 100) / 100))}>دفع الفاتورة + الدين ({money(total + o.customer_balance)})</button>
+            <span>⚠️ <b>{o.customer_name}</b> عليه دين قديم <b>{money(o.customer_balance)}</b> دينار. ذكّره بلطف.</span>
           </div>
         )}
         <div className="fx-note sky">سلّم حسب اللي أخذه الزبون: نزّل أو زيد العدد. الفاتورة بتنحسب على اللي سلّمته.</div>
@@ -325,7 +323,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
           );
         })}
         {extraProducts.length > 0 && (!showAdd ? (
-          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowAdd(true)}>+ أخذ منتج ثاني من السيارة؟</button>
+          <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowAdd(true)}>+ أخذ منتج زيادة من السيارة؟ (بينضاف عالفاتورة)</button>
         ) : (
           <div className="fx-chips">
             {extraProducts.filter((p) => !(String(p.id) in added)).map((p) => <button key={p.id} className="fx-chip" onClick={() => { setAdded({ ...added, [p.id]: 1 }); setShowAdd(false); }}>{p.name}</button>)}
@@ -341,15 +339,7 @@ function DeliverSheet({ o, canCredit, onClose, onDone }) {
             </label>
           ))
         )}
-        <div className="fx-card">
-          <div className="fx-kv"><span>قيمة الفاتورة</span><b>{money(total)}</b></div>
-          <label className="fx-field" style={{ paddingBlock: 8 }}>دفع كاش (دينار)
-            <input className="fx-input" type="number" inputMode="decimal" value={cash} onChange={(e) => setCash(e.target.value)} placeholder="0" />
-          </label>
-          <div className={`fx-kv ${debt > 0 ? "bad" : ""}`}><span>عليه دين</span><b>{money(debt)}</b></div>
-          <div className="fx-kv"><span>رصيده بعد الفاتورة</span><b>{money(o.customer_balance + debt - Math.max(0, cashN - total))}</b></div>
-        </div>
-        {debt > 0 && !canCredit && <div className="fx-note crit">ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.</div>}
+        <PayBox total={total} cash={cashEdit} onCash={setCashEdit} balance={o.customer_balance} canCredit={canCredit} />
         <PhotoInput label="صوّر البضاعة عند الزبون (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         {overMsg && (
           <div className="fx-note warn fx-stack">

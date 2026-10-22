@@ -137,11 +137,11 @@ export function SalesDay({ t, stock, canCredit, reload, onSold, openSheet }) {
 // استبدال تالف عند الزبون: بنوخذ منه التالف وبنعطيه بداله جديد ببلاش — بيطلع بالفاتورة
 export function ExchangeEditor({ value, onChange, products }) {
   const [open, setOpen] = useState(Object.keys(value).length > 0);
-  if (!open) return <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setOpen(true)}>🔁 عند الزبون تالف بدك تبدّله؟</button>;
+  if (!open) return <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setOpen(true)}>🔁 عند الزبون تالف بدك تبدّله؟ (ببلاش)</button>;
   const ids = Object.keys(value);
   return (
     <div className="fx-exch">
-      <span className="hd">🔁 استبدال تالف</span>
+      <span className="hd">🔁 استبدال تالف — ببلاش، ما بيغيّر الفاتورة</span>
       <small>أخذت منه كراتين تالفة وأعطيته بدالها جديد ببلاش. ما بتنحسب عليه، وبتطلع بالفاتورة، والتالف رجّعه للمستودع.</small>
       {ids.map((pid) => {
         const p = products.find((x) => String(x.id ?? x.product_id) === pid);
@@ -162,6 +162,40 @@ export function ExchangeEditor({ value, onChange, products }) {
   );
 }
 export const exchangeList = (v) => Object.entries(v).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: Number(q) }));
+
+// الدفع: كامل / جزء / كله دين / الفاتورة + الدين القديم — والدين بيبين واضح
+export function PayBox({ total, cash, onCash, balance = 0, canCredit, credit = false }) {
+  const t = Math.round(total * 100) / 100;
+  const bal = Math.max(0, Number(balance) || 0);
+  const c = cash === null || cash === undefined ? t : Number(cash) || 0;
+  const mode = cash === null || cash === undefined ? "full" : Math.abs(c - (t + bal)) < 0.005 && bal > 0 ? "plus" : c === 0 && cash !== "" ? "none" : "part";
+  const debt = Math.round((t - c) * 100) / 100;
+  const after = Math.round((bal + t - c) * 100) / 100;
+  return (
+    <div className="fx-pay">
+      <div className="fx-pay-total"><span>قيمة الفاتورة</span><b>{money(t)} <small>د.أ</small></b></div>
+      <div className="fx-pay-modes">
+        <button type="button" className={mode === "full" ? "on" : ""} onClick={() => onCash(null)}>✓ دفع كامل</button>
+        <button type="button" className={mode === "part" ? "on" : ""} onClick={() => onCash("")}>دفع جزء</button>
+        {canCredit && <button type="button" className={mode === "none" ? "on" : ""} onClick={() => onCash("0")}>كله دين</button>}
+        {bal > 0 && <button type="button" className={mode === "plus" ? "on" : ""} onClick={() => onCash(String(Math.round((t + bal) * 100) / 100))}>الفاتورة + الدين القديم</button>}
+      </div>
+      {mode === "part" && (
+        <label className="fx-field">قديش دفع؟
+          <input className="fx-input fx-num" style={{ fontSize: 22, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" autoFocus value={cash} onChange={(e) => onCash(e.target.value)} placeholder="0" />
+        </label>
+      )}
+      <div className="fx-pay-sum">
+        <span>دفع <b>{money(c)}</b></span>
+        {debt > 0.005 ? <span className="debt">صار عليه دين <b>{money(debt)}</b></span>
+          : debt < -0.005 ? <span className="ok">سدّ من الدين القديم <b>{money(-debt)}</b></span>
+          : <span className="ok">الفاتورة مدفوعة ✓</span>}
+      </div>
+      {(bal > 0 || debt > 0.005) && <small className="fx-muted">رصيده بعدها: {after > 0.005 ? `${money(after)} عليه` : after < -0.005 ? `${money(-after)} إله` : "صفر ✓"}{debt > 0.005 ? " · بيوصل إشعار للإدارة" : ""}</small>}
+      {debt > 0.005 && !canCredit && <div className="fx-note crit">ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.</div>}
+    </div>
+  );
+}
 
 function Stepper({ value, onChange, max, label }) {
   const v = Number(value) || 0;
@@ -301,8 +335,7 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
         <button className="fx-link" style={{ justifySelf: "start" }} onClick={onBack}>غيّر المحل</button>
         {shop.balance > 0 && (
           <div className="fx-debt-alert">
-            <span>⚠️ <b>{shop.name}</b> عليه دين قديم <b>{money(shop.balance)}</b> دينار. ذكّره بلطف — إذا بدّه يدفع، زيده على الكاش.</span>
-            <button type="button" className="fx-btn sm" onClick={() => setCash(String(Math.round((total + Number(shop.balance)) * 100) / 100))}>دفع الفاتورة + الدين ({money(total + Number(shop.balance))})</button>
+            <span>⚠️ <b>{shop.name}</b> عليه دين قديم <b>{money(shop.balance)}</b> دينار. ذكّره بلطف.</span>
           </div>
         )}
         {avail.map((x) => (
@@ -316,14 +349,7 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
           </label>
         ))}
         <ExchangeEditor value={exch} onChange={setExch} products={avail} />
-        <div className="fx-card">
-          <div className="fx-kv"><span>المجموع</span><b>{money(total)}</b></div>
-          <label className="fx-field" style={{ paddingBlock: 8 }}>دفع كاش (دينار)
-            <input className="fx-input" type="number" inputMode="decimal" value={cash === null ? (total ? String(total) : "") : cash} onChange={(e) => setCash(e.target.value)} placeholder="0" />
-          </label>
-          {debt > 0 && <div className="fx-kv bad"><span>بيصير عليه دين</span><b>{money(debt)}</b></div>}
-        </div>
-        {debt > 0 && !canCredit && <div className="fx-note crit">ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.</div>}
+        <PayBox total={total} cash={cash} onCash={setCash} balance={shop.balance} canCredit={canCredit} />
         {over && (
           <div className="fx-note warn fx-stack">
             <span>{over}</span>
