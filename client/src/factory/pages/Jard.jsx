@@ -56,11 +56,15 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
   const T = d.totals;
   const S = d.settle || { trips: [], due: 0, older: 0, active: 0 };
   const [showInv, setShowInv] = useState(false);
+  const [showDet, setShowDet] = useState(false);
   const [settling, setSettling] = useState(false);
   const toSettle = S.trips.length > 0;
   const vehicles = [...new Set(d.trips.map((t) => t.vehicle_name))].join("، ");
   const returned = d.trips.some((t) => t.returns_received_at);
   const allBack = d.trips.every((t) => t.returns_received_at || !t.load_confirmed);
+  const backDone = d.goods.reduce((a, g) => a + g.returned, 0);
+  const missing = d.goods.reduce((a, g) => a + Math.max(0, g.back - g.returned), 0);
+  const custodyNew = d.trips.reduce((a, t) => a + Math.max(0, Number(t.money.diff) || 0), 0);
   return (
     <section className="fx-jard-drv">
       <header className="fx-jard-h">
@@ -72,18 +76,40 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
         <span className={`fx-pill ${T.settled ? "ok" : "warn"}`}>{T.settled ? "تسكّر ✓" : "لسا مفتوح"}</span>
       </header>
 
-      {/* الأهم: كاش ومرتجع */}
+      {/* الأهم: شو عليه هلأ — بعد التسوية بيصير صفر، والتفاصيل بتضل تحت للجرد */}
       <div className="fx-jard-big">
-        <div className={`tile ${toSettle ? "cash" : S.active ? "wait" : "ok"}`}>
-          <small>{toSettle ? (mine ? "عليك تسلّم" : "عليه يسلّم") : S.active ? "لسا شغال" : "سلّم كاش"}</small>
-          <b>{money(toSettle ? S.due : S.active ? T.cash : T.handed)}</b>
-          <small>{toSettle && S.older > 0 ? `منها ${money(S.older)} من أيام قبل` : toSettle ? "دينار" : S.active ? "كاش معه لهلأ" : "دينار ✓"}</small>
-        </div>
-        <div className={`tile ${allBack && returned ? "ok" : "box"}`}>
-          <small>{mine ? "رجّع للمستودع" : "لازم يرجّع"}</small>
-          <b>{num(T.cartons_back)}</b>
-          <small>كرتونة{T.damaged_from_customers ? ` + ${num(T.damaged_from_customers)} تالف` : ""}</small>
-        </div>
+        {toSettle ? (
+          <div className="tile cash">
+            <small>{mine ? "عليك تسلّم" : "عليه يسلّم"}</small>
+            <b>{money(S.due)}</b>
+            <small>{S.older > 0 ? `منها ${money(S.older)} من أيام قبل` : "دينار"}</small>
+          </div>
+        ) : S.active ? (
+          <div className="tile wait">
+            <small>لسا بالشغل</small>
+            <b>{money(T.cash)}</b>
+            <small>كاش {mine ? "معك" : "معه"} لهلأ</small>
+          </div>
+        ) : (
+          <div className="tile ok">
+            <small>{mine ? "عليك هلأ" : "عليه هلأ"}</small>
+            <b>0.00</b>
+            <small>{custodyNew > 0 ? `نقص ${money(custodyNew)} انسجّل عهدة` : `سلّم ${money(T.handed)} ✓`}</small>
+          </div>
+        )}
+        {allBack && returned ? (
+          <div className={`tile ${missing ? "cash" : "ok"}`}>
+            <small>{missing ? "ناقص من المرتجع" : mine ? "عليك كراتين" : "عليه كراتين"}</small>
+            <b>{num(missing)}</b>
+            <small>{`رجّع ${num(backDone)} كرتونة ✓`}</small>
+          </div>
+        ) : (
+          <div className="tile box">
+            <small>{mine ? "رجّع للمستودع" : "لازم يرجّع"}</small>
+            <b>{num(T.cartons_back)}</b>
+            <small>كرتونة{T.damaged_from_customers ? ` + ${num(T.damaged_from_customers)} تالف` : ""}</small>
+          </div>
+        )}
       </div>
 
       {!mine && canSettle && toSettle && (
@@ -92,6 +118,14 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
       {!mine && !toSettle && S.active > 0 && <div className="fx-note">لسا شغال. لما يكبس «رجعت للمصنع» بيطلعلك زر التسوية هون.</div>}
       {settling && <SettleSheet d={d} canReview={canReview} reload={reload} onClose={() => setSettling(false)} />}
 
+      {/* بعد ما يتسكّر الحساب: التفاصيل بتتطوى (وبتضل بالطباعة) */}
+      {(T.settled && !S.active && !toSettle) && (
+        <button className={`fx-jard-invbtn fx-noprint ${showDet ? "on" : ""}`} onClick={() => setShowDet(!showDet)} aria-expanded={showDet}>
+          <span>📋 تفاصيل اليوم <small className="fx-muted">(المصاري، البضاعة، المصاريف)</small></span>
+          <FiChevronDown className="chev" />
+        </button>
+      )}
+      <div className={`fx-jard-invs ${(T.settled && !S.active && !toSettle) && !showDet ? "closed" : ""}`}>
       {/* المصاري */}
       <div className="fx-card fx-jard-money">
         <h3>المصاري</h3>
@@ -139,6 +173,8 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
           </div>
         </div>
       )}
+
+      </div>
 
       {/* الفواتير تحت بعض */}
       {T.invoices_count > 0 && (
