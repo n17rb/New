@@ -32,6 +32,12 @@ export default function More({ onLogout }) {
     <div className="fx-page">
       <h1 className="fx-h1">المزيد</h1>
       <PushCard always who={fx.can("f_home") ? "admin" : "driver"} />
+      {fx.can("f_drive", "edit") && !window.Capacitor?.isNativePlatform?.() && /android/i.test(navigator.userAgent) && (
+        <a className="fx-item" href="https://github.com/n17rb/New/releases/download/driver-latest/mawj-driver.apk" style={{ textDecoration: "none", color: "inherit" }}>
+          <span className="fx-avatar">📲</span>
+          <span className="t"><b>نزّل تطبيق السائق (أندرويد)</b><span>بيتبع السيارة حتى والشاشة مطفية</span></span>
+        </a>
+      )}
       <div className="fx-list">
         {items.map((i) => (
           <button key={i.to} className="fx-item" onClick={() => nav(i.to)}>

@@ -104,7 +104,26 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
   // السائق: موقعه بيوصل كل دقيقة والتطبيق مفتوح
   const isDriver = can("f_drive", "edit");
   useEffect(() => {
-    if (!isDriver || !navigator.geolocation) return;
+    if (!isDriver) return;
+    // تطبيق السائق (APK): تتبع من التلفون نفسه — بيكمل والشاشة مطفية أو التطبيق بالخلفية (مع إشعار ثابت)
+    const BG = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.BackgroundGeolocation : null;
+    if (BG) {
+      let watcher = null, lastAt = 0;
+      BG.addWatcher(
+        { backgroundTitle: "تتبع السيارة شغال", backgroundMessage: "موقعك بيوصل للمصنع وإنت بالطريق", requestPermissions: true, stale: false, distanceFilter: 30 },
+        (loc, err) => {
+          if (err) {
+            if (err.code === "NOT_AUTHORIZED" && window.confirm("التطبيق محتاج صلاحية الموقع عشان يتبع السيارة. نفتح الإعدادات؟ اختار «السماح دائمًا» أو «أثناء الاستخدام»")) BG.openSettings();
+            return;
+          }
+          if (!loc || Date.now() - lastAt < 30000) return;
+          lastAt = Date.now();
+          fapi.ping({ lat: loc.latitude, lng: loc.longitude }).catch(() => {});
+        }
+      ).then((id) => { watcher = id; }).catch(() => {});
+      return () => { if (watcher) BG.removeWatcher({ id: watcher }).catch(() => {}); };
+    }
+    if (!navigator.geolocation) return;
     let last = 0;
     const id = navigator.geolocation.watchPosition(
       (p) => {

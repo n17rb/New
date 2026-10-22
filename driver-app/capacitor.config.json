@@ -1,0 +1,14 @@
+{
+  "appId": "com.mawj.factory.driver",
+  "appName": "موج السائق",
+  "webDir": "www",
+  "server": {
+    "url": "https://new-1-tb2d.onrender.com/f/drive",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#ffffff"
+  }
+}
