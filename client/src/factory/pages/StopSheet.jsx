@@ -98,6 +98,35 @@ function kmBetween(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// ملخّص الفاتورة برسالة واتساب وحدة — بتنفتح على محادثة الزبون مباشرة، ومعها رابط الفاتورة (منه بينزّل PDF)
+export function invoiceSummary(data, link) {
+  const { brand, invoice: inv, items, exchanges = [] } = data;
+  const lines = [];
+  for (const i of items) {
+    const q = i.delivered_qty ?? i.qty;
+    if (q > 0) lines.push(`• ${q} × ${i.name} = ${money(i.line)}`);
+    const b = i.delivered_bonus ?? i.bonus_qty;
+    if (b > 0) lines.push(`• ${b} × ${i.name} بونص ببلاش 🎁`);
+  }
+  for (const x of exchanges) lines.push(`• 🔁 بدّلنا ${x.qty} ${x.name} تالف بجديد ببلاش`);
+  const rest = Math.max(0, inv.total - inv.paid);
+  const bal = inv.balance_after == null ? null : Number(inv.balance_after);
+  return [
+    `مرحبا ${inv.customer_name} 🌷`,
+    `هاي فاتورتك رقم ${inv.id} من ${brand.name}:`,
+    "",
+    ...lines,
+    "",
+    `المجموع: ${money(inv.total)} د.أ`,
+    `المدفوع: ${money(inv.paid)} د.أ`,
+    rest > 0.005 ? `الباقي عليها: ${money(rest)} د.أ` : "الفاتورة مدفوعة ✓",
+    bal != null ? `رصيد حسابك: ${bal > 0.005 ? `${money(bal)} د.أ عليك` : bal < -0.005 ? `${money(-bal)} د.أ إلك عنّا` : "مسكّر ✓"}` : null,
+    "",
+    `الفاتورة كاملة (وبتقدر تنزّلها PDF): ${link}`,
+    `شكرًا لتعاملكم معنا 🙏${brand.phone ? `\n${brand.name} ${brand.phone}` : ""}`,
+  ].filter((x) => x !== null).join("\n");
+}
+
 // نسخة الفاتورة عندك بالتطبيق (نفس اللي وصلت للزبون)، وزر يبعتها للزبون على واتساب
 export function InvoiceSheet({ o, onClose, onSent, title }) {
   const fx = useFx();
@@ -107,6 +136,7 @@ export function InvoiceSheet({ o, onClose, onSent, title }) {
   useEffect(() => { fapi.invoice(o.invoice_token).then(setData).catch((e) => setErr(e.message)); }, [o.invoice_token]);
   const link = `${window.location.origin}/t/i/${o.invoice_token}`;
   const text = `أهلاً ${o.customer_name}، هاي فاتورة طلبك رقم ${o.id}${data ? ` بقيمة ${money(data.invoice.total)} د.أ` : ""}.`;
+  const phone = o.phone || data?.invoice?.phone;
 
   async function sendPdf() {
     setBusy(true);
@@ -126,12 +156,14 @@ export function InvoiceSheet({ o, onClose, onSent, title }) {
       {!data && !err && <Loading />}
       {data && (
         <div className="fx-stack">
-          <button className="fx-btn wa block fx-big fx-noprint" disabled={busy} onClick={sendPdf}>
-            <FiFileText /> {busy ? "عم بجهّز الفاتورة..." : "ابعت الفاتورة PDF على واتساب"}
-          </button>
+          {phone ? (
+            <a className="fx-btn wa block fx-big fx-noprint" href={waLink(phone, invoiceSummary(data, link))} target="_blank" rel="noreferrer" onClick={() => onSent?.()}>
+              <FiMessageCircle /> ابعت الفاتورة لواتساب {o.customer_name}
+            </a>
+          ) : <div className="fx-note warn">ما في رقم تلفون لهالزبون — ابعتها كملف.</div>}
           <div className="fx-invoice-in"><Invoice data={data} inApp /></div>
           <div className="fx-grid2 fx-noprint">
-            {o.phone ? <a className="fx-btn" href={waLink(o.phone, `${text}\n${link}`)} target="_blank" rel="noreferrer" onClick={() => onSent?.()}><FiMessageCircle /> ابعت رابط</a> : <span />}
+            <button className="fx-btn" disabled={busy} onClick={sendPdf}><FiFileText /> {busy ? "بجهّز…" : "ابعت كملف PDF"}</button>
             <button className="fx-btn" onClick={() => window.print()}><FiPrinter /> اطبع</button>
           </div>
         </div>
