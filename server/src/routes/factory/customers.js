@@ -126,7 +126,7 @@ async function resolveLink(link) {
   }
 }
 
-async function nextSeq(client = null) {
+export async function nextSeq(client = null) {
   const q = client ? (t, p) => client.query(t, p) : query;
   return Number((await q("SELECT COALESCE(MAX(seq_no), 0) + 1 AS n FROM f_customers")).rows[0].n);
 }
@@ -140,7 +140,7 @@ router.post("/customers-resolve-link", editOrFleet, async (req, res) => {
   res.json(p);
 });
 
-async function cleanCustomer(b) {
+export async function cleanCustomer(b) {
   const name = str(b.name);
   if (!name) throw new Error("اكتب اسم المحل أو الزبون.");
   let lat = b.lat === "" || b.lat == null ? null : Number(b.lat);

@@ -668,3 +668,16 @@ a.fx-pill { text-decoration: none; }
 .fx-trip-prob { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 8px 12px; border-radius: 12px; background: #fdecec; color: #a32020; font-size: 13px; font-weight: 600; }
 .fx-trip-prob small { color: #a35a5a; font-weight: 500; }
 .fx-trip-prob .fx-btn { flex: none; }
+
+/* شغل المندوب */
+.fx-sales-start { display: flex; align-items: center; gap: 14px; width: 100%; text-align: start; padding: 16px; border-radius: 20px; border: 1.5px dashed #9cc7ea; background: #f3f9ff; color: inherit; font: inherit; cursor: pointer; }
+.fx-sales-start .ic { flex: none; width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; background: var(--fx-navy, #0456a2); color: #fff; font-size: 22px; }
+.fx-sales-start .t { display: grid; gap: 2px; }
+.fx-sales-start .t b { font-size: 17px; }
+.fx-sales-start .t small { color: var(--fx-muted); font-size: 13px; }
+.fx-sales-left { font-size: 22px; min-width: 44px; text-align: center; color: #14653a; }
+.fx-sales-left.zero { color: var(--fx-muted); }
+.fx-search { position: relative; display: block; }
+.fx-search svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--fx-muted); }
+.fx-search .fx-input { padding-inline-start: 36px; width: 100%; }
+.fx-sales-sig summary { cursor: pointer; color: var(--fx-muted); font-size: 14px; padding: 4px 0; }

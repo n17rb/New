@@ -4,6 +4,7 @@ import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 import TripsMap from "./TripsMap.jsx";
+import { SalesStartCard, SalesDay } from "./Sales.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today } from "../ui.jsx";
 
 // ============================================================
@@ -92,10 +93,18 @@ export default function Drive() {
       ))}
 
       {data && !t && (
-        <Empty icon={FiTruck} title="ما في رحلة إلك اليوم" text="لما يوزعولك طلبات بتطلع هون، وبيوصلك إشعار." />
+        <Empty icon={FiTruck} title="ما في طلبات إلك اليوم" text="لما يوزعولك طلبات بتطلع هون وبيوصلك إشعار. أو اشتغل مندوب وبيع على المحلات." />
       )}
 
-      {t && (
+      {data && t?.status !== "active" && <SalesStartCard onStarted={() => { fx.toast("يلا! بالتوفيق 🛒"); reload(); }} />}
+
+      {t?.kind === "sales" && (
+        <SalesDay t={t} stock={data.car_stock} canCredit={data.can_credit} reload={reload}
+          onSold={(r) => { reload(); setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id }); }}
+          openSheet={(kind) => setSheet({ kind })} />
+      )}
+
+      {t && t.kind !== "sales" && (
         <>
           <div className="fx-drv-head">
             <b>رحلتي اليوم</b>
@@ -190,7 +199,7 @@ export default function Drive() {
       {sheet?.kind === "expense" && <ExpenseSheet kinds={exps?.kinds || []} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "cash" && t && <CashSheet t={t} onClose={() => setSheet(null)} />}
       {msgs && <SendMessages ids={msgs} title="ابعت للزبون وقت وصولك" onClose={() => setMsgs(null)} />}
-      {inv && <InvoiceSheet o={inv.o} title={`✓ انسلّم · ${inv.o.customer_name}`} onClose={() => setInv(null)} onSent={() => inv.msg && fapi.messageSent(inv.msg).catch(() => {})} />}
+      {inv && <InvoiceSheet o={inv.o} title={`✓ ${t?.kind === "sales" ? "انباع" : "انسلّم"} · ${inv.o.customer_name}`} onClose={() => setInv(null)} onSent={() => inv.msg && fapi.messageSent(inv.msg).catch(() => {})} />}
     </div>
   );
 }
