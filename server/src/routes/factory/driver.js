@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km, chainNearest } from "../../utils/factoryGeo.js";
-import { smartFilter } from "../../utils/smartSearch.js";
+import { smartFilter } from "../../utils/fuzzySearch.js";
 import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once } from "./lib.js";
 import { cleanCustomer, nextSeq } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";

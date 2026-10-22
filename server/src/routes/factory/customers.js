@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
-import { smartFilter } from "../../utils/smartSearch.js";
+import { smartFilter } from "../../utils/fuzzySearch.js";
 import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers } from "./lib.js";
 
 // ============================================================
