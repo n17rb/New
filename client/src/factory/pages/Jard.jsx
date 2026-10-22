@@ -108,6 +108,7 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
       {d.goods.length > 0 && (
         <div className="fx-card">
           <h3 style={{ marginTop: 0 }}>البضاعة</h3>
+          <small className="fx-muted">يرجع = طلع − سلّم − بونص − بدل تالف − تالف</small>
           <div className="fx-jard-goods">
             {d.goods.map((g) => (
               <div key={g.product_id} className="g">
@@ -122,6 +123,7 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
                   {g.exchanged > 0 && <span className="ex">بدل تالف <b>{num(g.exchanged)}</b></span>}
                   {g.damaged > 0 && <span className="bad">تلف بالسيارة <b>{num(g.damaged)}</b></span>}
                 </div>
+                {g.over > 0 && <small className="over">⚠️ سلّم {num(g.over)} أكثر من اللي انسجّل إنه طلع — في تحميل ما انسجّل، تأكد مع المستودع.</small>}
               </div>
             ))}
           </div>

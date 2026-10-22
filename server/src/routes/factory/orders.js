@@ -408,7 +408,7 @@ router.post("/trips", dispatch, async (req, res) => {
     )).rows[0].id;
   }
   const maxSeq = Number((await query("SELECT COALESCE(MAX(stop_seq), 0) AS m FROM f_orders WHERE trip_id = $1 AND NOT (id = ANY($2::int[]))", [tripId, orderIds])).rows[0].m);
-  const trip = (await query("SELECT status FROM f_trips WHERE id = $1", [tripId])).rows[0];
+  const trip = (await query("SELECT status, kind, vehicle_id, load_confirmed_at FROM f_trips WHERE id = $1", [tripId])).rows[0];
   let seq = maxSeq;
   for (const id of orderIds) {
     seq++;
@@ -416,6 +416,16 @@ router.post("/trips", dispatch, async (req, res) => {
       "UPDATE f_orders SET trip_id = $1, stop_seq = $2, status = $3, due_date = $4, updated_at = now() WHERE id = $5",
       [tripId, seq, trip.status === "active" ? "onway" : "assigned", date, id]
     );
+  }
+  // رحلة عادية حمولتها تأكدت من قبل: الطلبات الجديدة لازم تطلع من المستودع كمان (عشان الجرد يضل مزبوط)
+  if (trip.load_confirmed_at && trip.kind !== "sales") {
+    const its = (await query(
+      `SELECT i.product_id, SUM(i.qty + i.bonus_qty)::int AS qty FROM f_order_items i WHERE i.order_id = ANY($1::int[]) GROUP BY i.product_id`,
+      [orderIds]
+    )).rows;
+    for (const i of its) {
+      if (i.qty > 0) await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,'طلبات انضافت بعد التحميل',$5)", [i.product_id, i.qty, tripId, trip.vehicle_id, req.user.id]);
+    }
   }
   await recomputeEta(tripId, { fromNow: trip.status === "active" });
   const orders = await loadOrders("o.id = ANY($1::int[])", [orderIds]);
