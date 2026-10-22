@@ -89,7 +89,7 @@ export async function request(path, { method = "GET", body, isFormData = false, 
     if (res.status === 402) {
       window.dispatchEvent(new CustomEvent("shop:locked", { detail: data }));
     }
-    const e = new Error(data?.error || "حدث خطأ غير متوقع.");
+    const e = new Error(data?.error || (res.status === 404 ? "هالميزة لسا ما وصلت للسيرفر — استنى دقيقتين وجرّب كمان مرة." : `حدث خطأ غير متوقع (${res.status}).`));
     e.status = res.status;
     if ([502, 503, 504].includes(res.status)) e.offline = true; // السيرفر عم يصحى
     e.data = data;
