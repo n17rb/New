@@ -123,7 +123,8 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // السائق: موقعه بيوصل كل دقيقة والتطبيق مفتوح
-  const isDriver = can("f_drive", "edit");
+  // السائق/المندوب بس — المالك والإدارة ما إلهم «رحلتي» ولا بيتتبّع موقعهم
+  const isDriver = !isOwner && can("f_drive", "edit");
   useEffect(() => {
     if (!isDriver) return;
     // تطبيق السائق (APK): تتبع من التلفون نفسه — بيكمل والشاشة مطفية أو التطبيق بالخلفية (مع إشعار ثابت)
