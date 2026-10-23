@@ -661,7 +661,7 @@ const round2 = (n) => Math.round(Number(n) * 100) / 100;
 //  - cash_received أقل من المطلوب ← الباقي بينضاف دين على الزبون (بدها صلاحية البيع بالدين)
 //  - cash_received أكثر من المطلوب ← الزيادة بتسدّد من دينه القديم
 router.post("/stops/:stopId/deliver", async (req, res) => {
-  const { item_payments, cash_received, empties } = req.body || {};
+  const { item_payments, cash_received, empties, allow_paper_coupons, coupon_any_item } = req.body || {};
 
   const stopResult = await query(
     `SELECT ts.*, c.name AS customer_name, c.coupon_balance, c.debt_balance, o.customer_id, o.status AS order_status,
@@ -705,7 +705,9 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
 
   for (const item of items) {
     let couponQty = paymentMap[item.id] || 0;
-    if (!item.coupon_eligible) couponQty = 0;
+    // الكوبون بينقبل على المنتجات اللي بتقبله، وعلى القوارير اللي بترجع (حتى لو المنتج مش معلّم)
+    // (أو أي صنف إذا الكابتن اختار «كوبون» وما في ولا صنف معلّم)
+    if (!item.coupon_eligible && !item.is_returnable && !coupon_any_item) couponQty = 0;
     couponQty = Math.max(0, Math.min(Math.floor(couponQty), item.quantity));
 
     totalCouponsUsed += couponQty;
@@ -715,9 +717,13 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     if (item.is_returnable) returnableDelivered += item.quantity;
   }
 
-  if (totalCouponsUsed > stop.coupon_balance) {
-    return res.status(400).json({ error: `رصيد الكوبونات غير كافي — المتبقي للعميل فقط ${stop.coupon_balance} كوبون.` });
+  // كوبونات ورقية: الزبون حاسب بكوبونات أكثر من رصيده المسجّل — بننزّل من رصيده لحد الصفر والباقي ورقي
+  const balanceNow = Math.max(0, Number(stop.coupon_balance) || 0);
+  const paperCoupons = totalCouponsUsed > balanceNow && allow_paper_coupons ? totalCouponsUsed - balanceNow : 0;
+  if (totalCouponsUsed > balanceNow && !allow_paper_coupons) {
+    return res.status(400).json({ error: `رصيد الكوبونات غير كافي — المتبقي للعميل فقط ${stop.coupon_balance} كوبون.`, code: "coupons_short", balance: stop.coupon_balance });
   }
+  const couponsFromBalance = totalCouponsUsed - paperCoupons;
 
   // الخصم على الطلب بينطبق على الجزء الكاش
   const subtotal = Number(stop.subtotal) || 0;
@@ -779,13 +785,16 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
       );
     }
 
-    if (totalCouponsUsed > 0) {
-      newBalance -= totalCouponsUsed;
+    if (couponsFromBalance > 0) {
+      newBalance -= couponsFromBalance;
       await client.query(
         `INSERT INTO coupon_ledger (customer_id, change_amount, reason, order_id, balance_after, created_by)
          VALUES ($1, $2, 'order_payment', $3, $4, $5)`,
-        [stop.customer_id, -totalCouponsUsed, stop.order_id, newBalance, req.user.id]
+        [stop.customer_id, -couponsFromBalance, stop.order_id, newBalance, req.user.id]
       );
+    }
+    if (paperCoupons > 0) {
+      await client.query("UPDATE trip_stops SET paper_coupons = $1 WHERE id = $2", [paperCoupons, stop.id]);
     }
     if (couponsGranted > 0) {
       newBalance += couponsGranted;
@@ -966,7 +975,7 @@ router.post("/stops/:stopId/undo-deliver", async (req, res) => {
 
     await client.query("UPDATE order_items SET coupon_quantity = 0 WHERE order_id = $1", [stop.order_id]);
     await client.query(
-      `UPDATE trip_stops SET delivered_at = NULL, cash_collected = NULL, coupons_collected = 0, amount_due = NULL,
+      `UPDATE trip_stops SET delivered_at = NULL, cash_collected = NULL, coupons_collected = 0, paper_coupons = 0, amount_due = NULL,
          debt_added = 0, debt_paid = 0, returnable_delivered = 0, empties_collected = 0
        WHERE id = $1`,
       [stop.id]

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { matchRegion } from "./geocode.js";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
@@ -425,7 +426,26 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
   }
   if (!customer) return res.status(409).json({ error: "صار تعارض بالرقم التسلسلي — جرّب كمان مرة." });
 
-  await query(`INSERT INTO customer_locations (customer_id) VALUES ($1)`, [customer.id]);
+  // الموقع والعنوان مع الإضافة نفسها (اختياري): المنطقة بتنلاقى أو بتنعمل لحالها
+  const loc = req.body.location && typeof req.body.location === "object" ? req.body.location : {};
+  const lat = loc.latitude != null && loc.latitude !== "" ? Number(loc.latitude) : null;
+  const lon = loc.longitude != null && loc.longitude !== "" ? Number(loc.longitude) : null;
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+  let regionId = loc.region_id ? Number(loc.region_id) : null;
+  const regionName = String(loc.region_name || "").trim().slice(0, 80);
+  if (!regionId && regionName) {
+    const regions = (await query("SELECT id, name FROM regions WHERE status = 'active'")).rows;
+    const found = matchRegion(regions, [regionName]);
+    regionId = found ? found.id : (await query("INSERT INTO regions (name) VALUES ($1) RETURNING id", [regionName])).rows[0].id;
+  }
+  const clip = (v, n) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, n));
+  await query(
+    `INSERT INTO customer_locations (customer_id, latitude, longitude, maps_url, region_id, governorate, street, building_number, floor, side, access_notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [customer.id, hasCoords ? lat : null, hasCoords ? lon : null,
+     clip(loc.maps_url, 1000) || (hasCoords ? `https://www.google.com/maps?q=${lat},${lon}` : null),
+     regionId, clip(loc.governorate, 80), clip(loc.street, 150), clip(loc.building_number, 30), clip(loc.floor, 30), clip(loc.side, 30), clip(loc.access_notes, 500)]
+  );
 
   await logActivity({
     userId: req.user.id,
@@ -509,10 +529,11 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
       longitude = COALESCE($10, longitude),
       maps_url = COALESCE($11, maps_url),
       preferred_delivery_note = COALESCE($13, preferred_delivery_note),
+      governorate = COALESCE($14, governorate),
       updated_at = now()
      WHERE customer_id = $12`,
     [region_id, street, building_number, building_name, floor, apartment, side,
-     access_notes, latitude, longitude, maps_url, id, preferred_delivery_note]
+     access_notes, latitude, longitude, maps_url, id, preferred_delivery_note, req.body.governorate ? String(req.body.governorate).slice(0, 80) : null]
   );
 
   await logActivity({

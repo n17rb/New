@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api.js";
 import SampleDataBanner from "../components/SampleDataBanner.jsx";
+import LocationPicker from "../components/LocationPicker.jsx";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiUserPlus, FiSearch, FiUpload, FiTool, FiMapPin, FiHash } from "react-icons/fi";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
@@ -271,6 +272,7 @@ function AddCustomerForm({ onCancel, onSaved }) {
   const [seqTouched, setSeqTouched] = useState(false);
   const [seqInName, setSeqInName] = useState(() => localStorage.getItem("seq_in_name") !== "false");
   const [bottleType, setBottleType] = useState("");
+  const [location, setLocation] = useState({});
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
@@ -280,7 +282,8 @@ function AddCustomerForm({ onCancel, onSaved }) {
     api.getNextCustomerSeq().then((r) => { if (!seqTouched) setSequentialNumber(r.next); }).catch(() => {});
   }, []);
 
-  function toggleSeqInName(v) {
+  function toggleSeqInName() {
+    const v = !seqInName;
     setSeqInName(v);
     localStorage.setItem("seq_in_name", v ? "true" : "false");
   }
@@ -299,12 +302,14 @@ function AddCustomerForm({ onCancel, onSaved }) {
     }
     setLoading(true);
     try {
+      const hasLoc = location.latitude != null || location.street || location.building_number;
       const result = await api.createCustomer({
         name,
         phone,
         sequential_number: seq || undefined,
         seq_in_name: seqInName,
         bottle_type: bottleType,
+        location: hasLoc ? location : undefined,
       });
       if (result.alreadyExists) {
         setInfo(result.message);
@@ -318,40 +323,42 @@ function AddCustomerForm({ onCancel, onSaved }) {
   }
 
   return (
-    <div className="card">
-      <h2 className="title-md">إضافة زبون جديد</h2>
+    <div className="card add-cust">
+      <div className="add-cust-h">
+        <h2 className="title-md" style={{ margin: 0 }}>زبون جديد</h2>
+        <button type="button" className="link-btn" onClick={onCancel}>إلغاء</button>
+      </div>
       {error && <div className="error-box">{error}</div>}
       {info && <div className="success-box">{info}</div>}
       <form onSubmit={handleSubmit}>
-        <div className="field-row" style={{ alignItems: "flex-end" }}>
-          <div className="field" style={{ flex: 2.2 }}>
-            <label>اسم العميل</label>
+        <div className="add-cust-row">
+          <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+            <label>الاسم</label>
             <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus placeholder="مثلاً: محمد" />
           </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label>الرقم التسلسلي</label>
+          <div className="field seq-field" style={{ marginBottom: 0 }}>
+            <label>الرقم</label>
             <input className="tabular-num" value={sequentialNumber} inputMode="numeric"
-              onChange={(e) => { setSeqTouched(true); setSequentialNumber(e.target.value); }} placeholder="تلقائي" style={{ textAlign: "center", fontWeight: 700 }} />
+              onChange={(e) => { setSeqTouched(true); setSequentialNumber(e.target.value); }} placeholder="تلقائي" />
           </div>
         </div>
-        <label className="check-row">
-          <input type="checkbox" checked={seqInName} onChange={(e) => toggleSeqInName(e.target.checked)} />
-          <span>اكتب الرقم جنب الاسم تلقائيًا</span>
-        </label>
-        {cleanName && (
-          <div className="seq-preview">
-            رح ينحفظ باسم: <b>{previewName}</b>{seq && <> · رقم <b className="tabular-num"><bdi dir="ltr">#{seq}</bdi></b></>}
-          </div>
-        )}
+        <button type="button" className={`seq-toggle${seqInName ? " on" : ""}`} onClick={toggleSeqInName}>
+          <span className="seq-toggle-box">{seqInName ? "✓" : ""}</span>
+          {cleanName && seqInName ? <>بينحفظ باسم <b>{previewName}</b></> : "اكتب الرقم جنب الاسم"}
+        </button>
+
         <div className="field">
           <label>رقم الهاتف</label>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} required inputMode="tel" placeholder="07xxxxxxxx" />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} required inputMode="tel" placeholder="07xxxxxxxx" dir="ltr" style={{ textAlign: "right" }} />
         </div>
+
         <BottleTypePicker value={bottleType} onChange={setBottleType} required />
-        <button className="btn-primary" disabled={loading} style={{ marginBottom: 10 }}>
-          {loading ? "جاري الحفظ..." : "حفظ العميل"}
+
+        <LocationPicker value={location} onChange={setLocation} />
+
+        <button className="btn-primary" disabled={loading} style={{ marginTop: 6 }}>
+          {loading ? "جاري الحفظ..." : "حفظ الزبون"}
         </button>
-        <button type="button" className="btn-secondary" onClick={onCancel}>إلغاء</button>
       </form>
     </div>
   );

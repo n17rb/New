@@ -741,9 +741,12 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
 }
 
 // المبلغ المطلوب كاش بعد الكوبونات والخصم (نفس حساب السيرفر)
+// الكوبون بينقبل على المنتج المعلّم إنه بيقبل كوبون، أو على القوارير اللي بترجع
+const couponable = (it) => !!(it.coupon_eligible || it.is_returnable);
+
 function computeAmountDue(stop, couponQty = {}) {
   const cashPart = (stop.items || []).reduce((sum, it) => {
-    const used = it.coupon_eligible ? Math.min(couponQty[it.id] || 0, it.quantity) : 0;
+    const used = couponable(it) ? Math.min(couponQty[it.id] || 0, it.quantity) : 0;
     return sum + (it.quantity - used) * Number(it.unit_price_snapshot);
   }, 0);
   const subtotal = Number(stop.subtotal) || 0;
@@ -755,22 +758,32 @@ function computeAmountDue(stop, couponQty = {}) {
 // بعد «تم التسليم»: خيارين كبار — كاش أو كوبون (والتفاصيل للحالات الخاصة)
 function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
   const items = stop.items || [];
-  const eligible = items.filter((it) => it.coupon_eligible);
+  // إذا ولا صنف معلّم إنه بيقبل كوبون، الكابتن بيقدر يحاسب كوبون على كل الطلب
+  const anyItem = !items.some(couponable);
+  const eligible = anyItem ? items : items.filter(couponable);
   const eligibleQty = eligible.reduce((s, it) => s + it.quantity, 0);
-  const balance = Number(stop.coupon_balance || 0);
+  const balance = Math.max(0, Number(stop.coupon_balance || 0));
   const cashAll = computeAmountDue(stop);
   const allCoupons = Object.fromEntries(eligible.map((it) => [it.id, it.quantity]));
-  const cashWithCoupons = computeAmountDue(stop, allCoupons);
-  const canCoupon = eligibleQty > 0 && balance > 0;
+  const cashWithCoupons = anyItem ? 0 : computeAmountDue(stop, allCoupons);
+  const canCoupon = eligibleQty > 0;
   const enoughCoupons = balance >= eligibleQty;
+  const paper = Math.max(0, eligibleQty - balance);
 
   function payCash() {
     deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: 0 })), { cash_received: cashAll });
     onCancel();
   }
   function payCoupons() {
-    if (!enoughCoupons) { onDetails(); return; } // كوبوناته ما بتكفي: نفتح التفاصيل (الباقي كاش أو دين)
-    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: it.quantity })), { cash_received: cashWithCoupons });
+    // زبون ما إله رصيد بالنظام = كوبون ورقي مباشرة بدون سؤال.
+    // السؤال بيطلع بس لما يكون إله رصيد ناقص (عشان تعرف إنه رح ينخصم من رصيده)
+    if (!enoughCoupons && balance > 0) {
+      const ok = window.confirm(
+        `رصيده بالنظام ${balance} كوبون بس.\nإذا استلمت منه ${eligibleQty} كوبون: بنخصم ${balance} من رصيده، و${paper} بتنحسب كوبونات ورقية.\n\nتأكيد؟`
+      );
+      if (!ok) return;
+    }
+    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: it.quantity })), { cash_received: cashWithCoupons, allow_paper_coupons: !enoughCoupons, coupon_any_item: anyItem });
     onCancel();
   }
 
@@ -789,10 +802,15 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
         <button className="pay-choice-btn coupon" disabled={busy || !canCoupon} onClick={payCoupons}>
           <span className="pc-ic">🎫</span>
           <span className="pc-t">كوبون</span>
-          <span className="pc-v tabular-num">
-            {!canCoupon ? (eligibleQty ? "ما معه كوبونات" : "الطلب ما بيقبل كوبون") : `${Math.min(eligibleQty, balance)} كوبون`}
-          </span>
-          {canCoupon && <span className="pc-s">{enoughCoupons ? `معه ${balance} · بيضل ${balance - eligibleQty}${cashWithCoupons > 0 ? ` · + ${cashWithCoupons.toFixed(2)} JD كاش` : ""}` : `معه ${balance} بس — الباقي كاش أو دين`}</span>}
+          <span className="pc-v tabular-num">{canCoupon ? `${eligibleQty} كوبون` : "الطلب ما بيقبل كوبون"}</span>
+          {canCoupon && (
+            <span className="pc-s">
+              {enoughCoupons
+                ? `معه ${balance} · بيضل ${balance - eligibleQty}`
+                : balance > 0 ? `معه ${balance} بالنظام · الباقي ورقي` : "كوبون ورقي"}
+              {cashWithCoupons > 0 ? ` · + ${cashWithCoupons.toFixed(2)} JD كاش` : ""}
+            </span>
+          )}
         </button>
       </div>
       <button className="link-btn" style={{ width: "100%", justifyContent: "center", margin: "10px 0 6px" }} onClick={onDetails}>
@@ -805,7 +823,7 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
 
 function DeliveryPaymentForm({ stop, deliverFast, onCancel }) {
   const { canAction } = usePerms();
-  const eligibleItems = stop.items.filter((it) => it.coupon_eligible);
+  const eligibleItems = stop.items.filter(couponable);
   const returnableQty = stop.items.filter((it) => it.is_returnable).reduce((s, it) => s + it.quantity, 0);
   const oldDebt = Number(stop.debt_balance || 0);
 

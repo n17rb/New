@@ -1055,3 +1055,9 @@ CREATE TABLE IF NOT EXISTS f_salvage (
   fixed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   fixed_at TIMESTAMPTZ
 );
+
+-- المحافظة (بتنعبّى لحالها من موقع الزبون)
+ALTER TABLE customer_locations ADD COLUMN IF NOT EXISTS governorate VARCHAR(80);
+
+-- كوبونات ورقية: الزبون حاسب بكوبونات مش مسجّلة برصيده (بتنعدّ بجرد السيارة)
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS paper_coupons INTEGER NOT NULL DEFAULT 0;
