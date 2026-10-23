@@ -7,7 +7,7 @@ export default function More({ onLogout }) {
   const fx = useFx();
   const nav = useNavigate();
   const items = [
-    fx.can("f_drive", "edit") && { to: "/f/drive", icon: FiTruck, label: "رحلتي", hint: "رحلة التوزيع أو جولة البيع عالمحلات" },
+    !fx.isOwner && fx.can("f_drive", "edit") && { to: "/f/drive", icon: FiTruck, label: "رحلتي", hint: "رحلة التوزيع أو جولة البيع عالمحلات" },
     (fx.can("f_money") || fx.can("f_home") || fx.can("f_stock") || fx.can("f_dispatch") || fx.can("f_drive", "edit")) && { to: "/f/jard", icon: FiClipboard, label: fx.can("f_money") || fx.can("f_home") ? "الجرد اليومي" : "جردي", hint: "كل سائق: الكاش، المرتجع، الفواتير والمصاريف بشاشة وحدة" },
     (fx.can("f_money") || fx.can("f_customers") || fx.can("f_home")) && { to: "/f/debts", icon: FiDollarSign, label: "الديون", hint: "مين عليه وقديش — اطبع الكشف أو ذكّرهم برسالة لطيفة" },
     { to: "/f/customers", icon: FiUsers, label: "العملاء", hint: "بياناتهم وطلباتهم وكشف حسابهم" },
