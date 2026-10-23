@@ -64,7 +64,7 @@ export default function Users() {
               <span className="list-text">
                 <span className="list-title">{u.full_name}</span>
                 <div className="list-sub">
-                  <span dir="ltr">@{u.username}</span> · {ROLE_LABELS[u.role] || "موظف"}
+                  <span dir="ltr">@{u.username}</span> · {u.role === "super_admin" ? ROLE_LABELS.super_admin || "مدير عام" : meta?.templates?.[u.effective_permissions?.template]?.label || ROLE_LABELS[u.role] || "موظف"}
                 </div>
               </span>
               {u.status !== "active" && <span className="badge" style={{ color: "var(--urgent)", background: "var(--urgent-soft)" }}>موقوف</span>}
@@ -93,6 +93,9 @@ function normalize(meta, input) {
   return { sections, actions };
 }
 
+// الأدوار القديمة اللي إلها معنى بالسيرفر — غيرها بينحفظ «موظف» ونوعه بينحفظ مع صلاحياته
+const KNOWN_ROLES = ["admin", "driver", "data_entry", "viewer"];
+
 function UserEditor({ meta, user, onClose, onSaved }) {
   const { user: me } = usePerms();
   const isNew = !user;
@@ -118,8 +121,23 @@ function UserEditor({ meta, user, onClose, onSaved }) {
     return null;
   }, [perms, meta]);
 
+  // نوع الحساب: بيضل زي ما اخترته (مثلًا «سائق») حتى لو عدّلت صلاحياته بإيدك
+  const [kind, setKind] = useState(() => {
+    const saved = user?.effective_permissions?.template;
+    if (saved && meta.templates[saved]) return saved;
+    if (!user) return meta.templates.driver ? "driver" : Object.keys(meta.templates)[0];
+    for (const [key, t] of Object.entries(meta.templates)) if (samePermissions(normalize(meta, t), normalize(meta, user.effective_permissions))) return key;
+    if (meta.templates[user.role]) return user.role;
+    // حسابات قديمة انعدّلت صلاحياتها قبل: إذا معه «تطبيق السائق» فهو سائق
+    if (meta.templates.driver && user.effective_permissions?.sections?.f_drive === "edit") return "driver";
+    return null;
+  });
+  const customized = !!kind && matchingTemplate !== kind;
+
   function applyTemplate(key) {
     setIsOwnerRole(false);
+    if (key === kind && customized && !confirm("ترجّع صلاحياته للأصل تبع هالنوع؟ التعديلات الخاصة فيه بتروح.")) return;
+    setKind(key);
     setPerms(normalize(meta, meta.templates[key]));
   }
 
@@ -153,12 +171,12 @@ function UserEditor({ meta, user, onClose, onSaved }) {
       return;
     }
 
-    const role = isOwnerRole ? "super_admin" : matchingTemplate || "staff";
+    const role = isOwnerRole ? "super_admin" : KNOWN_ROLES.includes(kind) ? kind : "staff";
     const body = {
       full_name: fullName.trim(),
       username: username.trim(),
       role,
-      permissions: isOwnerRole ? undefined : perms,
+      permissions: isOwnerRole ? undefined : { ...perms, template: kind || undefined },
     };
     if (password) body.password = password;
     if (!isNew) body.status = active ? "active" : "disabled";
@@ -231,7 +249,7 @@ function UserEditor({ meta, user, onClose, onSaved }) {
           <button
             key={key}
             type="button"
-            className={!isOwnerRole && matchingTemplate === key ? "btn-primary" : "btn-secondary"}
+            className={!isOwnerRole && kind === key ? "btn-primary" : "btn-secondary"}
             style={{ width: "auto", padding: "9px 14px", fontSize: "0.85rem" }}
             onClick={() => applyTemplate(key)}
           >
@@ -251,9 +269,11 @@ function UserEditor({ meta, user, onClose, onSaved }) {
       <p className="text-secondary" style={{ margin: "0 4px 4px", fontSize: "0.8rem" }}>
         {isOwnerRole
           ? "المدير العام بيشوف وبيعدّل كل شي، وبيدير الموظفين."
-          : matchingTemplate
-            ? "اختار قالب وبعدين عدّل أي قسم تحت."
-            : "صلاحيات مخصصة لهذا الموظف."}
+          : !kind
+            ? "اختار نوع الحساب، وبعدين عدّل أي قسم تحت."
+            : customized
+              ? <>✎ {meta.templates[kind]?.label} بصلاحيات خاصة فيه — بيضل {meta.templates[kind]?.label}. <button type="button" onClick={() => applyTemplate(kind)} style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: "0.8rem", padding: 0 }}>رجّع الأصل</button></>
+              : "عدّل أي قسم تحت براحتك — نوع الحساب بيضل زي ما هو."}
       </p>
 
       {!isOwnerRole && (

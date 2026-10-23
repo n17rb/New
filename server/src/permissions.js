@@ -181,7 +181,9 @@ export function sanitizePermissions(input) {
   }
   const actions = {};
   for (const a of ACTIONS) actions[a.key] = input?.actions?.[a.key] === true;
-  return { sections, actions };
+  // نوع الحساب اللي اختاره المدير (سائق، محاسب…) — بيضل حتى لو عدّل صلاحياته
+  const template = typeof input?.template === "string" && /^[a-z_]{1,30}$/.test(input.template) ? input.template : undefined;
+  return template ? { sections, actions, template } : { sections, actions };
 }
 
 // صلاحيات المستخدم الفعلية
