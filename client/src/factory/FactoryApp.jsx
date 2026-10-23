@@ -174,7 +174,10 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
       can("f_money") && { to: "/f/money", icon: FiDollarSign, label: "الحسابات" },
       isDriver && can("f_home") && { to: "/f/drive", icon: FiNavigation, label: "رحلتي" },
     ].filter(Boolean);
-    return [...all.slice(0, 4), { to: "/f/more", icon: FiGrid, label: "المزيد" }];
+    // «رحلتي» دايمًا ظاهرة للسائق والمندوب — حتى لو معه صلاحيات ثانية كثير
+    let top = all.slice(0, 4);
+    if (isDriver && !top.some((n) => n.to === "/f/drive")) top = [top[0], { to: "/f/drive", icon: FiNavigation, label: "رحلتي" }, ...top.slice(1, 3)].filter(Boolean);
+    return [...top, { to: "/f/more", icon: FiGrid, label: "المزيد" }];
   }, [can, isDriver]);
   const home = can("f_home") ? "/" : nav[0]?.to || "/f/more";
 
