@@ -89,6 +89,7 @@ router.get("/money/debts", needAny(["f_money"], ["f_customers"], ["f_home"]), as
     `SELECT c.id, c.seq_no, c.name, c.phone, c.city, c.governorate, c.district, c.balance, c.credit_limit, l.name AS line_name,
             (SELECT MAX(created_at) FROM f_messages m WHERE m.customer_id = c.id AND m.kind = 'debt') AS reminded_at,
             (SELECT MAX(created_at) FROM f_ledger p WHERE p.customer_id = c.id AND p.kind = 'payment') AS last_payment_at,
+            (SELECT u.full_name FROM f_ledger p JOIN users u ON u.id = p.created_by WHERE p.customer_id = c.id AND p.kind = 'payment' ORDER BY p.id DESC LIMIT 1) AS last_payment_by,
             (SELECT MIN(g.created_at) FROM f_ledger g WHERE g.customer_id = c.id AND g.kind IN ('invoice','opening')
                AND g.created_at > COALESCE((SELECT MAX(p.created_at) FROM f_ledger p WHERE p.customer_id = c.id AND p.kind = 'payment' AND p.balance_after <= 0), 'epoch')) AS since
      FROM f_customers c LEFT JOIN f_lines l ON l.id = c.line_id

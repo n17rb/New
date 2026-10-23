@@ -195,6 +195,7 @@ router.post("/customers-region", async (req, res) => {
 
 router.post("/customers", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
+  if (!can(req.user, "f_customers", "edit")) Object.assign(c, { pay_terms: "cash", credit_limit: 0 }); // شروط الدفع للإدارة
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -225,8 +226,16 @@ router.post("/customers", edit, async (req, res) => {
   }
 });
 
-router.put("/customers/:id", need("f_customers", "edit"), async (req, res) => {
+router.put("/customers/:id", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
+  // السائق/المدخل بيعدّل البيانات (الاسم، التلفون، الموقع، الصورة…) بس مش شروط الدفع ولا السقف ولا الخط ولا الأسعار
+  const full = can(req.user, "f_customers", "edit");
+  if (!full) {
+    const old = (await query("SELECT line_id, pay_terms, credit_limit, seq_no FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
+    if (!old) return bad(res, "الزبون غير موجود.", 404);
+    Object.assign(c, { line_id: old.line_id, pay_terms: old.pay_terms, credit_limit: Number(old.credit_limit), seq_no: old.seq_no });
+    delete req.body.prices;
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -240,7 +249,7 @@ router.put("/customers/:id", need("f_customers", "edit"), async (req, res) => {
       [c.name, c.contact_name, c.phone, c.city, c.address, c.line_id, c.lat, c.lng, c.kind, c.pay_terms, c.credit_limit, c.notes, req.params.id, c.seq_no, c.photo_url, c.maps_url, c.governorate, c.district]
     );
     if (!r.rows[0]) { await client.query("ROLLBACK"); return bad(res, "الزبون غير موجود.", 404); }
-    await savePrices(client, r.rows[0].id, req.body?.prices);
+    if (full) await savePrices(client, r.rows[0].id, req.body?.prices);
     await client.query("COMMIT");
     await logActivity({ userId: req.user.id, action: "F_UPDATE_CUSTOMER", recordType: "f_customer", recordId: r.rows[0].id, newValue: c });
     res.json(r.rows[0]);
@@ -275,16 +284,27 @@ router.delete("/customers/:id", need("f_customers", "edit"), async (req, res) =>
 });
 
 // ---------- دفعة من الزبون (كاش، شيك، تحويل) ----------
-router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customers", "edit"]), async (req, res) => {
+router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customers", "edit"], ["f_drive", "edit"]), async (req, res) => {
   const amount = round2(req.body?.amount);
   if (!(amount > 0)) return bad(res, "اكتب المبلغ.");
-  const method = ["cash", "cheque", "transfer"].includes(req.body?.method) ? req.body.method : "cash";
+  // السائق قبض دين: كاش بس، وبينضاف على الكاش اللي معه برحلته (بيسلّمه بالتسوية)
+  const office = can(req.user, "f_money", "edit") || can(req.user, "f_customers", "edit");
+  let tripId = null;
+  if (!office || req.body?.by_driver) {
+    const t = (await query(
+      "SELECT id FROM f_trips WHERE driver_id = $1 AND (status = 'active' OR (status = 'returned' AND settled_at IS NULL)) ORDER BY (status = 'active') DESC, id DESC LIMIT 1",
+      [req.user.id]
+    )).rows[0];
+    if (!t) return bad(res, "ما في رحلة شغالة إلك — بلّش رحلتك (أو اشتغل مندوب) عشان الدفعة تنحسب مع كاشك.");
+    tripId = t.id;
+  }
+  const method = tripId ? "cash" : ["cash", "cheque", "transfer"].includes(req.body?.method) ? req.body.method : "cash";
   if (method === "cheque" && !req.body?.cheque_no) return bad(res, "اكتب رقم الشيك.");
   const c = (await query("SELECT id, name FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
   if (!c) return bad(res, "الزبون غير موجود.", 404);
   const balance = await postLedger(null, {
-    customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null,
-    chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300), userId: req.user.id,
+    customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null, tripId,
+    chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300) || (tripId ? `قبضها ${req.user.full_name}` : null), userId: req.user.id,
   });
   const message_id = await queueMessage({ customerId: c.id, kind: "payment", data: { amount, balance }, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CUSTOMER_PAYMENT", recordType: "f_customer", recordId: c.id, newValue: { amount, method } });

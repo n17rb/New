@@ -142,7 +142,7 @@ function CustomerEdit({ c, onClose, onSaved }) {
           <div className="fx-stack" style={{ marginTop: 12 }}>
             <label className="fx-sf">العنوان بالتفصيل<input className="fx-input" value={f.address} onChange={set("address")} placeholder="الشارع، العمارة، جنب..." /></label>
             <label className="fx-sf">اسم صاحبه<input className="fx-input" value={f.contact_name} onChange={set("contact_name")} /></label>
-            {fx.boot.lines.length > 0 && (
+            {canPrices && fx.boot.lines.length > 0 && (
               <label className="fx-sf">الخط
                 <select value={f.line_id} onChange={set("line_id")}>
                   <option value="">بدون</option>
@@ -150,13 +150,13 @@ function CustomerEdit({ c, onClose, onSaved }) {
                 </select>
               </label>
             )}
-            <div className="fx-sf">طريقة الدفع
+            {canPrices && <div className="fx-sf">طريقة الدفع
               <div className="fx-chips">
                 <button className={`fx-chip ${f.pay_terms === "cash" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "cash" })}>كاش</button>
                 <button className={`fx-chip ${f.pay_terms === "credit" ? "on" : ""}`} onClick={() => setF({ ...f, pay_terms: "credit" })}>دين (ذمم)</button>
               </div>
-            </div>
-            {f.pay_terms === "credit" && <label className="fx-sf">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
+            </div>}
+            {canPrices && f.pay_terms === "credit" && <label className="fx-sf">سقف الدين (دينار)<input className="fx-input" type="number" inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} /></label>}
             {!c && canMoney && <label className="fx-sf">رصيد قديم عليه<input className="fx-input" type="number" inputMode="decimal" value={f.opening_balance} onChange={set("opening_balance")} /></label>}
             {canPrices && fx.boot.products.length > 0 && (
               <div className="fx-sf"><span>أسعار خاصة <span className="opt">(فاضي = السعر العادي)</span></span>
@@ -358,7 +358,7 @@ function CustomerView({ id, onClose, onEdit, onChanged, onOrder }) {
               <b style={{ fontSize: 18 }}>{c.seq_no ? <span className="fx-seq">#{c.seq_no}</span> : null}{c.name}</b>
               <span className="fx-muted">{[c.city, c.address].filter(Boolean).join(" · ") || "بدون عنوان"}{c.line_name ? ` · ${c.line_name}` : ""}</span>
             </span>
-            {fx.can("f_customers", "edit") && <button className="fx-btn sm" onClick={() => onEdit(c)}><FiEdit2 /> عدّل</button>}
+            {(fx.can("f_customers", "edit") || fx.can("f_orders", "edit") || fx.can("f_drive", "edit")) && <button className="fx-btn sm" onClick={() => onEdit(c)}><FiEdit2 /> عدّل</button>}
           </div>
           {onOrder && <button className="fx-btn pri block fx-big" onClick={() => onOrder(c)}><FiShoppingCart /> طلب جديد لهالزبون</button>}
           <div className="fx-quick">
@@ -393,7 +393,7 @@ function CustomerView({ id, onClose, onEdit, onChanged, onOrder }) {
                 {c.ledger.map((g) => (
                   <tr key={g.id}>
                     <td>{dateTime(g.created_at)}</td>
-                    <td>{KIND[g.kind]}{g.method === "cheque" ? ` (شيك ${g.cheque_no || ""})` : ""}{g.note ? ` · ${g.note}` : ""}</td>
+                    <td>{KIND[g.kind]}{g.method === "cheque" ? ` (شيك ${g.cheque_no || ""})` : ""}{g.note ? ` · ${g.note}` : ""}{g.kind === "payment" && g.by_name && !(g.note || "").includes(g.by_name) ? ` · استلمها ${g.by_name}` : ""}</td>
                     <td style={{ color: g.amount < 0 ? "var(--fx-ok)" : "inherit" }}>{money(g.amount)}</td>
                     <td>{money(g.balance_after)}</td>
                   </tr>

@@ -12,7 +12,8 @@ import { loadTrips } from "./orders.js";
 // (تالف السيارة والماكنة ما بيأثر على رصيد المستودع: الكراتين أصلًا طلعت أو ما انتجت)
 // ============================================================
 const router = Router();
-const viewStock = needAny(["f_stock"], ["f_production"], ["f_home"], ["f_dispatch"]);
+const viewStock = needAny(["f_stock"], ["f_production"], ["f_home"], ["f_dispatch"], ["f_machines"]);
+const editMachines = needAny(["f_production", "edit"], ["f_machines", "edit"]);
 const editStock = need("f_stock", "edit");
 const editProd = need("f_production", "edit");
 
@@ -156,9 +157,21 @@ router.get("/stock/loading", viewStock, async (req, res) => {
       id: t.id, vehicle_name: t.vehicle_name, driver_name: t.driver_name, status: t.status, trip_date: t.trip_date, capacity: t.capacity, load: t.load,
       load_confirmed_at: t.load_confirmed_at, items: [...per.values()], extra_items: t.extra_items,
       returns_expected: t.status === "returned" ? expectedReturns(t) : null, returns_received: !!t.returns_received_at,
+      exchanged: exchangedPer(t),
     };
   }));
 });
+
+// التالف اللي أخذه السائق من الزباين (استبدال) — بيرجع معه للمستودع ليتفرز
+function exchangedPer(t) {
+  const per = new Map();
+  for (const o of t.stops || []) if (o.status === "delivered") for (const x of o.exchanges || []) {
+    const e = per.get(x.product_id) || { product_id: x.product_id, name: x.name, qty: 0 };
+    e.qty += x.qty;
+    per.set(x.product_id, e);
+  }
+  return [...per.values()].filter((x) => x.qty > 0);
+}
 
 export function expectedReturns(t) {
   // بعد التحميل: اللي طلع على السيارة − اللي انسلّم (مع البونص) − اللي تلف بالسيارة
@@ -223,6 +236,19 @@ router.post("/stock/trips/:id/returns", editStock, async (req, res) => {
   for (const [pid, q] of got) {
     if (!expected.find((e) => e.product_id === pid) && q > 0) await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'return',$2,$3,$4,'زيادة عن المتوقع',$5)", [pid, q, t.id, t.vehicle_id, req.user.id]);
   }
+  // فرز التالف اللي جابه من الزباين: الصالح بيروح للإنتاج يصلّحه، والخربان بينشطب
+  const exch = exchangedPer(t);
+  for (const sv of Array.isArray(req.body?.salvage) ? req.body.salvage : []) {
+    const e = exch.find((x) => x.product_id === Number(sv.product_id));
+    if (!e) continue;
+    const good = Math.max(0, Math.min(e.qty, Math.round(Number(sv.good) || 0)));
+    const badQ = Math.max(0, Math.round(Number(sv.bad) || 0));
+    if (!good && !badQ) continue;
+    await query(
+      "INSERT INTO f_salvage (trip_id, product_id, good, bad, status, sorted_by) VALUES ($1,$2,$3,$4,$5,$6)",
+      [t.id, e.product_id, good, badQ, good > 0 ? "pending" : "done", req.user.id]
+    );
+  }
   await query("UPDATE f_trips SET returns_received_at = now(), returns_received_by = $1 WHERE id = $2", [req.user.id, t.id]);
   if (short.length && t.driver_id) {
     const prices = new Map((await query("SELECT id, price FROM f_products")).rows.map((p) => [p.id, Number(p.price)]));
@@ -235,6 +261,30 @@ router.post("/stock/trips/:id/returns", editStock, async (req, res) => {
   }
   await maybeClose(t.id);
   res.json({ ok: true, short });
+});
+
+// ---------- التالف الصالح: أمين التحميل فرزه، والإنتاج بيصلّحه/بيعيد تغليفه وبيرجع للمستودع ----------
+router.get("/stock/salvage", viewStock, async (req, res) => {
+  const r = await query(
+    `SELECT s.*, p.name, v.name AS vehicle_name, u1.full_name AS sorted_by_name, u2.full_name AS fixed_by_name
+     FROM f_salvage s JOIN f_products p ON p.id = s.product_id
+     LEFT JOIN f_trips t ON t.id = s.trip_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id
+     LEFT JOIN users u1 ON u1.id = s.sorted_by LEFT JOIN users u2 ON u2.id = s.fixed_by
+     WHERE s.status = 'pending' OR s.sorted_at > now() - interval '7 days' ORDER BY s.status = 'pending' DESC, s.id DESC LIMIT 100`
+  );
+  res.json(r.rows);
+});
+
+router.post("/stock/salvage/:id/fix", editProd, async (req, res) => {
+  const s = (await query("SELECT s.*, p.name FROM f_salvage s JOIN f_products p ON p.id = s.product_id WHERE s.id = $1", [req.params.id])).rows[0];
+  if (!s) return bad(res, "غير موجود.", 404);
+  if (s.status !== "pending") return bad(res, "انسجّل من قبل.");
+  const qty = req.body?.qty == null || req.body.qty === "" ? s.good : Math.round(Number(req.body.qty));
+  if (!(qty >= 0 && qty <= s.good)) return bad(res, `اكتب رقم من 0 لـ${s.good}.`);
+  const u = await query("UPDATE f_salvage SET status = 'done', fixed_qty = $1, fixed_by = $2, fixed_at = now() WHERE id = $3 AND status = 'pending' RETURNING id", [qty, req.user.id, s.id]);
+  if (!u.rows[0]) return bad(res, "انسجّل من قبل.");
+  if (qty > 0) await query("INSERT INTO f_stock_moves (product_id, kind, qty, reason, created_by) VALUES ($1,'production',$2,'تصليح تالف من الزباين',$3)", [s.product_id, qty, req.user.id]);
+  res.json({ ok: true, qty });
 });
 
 export async function maybeClose(tripId) {
@@ -272,7 +322,7 @@ router.get("/stock/downtime", viewStock, async (req, res) => {
   );
   res.json(r.rows);
 });
-router.post("/stock/downtime", editProd, async (req, res) => {
+router.post("/stock/downtime", editMachines, async (req, res) => {
   const mid = Number(req.body?.machine_id);
   const reason = String(req.body?.reason || "").trim();
   if (!mid || !reason) return bad(res, "اختار الماكنة والسبب.");
@@ -283,7 +333,7 @@ router.post("/stock/downtime", editProd, async (req, res) => {
   await alert({ level: "warn", kind: "downtime", ref: r.rows[0].id, title: `${m?.name || "ماكنة"} وقفت`, body: `السبب: ${reason}.` });
   res.status(201).json({ id: r.rows[0].id });
 });
-router.post("/stock/downtime/:id/end", editProd, async (req, res) => {
+router.post("/stock/downtime/:id/end", editMachines, async (req, res) => {
   const d = (await query("SELECT d.*, m.name FROM f_downtime d JOIN f_machines m ON m.id = d.machine_id WHERE d.id = $1", [req.params.id])).rows[0];
   if (!d) return bad(res, "غير موجود.", 404);
   if (d.ended_at) return bad(res, "الماكنة مسجّلة شغالة من قبل.");

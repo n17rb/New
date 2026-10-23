@@ -7,6 +7,8 @@ import TripsMap from "./TripsMap.jsx";
 import { SalesStartCard, SalesDay, ExchangeEditor, exchangeList, PayBox, SellSheet } from "./Sales.jsx";
 import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
+import { PaySheet } from "./Debts.jsx";
+import { smartFilter } from "../smartSearch.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
 
 // ============================================================
@@ -179,7 +181,10 @@ export default function Drive() {
           )}
 
           {t.status === "active" && (
-            <button className="fx-btn sky block" onClick={() => setSheet({ kind: "walkin" })}>🛒 زبون وقّفني — بيع من السيارة</button>
+            <div className="fx-grid2">
+              <button className="fx-btn sky" onClick={() => setSheet({ kind: "walkin" })}>🛒 بيع لزبون عالطريق</button>
+              <button className="fx-btn" onClick={() => setSheet({ kind: "debt" })}>💵 قبض دين</button>
+            </div>
           )}
           {["planned", "active"].includes(t.status) && <TripsMap trips={[t]} live={mapLive} factory={factory} selected={null} onSelect={() => {}} height="34vh" />}
 
@@ -239,6 +244,8 @@ export default function Drive() {
       )}
       {sheet?.kind === "fail" && <FailSheet o={sheet.o} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "problem" && <ProblemSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "debt" && <PickDebtor onClose={() => setSheet(null)} onPick={(c) => setSheet({ kind: "pay", c })} />}
+      {sheet?.kind === "pay" && <PaySheet c={sheet.c} byDriver onClose={() => setSheet(null)} onDone={(r) => { setSheet(null); reload(); if (r?.message_id) setMsgs([r.message_id]); }} />}
       {sheet?.kind === "walkin" && t && (
         <SellSheet t={t} stock={data.car_stock} canCredit={data.can_credit} onClose={() => setSheet(null)}
           onDone={(r) => { setSheet(null); if (r?.queued) return; reload(); setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone }, msg: r.message_id }); }} />
@@ -506,7 +513,8 @@ function CashSheet({ t, onClose }) {
   return (
     <Sheet title="حسابي اليوم" onClose={onClose}>
       <div className="fx-card">
-        <div className="fx-kv"><span>كاش محصّل من الزباين</span><b>{money(t.collected)}</b></div>
+        <div className="fx-kv"><span>كاش من الفواتير</span><b>{money(t.collected - (t.debt_collected || 0))}</b></div>
+        {t.debt_collected > 0 && <div className="fx-kv"><span>+ ديون قبضتها ({t.debt_collections.length})</span><b>{money(t.debt_collected)}</b></div>}
         {t.expenses.filter((e) => e.status !== "rejected").map((e) => (
           <div key={e.id} className="fx-kv"><span>− {e.kind}{e.status === "pending" ? " (بانتظار الموافقة)" : ""}</span><b>{money(e.amount)}</b></div>
         ))}
@@ -538,5 +546,32 @@ function OutboxBar() {
         </div>
       ))}
     </div>
+  );
+}
+
+// قبض دين: الزباين اللي عليهم دين، الأقرب لمكانك أول
+function PickDebtor({ onClose, onPick }) {
+  const [list, setList] = useState(null);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    getLocation(6000).then((l) => fapi.driverShops({ lat: l?.lat, lng: l?.lng })).then((xs) => setList(xs.filter((c) => c.balance > 0.009))).catch(() => setList([]));
+  }, []);
+  const shown = list ? (q.trim() ? smartFilter(list, q) : list) : null;
+  return (
+    <Sheet title="مين دفع من دينه؟" onClose={onClose}>
+      <div className="fx-stack">
+        <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر بالاسم أو الرقم" />
+        {!list && <Loading />}
+        {shown && shown.length === 0 && <div className="fx-muted">ما في زباين عليهم دين{q ? " بهالبحث" : ""}.</div>}
+        <div className="fx-drv-list">
+          {shown?.map((c) => (
+            <button key={c.id} className="r fx-plain" style={{ width: "100%", textAlign: "start" }} onClick={() => onPick(c)}>
+              <span className="t"><b>{c.name}</b><small>{[c.city, c.km != null ? `${c.km} كم` : null].filter(Boolean).join(" · ")}</small></span>
+              <b style={{ color: "#b06a00" }}>{money(c.balance)}</b>
+            </button>
+          ))}
+        </div>
+      </div>
+    </Sheet>
   );
 }

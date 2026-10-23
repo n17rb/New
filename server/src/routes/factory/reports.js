@@ -252,6 +252,7 @@ function machinesFix(rows) {
 export async function factoryWatch() {
   await checkVehicleDocs();
   await runRecurring().catch((e) => console.error("recurring:", e.message));
+  await (await import("./maint.js")).checkMaint().catch((e) => console.error("maint:", e.message));
   // سائق متأخر عن موعد زبون أكثر من نص ساعة
   const late = (await query(
     `SELECT o.id, o.eta_at, c.name, v.name AS vehicle, u.full_name AS driver

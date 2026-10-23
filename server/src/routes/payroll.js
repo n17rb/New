@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { can } from "../permissions.js";
+import { can, canAction } from "../permissions.js";
 import { jordanDate } from "../utils/forecast.js";
 
 // ============================================================
@@ -364,10 +364,13 @@ router.get("/me", async (req, res) => {
   res.json({
     ...employeeSummary(e, att.get(e.id) || new Map(), txs.get(e.id) || [], today, today.slice(0, 7)),
     recent_transactions: (txs.get(e.id) || []).slice(0, 15),
+    can_check_in: canAction(req.user, "self_attendance"),
   });
 });
 
 router.post("/me/check-in", async (req, res) => {
+  // تسجيل الحضور بالتلفون بس لمين الإدارة عطته الصلاحية
+  if (!canAction(req.user, "self_attendance")) return res.status(403).json({ error: "تسجيل الحضور من عند الإدارة — ما عندك صلاحية تسجّله بنفسك." });
   const r = await query("SELECT id FROM employees WHERE user_id = $1 AND status = 'active'", [req.user.id]);
   if (!r.rows[0]) return res.status(404).json({ error: "حسابك مش مربوط بموظف — راجع الإدارة." });
   const today = jordanDate();

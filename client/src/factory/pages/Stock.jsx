@@ -9,17 +9,18 @@ export default function Stock() {
   const [params, setParams] = useSearchParams();
   const canStock = fx.can("f_stock");
   const canProd = fx.can("f_production");
+  const canMach = fx.can("f_machines");
   const boss = fx.can("f_home");
   const tabs = [
-    ["stock", "اليوم"],
+    canStock || canProd || boss ? ["stock", "اليوم"] : null,
     canStock || boss ? ["load", "تحميل السيارات"] : null,
-    canProd || boss ? ["prod", "المكنات"] : null,
-    ["log", "السجل"],
+    canProd || canMach || boss ? ["prod", "المكنات"] : null,
+    canStock || canProd || boss ? ["log", "السجل"] : null,
   ].filter(Boolean);
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || tabs[0][0];
   return (
     <div className="fx-page">
-      <h1 className="fx-h1">{canStock || boss ? "المستودع" : "الإنتاج"}</h1>
+      <h1 className="fx-h1">{canStock || boss ? "المستودع" : canProd ? "الإنتاج" : "المكنات والأعطال"}</h1>
       <div className="fx-tabs">
         {tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}
       </div>
@@ -77,6 +78,8 @@ function Overview() {
               <small>كرتونة</small>
             </div>
           </section>
+
+          {(editProd || editStock || fx.can("f_home")) && <SalvageCard canFix={editProd} onFixed={reload} />}
 
           {(editProd || editStock) && (
             <div className="fx-actions3">
@@ -296,9 +299,10 @@ function LoadSheet({ t, onClose, onDone }) {
 
 function ReturnSheet({ t, onClose, onDone }) {
   const fx = useFx();
-  const { data: trip } = useLoad(() => fapi.settlements().then((l) => l.find((x) => x.id === t.id)), [t.id]);
-  const expected = trip?.returns_expected || [];
+  const expected = t.returns_expected || [];
+  const exch = t.exchanged || [];
   const [vals, setVals] = useState({});
+  const [good, setGood] = useState({});
   const [short, setShort] = useState(null);
   if (short) {
     return (
@@ -310,20 +314,43 @@ function ReturnSheet({ t, onClose, onDone }) {
       </Sheet>
     );
   }
+  const goodOf = (e) => Math.max(0, Math.min(e.qty, Number(good[e.product_id] ?? 0) || 0));
   return (
     <Sheet title={`مرتجع ${t.vehicle_name}`} onClose={onClose}>
       <div className="fx-stack">
-        {!trip && <Loading />}
-        {trip && expected.length === 0 && <div className="fx-note ok">كل الحمولة انباعت — ما في مرتجع متوقع.</div>}
+        <b>📦 بضاعة سليمة رجعت</b>
+        {expected.length === 0 && <div className="fx-note ok">كل الحمولة انباعت — ما في مرتجع متوقع.</div>}
         {expected.map((e) => (
           <label key={e.product_id} className="fx-row" style={{ flexWrap: "nowrap" }}>
             <span className="fx-grow">{e.name} <span className="fx-muted">(المفروض {num(e.qty)})</span></span>
             <input className="fx-input" style={{ width: 110 }} type="number" inputMode="numeric" value={vals[e.product_id] ?? e.qty} onChange={(ev) => setVals({ ...vals, [e.product_id]: ev.target.value })} />
           </label>
         ))}
-        <Act className="fx-btn pri block" disabled={!trip} onClick={async () => {
-          const r = await fapi.receiveReturns(t.id, expected.map((e) => ({ product_id: e.product_id, qty: Number(vals[e.product_id] ?? e.qty) })));
-          fx.toast("انستلم المرتجع ورجع للمستودع");
+        {exch.length > 0 && (
+          <div className="fx-card fx-stack" style={{ gap: 8, background: "var(--fx-warn-soft, #fff7e6)" }}>
+            <b>🔁 تالف من الزباين — افرزه</b>
+            <small className="fx-muted">السائق جاب هالتالف (بدّله للزباين). اكتب كم منه بينفع يتصلّح أو ينعاد تغليفه — بيروح للإنتاج، والباقي بينشطب.</small>
+            {exch.map((e) => (
+              <div key={e.product_id} className="fx-stack" style={{ gap: 4 }}>
+                <div className="fx-row" style={{ flexWrap: "nowrap" }}>
+                  <span className="fx-grow">{e.name} <span className="fx-muted">({num(e.qty)} كرتونة)</span></span>
+                  <label className="fx-row" style={{ gap: 6, flexWrap: "nowrap" }}><small>صالح</small>
+                    <input className="fx-input" style={{ width: 90 }} type="number" inputMode="numeric" min="0" max={e.qty} value={good[e.product_id] ?? ""} placeholder="0" onChange={(ev) => setGood({ ...good, [e.product_id]: ev.target.value })} />
+                  </label>
+                </div>
+                <small className="fx-muted">✓ {num(goodOf(e))} للإنتاج · ✗ {num(e.qty - goodOf(e))} تالف نهائي</small>
+              </div>
+            ))}
+          </div>
+        )}
+        <Act className="fx-btn pri block" onClick={async () => {
+          const r = await fapi.receiveReturns(
+            t.id,
+            expected.map((e) => ({ product_id: e.product_id, qty: Number(vals[e.product_id] ?? e.qty) })),
+            exch.map((e) => ({ product_id: e.product_id, good: goodOf(e), bad: e.qty - goodOf(e) }))
+          );
+          const g = exch.reduce((a, e) => a + goodOf(e), 0);
+          fx.toast(g ? `انستلم المرتجع — و${g} كرتونة صالحة راحت للإنتاج` : "انستلم المرتجع ورجع للمستودع");
           setShort(r.short || []);
         }}>استلمت المرتجع</Act>
       </div>
@@ -331,10 +358,47 @@ function ReturnSheet({ t, onClose, onDone }) {
   );
 }
 
+// ---------- التالف الصالح اللي فرزه أمين التحميل: الإنتاج بيصلّحه وبيرجع للمستودع ----------
+function SalvageCard({ canFix, onFixed }) {
+  const fx = useFx();
+  const { data, reload } = useLoad(() => fapi.salvage(), []);
+  const [fixing, setFixing] = useState(null);
+  const [qty, setQty] = useState("");
+  const pending = (data || []).filter((s) => s.status === "pending");
+  if (!pending.length) return null;
+  return (
+    <section className="fx-card fx-stack" style={{ gap: 8, borderInlineStart: "4px solid var(--fx-warn)" }}>
+      <b>📥 تالف صالح وصلك — {num(pending.reduce((a, s) => a + s.good, 0))} كرتونة</b>
+      <small className="fx-muted">أمين التحميل فرزه من تالف الزباين. صلّحه أو أعد تغليفه، واكبس «صلّحته» — بيرجع لرصيد المستودع.</small>
+      {pending.map((s) => (
+        <div key={s.id} className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
+          <span className="fx-grow"><b>{num(s.good)} {s.name}</b><br /><small className="fx-muted">{[s.vehicle_name, s.sorted_by_name && `فرزه ${s.sorted_by_name}`, date(s.sorted_at)].filter(Boolean).join(" · ")}</small></span>
+          {canFix && <button className="fx-btn sm ok" onClick={() => { setFixing(s); setQty(String(s.good)); }}>✓ صلّحته</button>}
+        </div>
+      ))}
+      {fixing && (
+        <Sheet title={`تصليح ${fixing.name}`} onClose={() => setFixing(null)}>
+          <div className="fx-stack">
+            <label className="fx-field">كم كرتونة صارت جاهزة؟ (من {num(fixing.good)})
+              <input className="fx-input fx-num" style={{ fontSize: 22, textAlign: "center", fontWeight: 800 }} type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} />
+            </label>
+            <small className="fx-muted">اللي ما زبط منها بينشطب كتالف.</small>
+            <Act className="fx-btn ok block fx-huge" onClick={async () => {
+              const r = await fapi.fixSalvage(fixing.id, qty);
+              fx.toast(`رجع ${r.qty} كرتونة للمستودع ✓`);
+              setFixing(null); reload(); onFixed?.();
+            }}>✓ رجّعها للمستودع</Act>
+          </div>
+        </Sheet>
+      )}
+    </section>
+  );
+}
+
 // ---------- الإنتاج والمواد الخام والأعطال ----------
 function Production() {
   const fx = useFx();
-  const edit = fx.can("f_production", "edit");
+  const edit = fx.can("f_production", "edit") || fx.can("f_machines", "edit");
   const { data, error, reload } = useLoad(() => Promise.all([fapi.stock(), fapi.downtime()]), []);
   const [sheet, setSheet] = useState(null);
   const [stock, downs] = data || [];

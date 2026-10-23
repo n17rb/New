@@ -1021,6 +1021,41 @@ DO $$ BEGIN
   ALTER TABLE f_order_items ADD CONSTRAINT f_order_items_qty_check CHECK (qty >= 0);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- صيانة السيارات: غيار زيت، ميكانيك، كوشوك، بطاريات — ومواعيدها الجاية بالكيلومتر والتاريخ
+ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS odo INTEGER;
+ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS odo_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS f_maint (
+  id SERIAL PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES f_vehicles(id) ON DELETE CASCADE,
+  kind VARCHAR(20) NOT NULL DEFAULT 'other',
+  title VARCHAR(150),
+  odo INTEGER,
+  cost NUMERIC(10,2) NOT NULL DEFAULT 0,
+  note TEXT,
+  photo_url TEXT,
+  next_km INTEGER,
+  next_date DATE,
+  done_on DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_maint_vehicle ON f_maint(vehicle_id, id DESC);
+
+-- التالف اللي رجع من الزباين: أمين التحميل بيفرزه، والصالح بيروح للإنتاج يصلّحه ويرجع للمستودع
+CREATE TABLE IF NOT EXISTS f_salvage (
+  id SERIAL PRIMARY KEY,
+  trip_id INTEGER REFERENCES f_trips(id) ON DELETE SET NULL,
+  product_id INTEGER NOT NULL REFERENCES f_products(id),
+  good INTEGER NOT NULL DEFAULT 0,
+  bad INTEGER NOT NULL DEFAULT 0,
+  status VARCHAR(10) NOT NULL DEFAULT 'pending',
+  sorted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  sorted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  fixed_qty INTEGER,
+  fixed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  fixed_at TIMESTAMPTZ
+);
+
 -- المحافظة (بتنعبّى لحالها من موقع الزبون)
 ALTER TABLE customer_locations ADD COLUMN IF NOT EXISTS governorate VARCHAR(80);
 

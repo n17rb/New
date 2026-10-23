@@ -13,6 +13,7 @@ import sample from "./sample.js";
 import recurring from "./recurring.js";
 import jard from "./jard.js";
 import corrections from "./corrections.js";
+import maint from "./maint.js";
 
 // ============================================================
 // موج للمصانع — كل مسارات المصنع تحت /api/factory
@@ -30,6 +31,7 @@ router.use(sample);
 router.use(recurring);
 router.use(jard);
 router.use(corrections);
+router.use(maint);
 
 export const factoryPublicRouter = publicRoutes;
 export { factoryWatch } from "./reports.js";

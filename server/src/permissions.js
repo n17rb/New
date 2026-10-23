@@ -33,6 +33,8 @@ export const SECTIONS = [
   { key: "f_stock", label: "المستودع", hint: "تحميل السيارات، المرتجع، التالف، الجرد", plan: "factory" },
   { key: "f_production", label: "الإنتاج والمكنات", hint: "الإنتاج اليومي، المواد الخام، أعطال المكنات", plan: "factory" },
   { key: "f_money", label: "الحسابات", hint: "استلام الكاش من السائقين، المصاريف، الديون والتحصيل", plan: "factory" },
+  { key: "f_maint", label: "صيانة السيارات", hint: "غيار الزيت، الميكانيك، الكوشوك، البطاريات، ومواعيدها", plan: "factory" },
+  { key: "f_machines", label: "المكنات والأعطال", hint: "تشغيل المكنات، الأعطال وإصلاحها", plan: "factory" },
   { key: "f_fleet", label: "الإعدادات", hint: "المنتجات، السيارات، الخطوط، المكنات، شعار المصنع", plan: "factory" },
   { key: "f_reports", label: "التقارير", hint: "المبيعات، التوالف، الديزل، أداء السائقين", viewOnly: true, plan: "factory" },
 ];
@@ -52,6 +54,7 @@ export const ACTIONS = [
   { key: "approve_expense", label: "الموافقة على مصاريف السائقين", plan: "factory" },
   { key: "adjust_stock", label: "تعديل رصيد المستودع يدويًا", plan: "factory" },
   { key: "give_bonus", label: "إعطاء بونص (كراتين ببلاش) يدويًا على الطلب", plan: "factory" },
+  { key: "self_attendance", label: "يسجّل حضوره بنفسه («وصلت»)" },
 ];
 
 export const LEVELS = ["none", "view", "edit"];
@@ -98,12 +101,12 @@ export const TEMPLATES = {
 };
 
 // قوالب المصنع
-const F = (o) => ({ f_home: "none", f_orders: "none", f_dispatch: "none", f_drive: "none", f_customers: "none", f_stock: "none", f_production: "none", f_money: "none", f_fleet: "none", f_reports: "none", payroll: "none", ...o });
+const F = (o) => ({ f_home: "none", f_orders: "none", f_dispatch: "none", f_drive: "none", f_customers: "none", f_stock: "none", f_production: "none", f_money: "none", f_fleet: "none", f_reports: "none", f_maint: "none", f_machines: "none", payroll: "none", ...o });
 export const FACTORY_TEMPLATES = {
   admin: {
     label: "مدير",
-    sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", payroll: "edit" }),
-    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true },
+    sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", f_maint: "edit", f_machines: "edit", payroll: "edit" }),
+    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true, delete_customer: true, self_attendance: true },
   },
   dispatcher: {
     label: "مسؤول الحركة",
@@ -116,13 +119,23 @@ export const FACTORY_TEMPLATES = {
     actions: { give_credit: true },
   },
   warehouse: {
-    label: "أمين مستودع",
+    label: "تحميل السيارات والمستودع",
     sections: F({ f_stock: "edit", f_production: "view" }),
     actions: {},
   },
   production: {
-    label: "مشرف إنتاج",
+    label: "الإنتاج",
     sections: F({ f_production: "edit", f_stock: "view" }),
+    actions: {},
+  },
+  technician: {
+    label: "فني صيانة ومشغّل مكنات",
+    sections: F({ f_machines: "edit", f_production: "view" }),
+    actions: {},
+  },
+  fleet_maint: {
+    label: "صيانة السيارات (زيت، ميكانيك، كوشوك، بطاريات)",
+    sections: F({ f_maint: "edit" }),
     actions: {},
   },
   accountant: {
@@ -132,7 +145,7 @@ export const FACTORY_TEMPLATES = {
   },
   viewer: {
     label: "متفرج",
-    sections: F({ f_home: "view", f_orders: "view", f_dispatch: "view", f_customers: "view", f_stock: "view", f_production: "view", f_money: "view", f_fleet: "view", f_reports: "view", payroll: "view" }),
+    sections: F({ f_home: "view", f_orders: "view", f_dispatch: "view", f_customers: "view", f_stock: "view", f_production: "view", f_money: "view", f_fleet: "view", f_reports: "view", f_maint: "view", f_machines: "view", payroll: "view" }),
     actions: {},
   },
 };
@@ -142,7 +155,7 @@ export function permissionsMeta(plan) {
   const factory = plan === "factory";
   return {
     sections: SECTIONS.filter((s) => (factory ? s.plan === "factory" || FACTORY_SHARED.includes(s.key) : s.plan !== "factory")),
-    actions: ACTIONS.filter((a) => (factory ? !SHOP_ONLY_ACTIONS.includes(a.key) && (a.plan === "factory" || ["discount", "give_credit"].includes(a.key)) : a.plan !== "factory")),
+    actions: ACTIONS.filter((a) => (factory ? !SHOP_ONLY_ACTIONS.includes(a.key) && (a.plan === "factory" || ["discount", "give_credit", "self_attendance"].includes(a.key)) : a.plan !== "factory")),
     templates: factory ? FACTORY_TEMPLATES : TEMPLATES,
   };
 }

@@ -261,7 +261,7 @@ export async function loadTrips(where, params = []) {
   );
   if (!r.rows.length) return [];
   const ids = r.rows.map((t) => t.id);
-  const [orders, exps, extras, moved, probs] = await Promise.all([
+  const [orders, exps, extras, moved, probs, debtCol] = await Promise.all([
     loadOrders("o.trip_id = ANY($1::int[])", [ids]),
     query("SELECT * FROM f_expenses WHERE trip_id = ANY($1::int[]) ORDER BY id", [ids]),
     query(
@@ -276,6 +276,12 @@ export async function loadTrips(where, params = []) {
       [ids]
     ),
     query("SELECT id, ref_id, kind, title, created_at FROM f_alerts WHERE kind IN ('breakdown','problem') AND ref_id = ANY($1::int[]) AND closed_at IS NULL ORDER BY id DESC", [ids]),
+    // ديون قديمة قبضها السائق وهو برحلته (مش فواتير)
+    query(
+      `SELECT g.id, g.trip_id, -g.amount AS amount, g.created_at, c.name AS customer_name FROM f_ledger g JOIN f_customers c ON c.id = g.customer_id
+       WHERE g.trip_id = ANY($1::int[]) AND g.kind = 'payment' AND g.order_id IS NULL AND g.method = 'cash' ORDER BY g.id`,
+      [ids]
+    ),
   ]);
   const now = Date.now();
   return r.rows.map((t) => {
@@ -285,7 +291,9 @@ export async function loadTrips(where, params = []) {
     const damaged_per = moved.rows.filter((m) => m.trip_id === t.id && m.kind === "damage");
     const expenses = exps.rows.filter((e) => e.trip_id === t.id).map((e) => ({ ...e, amount: Number(e.amount) }));
     const load = t.kind === "sales" ? (t.extra_cartons || 0) : stops.reduce((s, o) => s + o.cartons, 0) + (t.extra_cartons || 0);
-    const collected = round2(stops.filter((o) => o.status === "delivered").reduce((s, o) => s + o.cash_paid, 0));
+    const debt_collections = debtCol.rows.filter((g) => g.trip_id === t.id).map((g) => ({ ...g, amount: Number(g.amount) }));
+    const debtCollected = round2(debt_collections.reduce((s, g) => s + g.amount, 0));
+    const collected = round2(stops.filter((o) => o.status === "delivered").reduce((s, o) => s + o.cash_paid, 0) + debtCollected);
     const expTotal = round2(expenses.filter((e) => e.status !== "rejected").reduce((s, e) => s + e.amount, 0));
     const late = stops.filter((o) => ["assigned", "onway"].includes(o.status) && o.eta_at && t.status === "active" && now - new Date(o.eta_at).getTime() > 30 * 60000).length;
     return {
@@ -298,6 +306,7 @@ export async function loadTrips(where, params = []) {
       extra_items: extras.rows.filter((x) => x.trip_id === t.id),
       cancelled_stops, loaded_per, damaged_per,
       problems: probs.rows.filter((a) => a.ref_id === t.id),
+      debt_collections, debt_collected: debtCollected,
       done: stops.filter((o) => ["delivered", "failed"].includes(o.status)).length,
       late,
       tracking_lost: t.status === "active" && (!t.last_seen_at || now - new Date(t.last_seen_at).getTime() > 15 * 60000),
