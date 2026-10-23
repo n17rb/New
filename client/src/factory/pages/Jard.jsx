@@ -135,7 +135,11 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
         <h3>المصاري</h3>
         <div className="fx-kv"><span>فواتير ({T.invoices_count})</span><b>{money(T.invoices)}</b></div>
         <div className="fx-kv"><span>كاش انقبض من الزباين</span><b>{money(T.cash)}</b></div>
-        {T.debt > 0 && <div className="fx-kv warn"><span>دين على الزباين</span><b>{money(T.debt)}</b></div>}
+        {T.debt > 0 && <div className="fx-kv warn"><span>دين جديد على الزباين</span><b>{money(T.debt)}</b></div>}
+        {T.debt_collected > 0 && <div className="fx-kv good"><span>منها ديون قديمة قبضها</span><b>{money(T.debt_collected)}</b></div>}
+        {d.trips.flatMap((t) => t.collections || []).map((g) => (
+          <div key={g.id} className="fx-kv" style={{ fontSize: 13 }}><span>💵 {g.customer_name} · {time(g.at)}</span><b>{money(g.amount)}</b></div>
+        ))}
         {T.expenses > 0 && <div className="fx-kv"><span>− مصاريف</span><b>{money(T.expenses)}</b></div>}
         <div className="fx-kv total"><span>المطلوب يتسلّم</span><b>{money(T.due)} د.أ</b></div>
         {T.handed > 0 && <div className="fx-kv"><span>انستلم فعلًا</span><b>{money(T.handed)}</b></div>}

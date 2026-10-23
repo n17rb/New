@@ -63,7 +63,8 @@ async function buildJard(date, driverId = null) {
     });
 
     const invoicesTotal = round2(delivered.reduce((a, o) => a + Number(o.delivered_total || 0), 0));
-    const cash = round2(delivered.reduce((a, o) => a + Number(o.cash_paid || 0), 0));
+    const cashInv = round2(delivered.reduce((a, o) => a + Number(o.cash_paid || 0), 0));
+    const cash = round2(cashInv + (t.debt_collected || 0));
     const expOk = t.expenses.filter((e) => e.status !== "rejected");
     return {
       id: t.id, kind: t.kind || "orders", status: t.status, vehicle_name: t.vehicle_name, trip_date: t.trip_date,
@@ -71,7 +72,7 @@ async function buildJard(date, driverId = null) {
       load_confirmed: !!t.load_confirmed_at, returns_received_at: t.returns_received_at, settled_at: t.settled_at,
       goods,
       money: {
-        invoices: invoicesTotal, cash, debt: round2(invoicesTotal - cash),
+        invoices: invoicesTotal, cash, debt: round2(invoicesTotal - cashInv), debt_collected: t.debt_collected || 0,
         expenses: round2(expOk.reduce((a, e) => a + e.amount, 0)),
         expenses_pending: round2(t.expenses.filter((e) => e.status === "pending").reduce((a, e) => a + e.amount, 0)),
         due: round2(t.cash_due), handed: t.handed_cash, diff: t.cash_diff,
@@ -84,6 +85,7 @@ async function buildJard(date, driverId = null) {
         items: o.items.map((i) => ({ name: i.name, qty: i.delivered_qty ?? i.qty, ordered: i.qty, bonus: i.delivered_bonus ?? i.bonus_qty ?? 0, damaged: i.damaged_qty || 0, price: i.price })),
         exchanges: (o.exchanges || []).map((x) => ({ name: x.name, qty: x.qty })),
       })),
+      collections: (t.debt_collections || []).map((g) => ({ id: g.id, customer_name: g.customer_name, amount: g.amount, at: g.created_at })),
       failed: t.stops.filter((o) => o.status === "failed").map((o) => ({ id: o.id, customer_name: o.customer_name, reason: o.fail_reason, cartons: o.cartons })),
       open: t.stops.filter((o) => ["assigned", "onway", "delayed"].includes(o.status)).map((o) => ({ id: o.id, customer_name: o.customer_name, cartons: o.cartons })),
     };
@@ -125,7 +127,7 @@ async function buildJard(date, driverId = null) {
       },
       custody: round2(Number(ledger.rows.find((l) => l.driver_id === d.driver_id)?.bal || 0)),
       totals: {
-        invoices: sum((t) => t.money.invoices), cash: sum((t) => t.money.cash), debt: sum((t) => t.money.debt),
+        invoices: sum((t) => t.money.invoices), cash: sum((t) => t.money.cash), debt: sum((t) => t.money.debt), debt_collected: sum((t) => t.money.debt_collected),
         expenses: sum((t) => t.money.expenses), due: sum((t) => t.money.due),
         handed: sum((t) => t.money.handed), due_open: round2(open.reduce((a, t) => a + t.money.due, 0)),
         settled: open.length === 0,

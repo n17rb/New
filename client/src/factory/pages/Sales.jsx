@@ -116,6 +116,7 @@ export function SalesDay({ t, stock, canCredit, reload, onSold, openSheet }) {
             <button className="fx-btn" onClick={() => openSheet("expense")}><FiPlus /> مصروف</button>
             <button className="fx-btn" onClick={() => openSheet("cash")}>حسابي اليوم</button>
           </div>
+          <button className="fx-btn block" onClick={() => openSheet("debt")}>💵 قبض دين من زبون</button>
           <Act className="fx-btn block" onClick={async () => {
             const r = await fapi.driverReturn(t.id, {});
             fx.toast(`سلّم ${money(r.required_cash)} دينار للمحاسب`);

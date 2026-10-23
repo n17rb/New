@@ -131,7 +131,15 @@ export const fapi = {
   adjustStock: (b) => post("/stock/adjust", b),
   loading: () => get("/stock/loading"),
   confirmLoad: (id, extra) => post(`/stock/trips/${id}/load`, { extra }),
-  receiveReturns: (id, items) => post(`/stock/trips/${id}/returns`, { items }),
+  receiveReturns: (id, items, salvage) => post(`/stock/trips/${id}/returns`, { items, salvage }),
+  salvage: () => get("/stock/salvage"),
+  fixSalvage: (id, qty) => post(`/stock/salvage/${id}/fix`, { qty }),
+
+  // صيانة السيارات
+  maint: () => get("/maint"),
+  addMaint: (b) => post("/maint", b),
+  setOdo: (vehicle_id, odo) => post("/maint/odo", { vehicle_id, odo }),
+  delMaint: (id) => del(`/maint/${id}`),
   receiveMaterial: (id, b) => post(`/stock/materials/${id}/receive`, b),
   adjustMaterial: (id, b) => post(`/stock/materials/${id}/adjust`, b),
   downtime: () => get("/stock/downtime"),

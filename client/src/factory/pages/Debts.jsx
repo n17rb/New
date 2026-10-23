@@ -94,7 +94,7 @@ export function DebtsView({ page = false }) {
                 <span className="t">
                   <b>{c.seq_no ? <small className="fx-seq">#{c.seq_no}</small> : null}{c.name}</b>
                   <small>{[c.city, c.phone].filter(Boolean).join(" · ")}</small>
-                  <small className={c.days > 60 ? "old" : ""}>من {c.days} يوم{c.last_payment_at ? ` · آخر دفعة ${date(c.last_payment_at)}` : " · ما في دفعات"}{c.over_limit ? " · فوق السقف" : ""}</small>
+                  <small className={c.days > 60 ? "old" : ""}>من {c.days} يوم{c.last_payment_at ? ` · آخر دفعة ${date(c.last_payment_at)}${c.last_payment_by ? ` مع ${c.last_payment_by}` : ""}` : " · ما في دفعات"}{c.over_limit ? " · فوق السقف" : ""}</small>
                   {c.reminded_at && <small className="fx-noprint rem">✓ انذكّر {date(c.reminded_at)}</small>}
                 </span>
                 <span className="amt">
@@ -127,7 +127,7 @@ export function DebtsView({ page = false }) {
 
 // الزبون دفع من دينه: كامل أو جزء، كاش أو شيك أو تحويل — وبتطلع رسالة شكر فيها رصيده الجديد
 const METHODS = [["cash", "كاش"], ["cheque", "شيك"], ["transfer", "تحويل"]];
-export function PaySheet({ c, onClose, onDone }) {
+export function PaySheet({ c, onClose, onDone, byDriver = false }) {
   const fx = useFx();
   const bal = Number(c.balance) || 0;
   const [full, setFull] = useState(true);
@@ -152,7 +152,9 @@ export function PaySheet({ c, onClose, onDone }) {
             <input className="fx-input fx-num" style={{ fontSize: 22, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
           </label>
         )}
-        <div className="fx-chips">{METHODS.map(([k, l]) => <button key={k} type="button" className={`fx-chip ${method === k ? "on" : ""}`} onClick={() => setMethod(k)}>{l}</button>)}</div>
+        {byDriver
+          ? <div className="fx-note sky">المبلغ بينضاف على الكاش اللي معك، وبتسلّمه مع حساب رحلتك.</div>
+          : <div className="fx-chips">{METHODS.map(([k, l]) => <button key={k} type="button" className={`fx-chip ${method === k ? "on" : ""}`} onClick={() => setMethod(k)}>{l}</button>)}</div>}
         {method === "cheque" && (
           <div className="fx-grid2">
             <label className="fx-field">رقم الشيك<input className="fx-input" value={chq} onChange={(e) => setChq(e.target.value)} /></label>
@@ -168,7 +170,7 @@ export function PaySheet({ c, onClose, onDone }) {
         <Act className="fx-btn ok block fx-huge" disabled={!(amt > 0) || (method === "cheque" && !chq)} onClick={async () => {
           setErr("");
           try {
-            const r = await fapi.payment(c.id, { amount: amt, method, cheque_no: chq || undefined, cheque_date: chqDate || undefined, note });
+            const r = await fapi.payment(c.id, { amount: amt, method: byDriver ? "cash" : method, cheque_no: chq || undefined, cheque_date: chqDate || undefined, note, by_driver: byDriver || undefined });
             fx.toast(r.balance > 0.009 ? `انسجّلت — بيضل عليه ${money(r.balance)}` : "انسجّلت — سدّ كل الدين ✓");
             onDone(r);
           } catch (e) { setErr(e.message); }

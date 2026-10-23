@@ -41,7 +41,7 @@ export default function MyPay() {
 
       {checkedIn ? (
         <div className="success-box icon-row"><FiCheckCircle aria-hidden="true" /> سجّلت حضورك اليوم</div>
-      ) : (
+      ) : !me.can_check_in ? null : (
         <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} disabled={busy} onClick={checkIn}>
           <FiLogIn aria-hidden="true" /> وصلت — سجّل حضوري اليوم
         </button>
