@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers, FiClipboard, FiTool } from "react-icons/fi";
+import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers, FiClipboard, FiTool, FiLayers } from "react-icons/fi";
 import { canUser, canUserAction } from "../auth.jsx";
 import { fapi } from "./fapi.js";
 import { request } from "../api.js";
@@ -26,6 +26,7 @@ const Money = lazy(() => import("./pages/Money.jsx"));
 const Reports = lazy(() => import("./pages/Reports.jsx"));
 const Alerts = lazy(() => import("./pages/Alerts.jsx"));
 const Maint = lazy(() => import("./pages/Maint.jsx"));
+const Store = lazy(() => import("./pages/Store.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
 const More = lazy(() => import("./pages/More.jsx"));
 const Setup = lazy(() => import("./pages/Setup.jsx"));
@@ -171,6 +172,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
       can("f_dispatch") && { to: "/f/trips", icon: FiTruck, label: "الرحلات" },
       (can("f_stock") || can("f_production")) && { to: "/f/stock", icon: FiBox, label: can("f_stock") ? "المستودع" : "الإنتاج" },
       can("f_machines") && !can("f_stock") && !can("f_production") && { to: "/f/stock?tab=prod", icon: FiBox, label: "المكنات" },
+      (can("f_store") || can("f_production") || can("f_machines")) && { to: "/f/store", icon: FiLayers, label: "المواد" },
       can("f_maint", "edit") && { to: "/f/maint", icon: FiTool, label: "الصيانة" },
       can("f_money") && { to: "/f/money", icon: FiDollarSign, label: "الحسابات" },
       isDriver && can("f_home") && { to: "/f/drive", icon: FiNavigation, label: "رحلتي" },
@@ -225,6 +227,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
                 {(can("f_orders") || can("f_dispatch") || can("f_money") || can("f_home")) && <Route path="/f/invoices" element={<Invoices />} />}
                 {(can("f_stock") || can("f_production") || can("f_machines") || can("f_home")) && <Route path="/f/stock" element={<Stock />} />}
                 {(can("f_maint") || can("f_home")) && <Route path="/f/maint" element={<Maint />} />}
+                {(can("f_store") || can("f_production") || can("f_machines") || can("f_home")) && <Route path="/f/store" element={<Store />} />}
                 {(can("f_money") || can("f_customers") || can("f_home")) && <Route path="/f/debts" element={<Debts />} />}
                 {(isDriver || can("f_money") || can("f_home") || can("f_stock") || can("f_dispatch")) && <Route path="/f/jard" element={<Jard />} />}
                 {(can("f_money") || can("f_home")) && <Route path="/f/money" element={<Money />} />}

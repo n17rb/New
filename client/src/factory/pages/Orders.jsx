@@ -72,6 +72,8 @@ export default function Orders() {
             </button>
           </div>
 
+          {editOrders && <PostponeCard onDone={reload} />}
+
           {all.length > 0 && <RegionFilter items={all} value={region} onChange={(r) => { setRegion(r); setSel([]); }} noun="طلب" />}
 
           {cur === "free" && (
@@ -675,5 +677,34 @@ export function TransferSheet({ o, onClose, onSaved }) {
         }}>انقل وبلّغ</Act>
       </div>
     </Sheet>
+  );
+}
+
+// طلبات التأجيل من السواقين: «الزبون بده إياه بعد ٤ أيام» — ثبّت الموعد أو ارفض
+function PostponeCard({ onDone }) {
+  const fx = useFx();
+  const { data, reload } = useLoad(() => fapi.postpones(), []);
+  const [dates, setDates] = useState({});
+  if (!data?.length) return null;
+  return (
+    <section className="fx-card fx-stack" style={{ gap: 10, borderInlineStart: "4px solid var(--fx-sky)" }}>
+      <b>🗓️ طلبات تأجيل من السواقين ({data.length})</b>
+      {data.map((p) => {
+        const d = dates[p.id] ?? p.postpone_to;
+        return (
+          <div key={p.id} className="fx-stack" style={{ gap: 6, paddingBottom: 8, borderBottom: "1px solid var(--fx-line, #eee)" }}>
+            <div className="fx-row" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+              <span><b>{p.customer_name}</b> <small className="fx-muted">#{p.id} · {num(p.cartons)} كرتونة</small><br />
+                <small className="fx-muted">{p.driver_name || "السائق"}: بده إياه {date(p.postpone_to)}{p.postpone_note ? ` — ${p.postpone_note}` : ""}</small></span>
+            </div>
+            <DateInput value={d} onChange={(v) => setDates({ ...dates, [p.id]: v })} ariaLabel="موعد التسليم" />
+            <div className="fx-grid2">
+              <Act className="fx-btn ok" disabled={!d} onClick={async () => { await fapi.confirmPostpone(p.id, d); fx.toast(`انثبّت على ${date(d)} ✓`); reload(); onDone?.(); }}>✓ ثبّت الموعد</Act>
+              <Act className="fx-btn" onClick={async () => { if (!confirm("ما بدك تأجّله؟ الطلب بيضل «ما تم».")) return; await fapi.rejectPostpone(p.id); reload(); onDone?.(); }}>ما بدنا</Act>
+            </div>
+          </div>
+        );
+      })}
+    </section>
   );
 }

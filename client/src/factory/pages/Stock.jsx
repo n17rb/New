@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiAlertTriangle, FiClipboard, FiPlus, FiPower, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
+import { TakeSheet } from "./Store.jsx";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, Reload, ProductArt, num, time, dateTime, date } from "../ui.jsx";
 
 export default function Stock() {
@@ -416,7 +417,10 @@ function Production() {
                 <div key={d.id} className="fx-alert crit">
                   <div className="h"><b>{d.machine_name} واقفة</b><time>من {time(d.started_at)}</time></div>
                   <p>{d.reason}</p>
-                  {edit && <button className="fx-btn sm" onClick={() => setSheet({ kind: "up", d })}>رجعت تشتغل</button>}
+                  <div className="fx-row" style={{ gap: 6 }}>
+                    {edit && <button className="fx-btn sm" onClick={() => setSheet({ kind: "up", d })}>رجعت تشتغل</button>}
+                    {(fx.can("f_machines", "edit") || fx.can("f_store", "edit")) && <button className="fx-btn sm" onClick={() => setSheet({ kind: "part", d })}>🔩 سحب قطعة</button>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -434,9 +438,17 @@ function Production() {
         </>
       )}
       {sheet?.kind === "down" && <DownSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "part" && <PartTake d={sheet.d} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "up" && <UpSheet d={sheet.d} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
     </>
   );
+}
+
+// قطعة غيار للعطل: بتنسحب من المستودع وكلفتها بتنضاف على العطل
+function PartTake({ d, onClose, onDone }) {
+  const { data } = useLoad(() => fapi.store(), []);
+  if (!data) return <Sheet title="سحب قطعة" onClose={onClose}><Loading /></Sheet>;
+  return <TakeSheet data={data} kind="part" machineId={d.machine_id} downtimeId={d.id} onClose={onClose} onDone={onDone} />;
 }
 
 function ProdSheet({ onClose, onDone }) {
