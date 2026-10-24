@@ -33,9 +33,9 @@ function canTake(user, kind) {
 router.get("/store", view, async (req, res) => {
   const [items, sites, lines, lineUsers, machines, month] = await Promise.all([
     query(
-      `SELECT m.*, s.name AS site_name, mc.name AS machine_name,
+      `SELECT m.*, s.name AS site_name, mc.name AS machine_name, pl.name AS line_name,
               (SELECT MAX(created_at) FROM f_material_moves x WHERE x.material_id = m.id) AS last_move_at
-       FROM f_materials m LEFT JOIN f_sites s ON s.id = m.site_id LEFT JOIN f_machines mc ON mc.id = m.machine_id
+       FROM f_materials m LEFT JOIN f_sites s ON s.id = m.site_id LEFT JOIN f_machines mc ON mc.id = m.machine_id LEFT JOIN f_plines pl ON pl.id = m.line_id
        ORDER BY m.active DESC, m.kind, m.category NULLS LAST, m.name`
     ),
     query("SELECT * FROM f_sites ORDER BY id"),
@@ -67,6 +67,7 @@ router.get("/store", view, async (req, res) => {
     my_lines: mine,
     machines: machines.rows,
     units: UNITS,
+    starters: Object.fromEntries(Object.entries(STARTERS).map(([k, v]) => [k, { label: v.label, n: v.items.length }])),
     totals: {
       material_value: round2(active.filter((m) => m.kind === "material").reduce((a, m) => a + m.value, 0)),
       part_value: round2(active.filter((m) => m.kind === "part").reduce((a, m) => a + m.value, 0)),
@@ -98,6 +99,7 @@ function itemFields(b) {
     site_id: numOrNull(b.site_id),
     machine_id: numOrNull(b.machine_id),
     shelf: str(b.shelf, 40) || null,
+    line_id: kind === "material" ? numOrNull(b.line_id) : null,
   };
 }
 
@@ -114,9 +116,9 @@ router.post("/store/items", editStore, async (req, res) => {
   if (dup) return bad(res, `الرقم ${f.code} مستعمل لـ«${dup.name}».`);
   const opening = Math.max(0, Number(req.body?.opening) || 0);
   const r = await query(
-    `INSERT INTO f_materials (kind, name, code, category, unit, price, min_level, supplier, specs, photo_url, site_id, machine_id, shelf, balance)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-    [f.kind, f.name, f.code, f.category, f.unit, f.price, f.min_level, f.supplier, f.specs, f.photo_url, f.site_id, f.machine_id, f.shelf, opening]
+    `INSERT INTO f_materials (kind, name, code, category, unit, price, min_level, supplier, specs, photo_url, site_id, machine_id, shelf, balance, line_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+    [f.kind, f.name, f.code, f.category, f.unit, f.price, f.min_level, f.supplier, f.specs, f.photo_url, f.site_id, f.machine_id, f.shelf, opening, f.line_id]
   );
   if (opening > 0) {
     await query(
@@ -134,8 +136,8 @@ router.put("/store/items/:id", editStore, async (req, res) => {
   if (dup) return bad(res, `الرقم ${f.code} مستعمل لـ«${dup.name}».`);
   const r = await query(
     `UPDATE f_materials SET kind=$1, name=$2, code=$3, category=$4, unit=$5, price=$6, min_level=$7, supplier=$8, specs=$9, photo_url=$10,
-            site_id=$11, machine_id=$12, shelf=$13, active=$14 WHERE id=$15 RETURNING *`,
-    [f.kind, f.name, f.code, f.category, f.unit, f.price, f.min_level, f.supplier, f.specs, f.photo_url, f.site_id, f.machine_id, f.shelf, req.body?.active !== false, req.params.id]
+            site_id=$11, machine_id=$12, shelf=$13, active=$14, line_id=$16 WHERE id=$15 RETURNING *`,
+    [f.kind, f.name, f.code, f.category, f.unit, f.price, f.min_level, f.supplier, f.specs, f.photo_url, f.site_id, f.machine_id, f.shelf, req.body?.active !== false, req.params.id, f.line_id]
   );
   if (!r.rows[0]) return bad(res, "الصنف غير موجود.", 404);
   res.json(r.rows[0]);
@@ -348,6 +350,68 @@ router.put("/store/machines/:id", setup, async (req, res) => {
   const r = await query("UPDATE f_machines SET site_id = $1, line_id = $2 WHERE id = $3 RETURNING *", [numOrNull(req.body?.site_id), numOrNull(req.body?.line_id), req.params.id]);
   res.json(r.rows[0] || {});
 });
+// ---------- المواد الأساسية لكل نوع خط: بنضيفها مرة وحدة (كمية وسعر صفر) والمحاسب بيعبّي ----------
+// [الاسم، الوحدة، التصنيف، المواصفات]
+export const STARTERS = {
+  bottles: {
+    label: "خط المطرات (قناني المي)",
+    items: [
+      ["بريفورم (PET)", "حبة", "بريفورم", "حسب وزن وحجم القنينة: مثلًا 12.5غم لـ330مل، 19غم لـ1.5لتر — وقطر العنق 28/30مم"],
+      ["أغطية مطرات", "حبة", "أغطية", "بنفس قطر العنق (28/30مم أو 29/25) واللون"],
+      ["ليبل مطرات (رول)", "رول", "ليبل", "ليبل مطبوع ملفوف — حسب حجم القنينة"],
+      ["غراء الليبل", "كغم", "ليبل", "غراء ساخن (Hot melt) لماكنة الليبل"],
+      ["نايلون شرنك للشدّات", "كغم", "تغليف", "رول شرنك شفاف أو مطبوع — حسب عرض الشدّة والسماكة (ميكرون)"],
+      ["كراتين مطرات", "حبة", "تغليف", "إذا المطرات بتنعبّى بكراتين بدل الشرنك"],
+      ["مقابض الشدّات", "حبة", "تغليف", "يد بلاستيك للشدّة"],
+      ["نايلون ستريتش للطبليات", "رول", "تغليف", "لف الطبليات قبل التحميل"],
+      ["طبليات خشب", "حبة", "تغليف", ""],
+      ["حبر طابعة التاريخ", "لتر", "طباعة", "حبر ماكنة الإنك جت (تاريخ الإنتاج والانتهاء)"],
+      ["مذيب الطابعة (سولفنت)", "لتر", "طباعة", ""],
+      ["تيب لاصق", "رول", "تغليف", ""],
+    ],
+  },
+  cups: {
+    label: "خط الكاسات",
+    items: [
+      ["رول بلاستيك للكاسات (PP/PS)", "كغم", "بلاستيك", "حسب السماكة والعرض المناسب لماكنة التشكيل"],
+      ["رول غطاء الكاسات (ليدنج فويل) مطبوع", "رول", "غطاء", "فويل/فيلم مطبوع بالشعار — حسب قطر الكاسة"],
+      ["كراتين كاسات", "حبة", "تغليف", "حسب عدد الكاسات بالكرتونة"],
+      ["نايلون تغليف الكاسات", "كغم", "تغليف", ""],
+      ["تيب لاصق للكراتين", "رول", "تغليف", ""],
+      ["شفاطات (قصب)", "حبة", "إضافات", "إذا بتنحط مع الكاسات"],
+      ["نايلون ستريتش للطبليات", "رول", "تغليف", ""],
+      ["طبليات خشب", "حبة", "تغليف", ""],
+      ["حبر طابعة التاريخ", "لتر", "طباعة", ""],
+      ["مذيب الطابعة (سولفنت)", "لتر", "طباعة", ""],
+    ],
+  },
+  water: {
+    label: "معالجة المي (للخطين)",
+    items: [
+      ["فلاتر ميكرون (شمعات)", "حبة", "معالجة مي", "5 ميكرون / 1 ميكرون — حسب الهاوسنج"],
+      ["أغشية RO (ممبرين)", "حبة", "معالجة مي", ""],
+      ["ملح تنعيم المي", "كيس", "معالجة مي", ""],
+      ["مواد تعقيم (كلور/أوزون)", "لتر", "معالجة مي", ""],
+      ["مواد غسيل وتعقيم الماكنات", "لتر", "نظافة", ""],
+      ["لمبات UV", "حبة", "معالجة مي", ""],
+    ],
+  },
+};
+
+router.post("/store/starter", editStore, async (req, res) => {
+  const set = STARTERS[req.body?.preset];
+  if (!set) return bad(res, "اختار نوع الخط.");
+  const lineId = numOrNull(req.body?.line_id);
+  const have = (await query("SELECT name, line_id FROM f_materials WHERE active AND kind = 'material'")).rows;
+  let added = 0;
+  for (const [name, unit, category, specs] of set.items) {
+    if (have.some((h) => h.name === name && (h.line_id || null) === (lineId || null))) continue;
+    await query("INSERT INTO f_materials (kind, name, unit, category, specs, line_id) VALUES ('material',$1,$2,$3,$4,$5)", [name, unit, category, specs || null, lineId]);
+    added++;
+  }
+  res.json({ ok: true, added });
+});
+
 // الموظفين (لتوزيعهم على الخطوط)
 router.get("/store/staff", setup, async (req, res) => {
   const r = await query("SELECT id, full_name FROM users WHERE status = 'active' AND role <> 'super_admin' ORDER BY full_name");

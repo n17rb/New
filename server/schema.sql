@@ -1122,3 +1122,6 @@ ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_note TEXT;
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_at TIMESTAMPTZ;
 ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_state VARCHAR(10);
+
+-- كل مادة ممكن تكون تبع خط معيّن (مستودع خط المطرات، خط الكاسات…) أو عامة
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
