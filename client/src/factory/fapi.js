@@ -158,6 +158,7 @@ export const fapi = {
   editPline: (id, b) => put(`/store/lines/${id}`, b),
   setMachineSite: (id, b) => put(`/store/machines/${id}`, b),
   storeStaff: () => get("/store/staff"),
+  storeStarter: (b) => post("/store/starter", b),
 
   // التأجيل
   postpones: () => get("/orders/postpones"),

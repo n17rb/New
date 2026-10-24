@@ -33,6 +33,7 @@ export default function Store() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState("");
   const [site, setSite] = useState(null);
+  const [lineF, setLineF] = useState(undefined); // undefined = لسا ما اختار
   const [sheet, setSheet] = useState(null);
   const C = data?.can || {};
   const tabs = [
@@ -43,10 +44,14 @@ export default function Store() {
   ].filter(Boolean);
   const defTab = !fx.can("f_store") && !fx.can("f_production") && fx.can("f_machines") ? "part" : "material";
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || defTab;
+  const pLines = (data?.lines || []).filter((l) => l.active);
+  // موظف الخط بيفتح على مستودع خطه
+  const line = lineF !== undefined ? lineF : !C.store && data?.my_lines?.length === 1 ? data.my_lines[0] : null;
   const list = useMemo(() => {
-    const xs = (data?.items || []).filter((m) => m.active && m.kind === tab && (!site || m.site_id === site));
+    const xs = (data?.items || []).filter((m) => m.active && m.kind === tab && (!site || m.site_id === site)
+      && (tab !== "material" || line == null || (line === 0 ? !m.line_id : m.line_id === line || !m.line_id)));
     return q.trim() ? searchItems(xs, q) : xs;
-  }, [data, tab, q, site]);
+  }, [data, tab, q, site, line]);
   const done = () => { setSheet(null); reload(); };
   const sites = data?.sites?.filter((s) => s.active) || [];
   const isItems = tab === "material" || tab === "part";
@@ -75,6 +80,13 @@ export default function Store() {
               {sites.map((s) => <button key={s.id} className={`fx-chip ${site === s.id ? "on" : ""}`} onClick={() => setSite(s.id)}>{s.name}</button>)}
             </div>
           )}
+          {tab === "material" && pLines.length > 0 && (
+            <div className="fx-chips">
+              <button className={`fx-chip ${line == null ? "on" : ""}`} onClick={() => setLineF(null)}>كل المواد</button>
+              {pLines.map((l) => <button key={l.id} className={`fx-chip ${line === l.id ? "on" : ""}`} onClick={() => setLineF(l.id)}>مستودع {l.name}</button>)}
+              <button className={`fx-chip ${line === 0 ? "on" : ""}`} onClick={() => setLineF(0)}>عامة</button>
+            </div>
+          )}
           <div className="fx-actions3">
             {canTake && <button className="fx-bigbtn pri" onClick={() => setSheet({ kind: "take" })}><FiUpload /><span>سحب</span></button>}
             {C.store && <button className="fx-bigbtn" onClick={() => setSheet({ kind: "receive" })}><FiDownload /><span>دخل بضاعة</span></button>}
@@ -82,8 +94,9 @@ export default function Store() {
           </div>
           <div className="fx-row" style={{ justifyContent: "space-between" }}>
             <span className="fx-muted" style={{ fontSize: 13 }}>{num(list.length)} صنف · قيمتها {money(value)} د.أ{list.some((m) => m.low) ? ` · ${list.filter((m) => m.low).length} قرّبت تخلص` : ""}</span>
-            {C.store && <button className="fx-btn sm" onClick={() => setSheet({ kind: "edit", m: { kind: tab, site_id: site } })}><FiPlus /> صنف جديد</button>}
+            {C.store && <button className="fx-btn sm" onClick={() => setSheet({ kind: "edit", m: { kind: tab, site_id: site, line_id: tab === "material" && line ? line : null } })}><FiPlus /> صنف جديد</button>}
           </div>
+          {C.store && tab === "material" && !q && <button className="fx-btn sky block" onClick={() => setSheet({ kind: "starter", line })}>✨ ضيف المواد الأساسية للخط (بريفورم، أغطية، ليبل، كراتين…)</button>}
           {list.length === 0 && <Empty title={q ? "ما لقيت إشي" : tab === "part" ? "ما في قطع غيار" : "ما في مواد"} text={q ? "جرّب الرقم أو جزء من الاسم." : C.store ? "اكبس «صنف جديد» وضيف أول صنف بسعره." : "المحاسب بيضيف الأصناف."} />}
           <div className="fx-list">
             {list.map((m) => (
@@ -91,7 +104,7 @@ export default function Store() {
                 {m.photo_url ? <img src={m.photo_url} alt="" style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover" }} /> : <span className="fx-avatar">{tab === "part" ? "🔩" : "📦"}</span>}
                 <span className="t">
                   <b>{m.code ? <small className="fx-seq">{m.code}</small> : null}{m.name}</b>
-                  <span>{[m.category, m.machine_name, sites.length > 1 && m.site_name, m.shelf && `رف ${m.shelf}`].filter(Boolean).join(" · ") || `${money(m.price)} د.أ لل${m.unit}`}</span>
+                  <span>{[m.category, line == null && m.line_name, m.machine_name, sites.length > 1 && m.site_name, m.shelf && `رف ${m.shelf}`].filter(Boolean).join(" · ") || `${money(m.price)} د.أ لل${m.unit}`}</span>
                 </span>
                 <span className="end" style={{ textAlign: "end" }}>
                   <b className="fx-num" style={{ color: m.low ? "var(--fx-crit)" : m.balance <= 0 ? "var(--fx-muted)" : "var(--fx-navy)" }}>{fmtQty(m.balance)}</b>
@@ -111,6 +124,7 @@ export default function Store() {
       {sheet?.kind === "take" && <TakeSheet data={data} kind={sheet.pre?.kind || tab} pre={sheet.pre} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "receive" && <ReceiveSheet data={data} kind={sheet.pre?.kind || tab} pre={sheet.pre} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "count" && <CountSheet items={(data.items || []).filter((m) => m.active && m.kind === tab && (!site || m.site_id === site))} onClose={() => setSheet(null)} onDone={done} />}
+      {sheet?.kind === "starter" && <StarterSheet data={data} line0={sheet.line} onClose={() => setSheet(null)} onDone={(n) => { setSheet(null); reload(); if (n) setParams({ tab: "material" }); }} />}
       {sheet?.kind === "adjust" && <AdjustSheet m={sheet.pre} onClose={() => setSheet(null)} onDone={done} />}
     </div>
   );
@@ -173,6 +187,7 @@ function ItemEdit({ m, data, onClose, onDone }) {
     kind: m.kind || "material", name: m.name || "", code: m.code || "", category: m.category || "", unit: m.unit || (m.kind === "part" ? "حبة" : "كغم"),
     price: m.price ?? "", min_level: m.min_level || "", supplier: m.supplier || "", specs: m.specs || "", photo_url: m.photo_url || "",
     site_id: m.site_id || (data.sites.length === 1 ? data.sites[0].id : null), machine_id: m.machine_id || null, shelf: m.shelf || "", opening: "", active: m.active !== false,
+    line_id: m.line_id || null,
   }));
   const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });
   const [err, setErr] = useState("");
@@ -201,6 +216,12 @@ function ItemEdit({ m, data, onClose, onDone }) {
           <div className="fx-field">بأي مصنع؟<div className="fx-chips">
             <button type="button" className={`fx-chip ${!f.site_id ? "on" : ""}`} onClick={() => setF({ ...f, site_id: null })}>عام</button>
             {data.sites.filter((s) => s.active).map((s) => <button key={s.id} type="button" className={`fx-chip ${f.site_id === s.id ? "on" : ""}`} onClick={() => setF({ ...f, site_id: s.id })}>{s.name}</button>)}
+          </div></div>
+        )}
+        {f.kind === "material" && data.lines.some((l) => l.active) && (
+          <div className="fx-field">مستودع أي خط؟<div className="fx-chips">
+            <button type="button" className={`fx-chip ${!f.line_id ? "on" : ""}`} onClick={() => setF({ ...f, line_id: null })}>عامة (لكل الخطوط)</button>
+            {data.lines.filter((l) => l.active).map((l) => <button key={l.id} type="button" className={`fx-chip ${f.line_id === l.id ? "on" : ""}`} onClick={() => setF({ ...f, line_id: l.id })}>{l.name}</button>)}
           </div></div>
         )}
         {f.kind === "part" && machines.length > 0 && (
@@ -279,7 +300,7 @@ function PickLines({ items, lines, setLines, withCost = false }) {
 // ---------- سحب: الإنتاج لخطه، أو الفني لماكنة ----------
 export function TakeSheet({ data, kind = "material", pre, machineId = null, downtimeId = null, onClose, onDone }) {
   const fx = useFx();
-  const items = data.items.filter((m) => m.active && m.kind === kind && m.balance > 0);
+  const allItems = data.items.filter((m) => m.active && m.kind === kind && m.balance > 0);
   const myLines = data.lines.filter((l) => l.active && (data.my_lines.includes(l.id) || data.can.store || !data.my_lines.length));
   const [lineId, setLineId] = useState(() => (myLines.length === 1 ? myLines[0].id : data.my_lines.length === 1 ? data.my_lines[0] : null));
   const [machine, setMachine] = useState(machineId || pre?.machine_id || null);
@@ -287,6 +308,7 @@ export function TakeSheet({ data, kind = "material", pre, machineId = null, down
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const ok = lines.some((l) => Number(l.qty) > 0) && (kind === "part" || lineId || data.can.store);
+  const items = kind === "material" && lineId ? allItems.filter((m) => !m.line_id || m.line_id === lineId) : allItems;
   return (
     <Sheet title={kind === "part" ? "سحب قطع غيار" : "سحب مواد للإنتاج"} onClose={onClose}>
       <div className="fx-stack">
@@ -560,6 +582,35 @@ function MachineSheet({ m, data, onClose, onDone }) {
         {data.sites.length > 0 && <div className="fx-field">المصنع<div className="fx-chips">{data.sites.filter((s) => s.active).map((s) => <button key={s.id} type="button" className={`fx-chip ${site === s.id ? "on" : ""}`} onClick={() => setSite(site === s.id ? null : s.id)}>{s.name}</button>)}</div></div>}
         {data.lines.length > 0 && <div className="fx-field">الخط<div className="fx-chips">{data.lines.filter((l) => l.active && (!site || !l.site_id || l.site_id === site)).map((l) => <button key={l.id} type="button" className={`fx-chip ${line === l.id ? "on" : ""}`} onClick={() => setLine(line === l.id ? null : l.id)}>{l.name}</button>)}</div></div>}
         <Act className="fx-btn pri block" onClick={async () => { await fapi.setMachineSite(m.id, { site_id: site, line_id: line }); onDone(); }}>حفظ</Act>
+      </div>
+    </Sheet>
+  );
+}
+
+// المواد الأساسية لكل نوع خط — بتنضاف مرة وحدة، والمحاسب بيعبّي الأسعار والكميات
+function StarterSheet({ data, line0, onClose, onDone }) {
+  const fx = useFx();
+  const lines = data.lines.filter((l) => l.active);
+  const guess = (l) => (/مطر|قنا|قنين|bottle/i.test(l?.name || "") ? "bottles" : /كاس|cup/i.test(l?.name || "") ? "cups" : null);
+  const [line, setLine] = useState(line0 || (lines.length === 1 ? lines[0].id : null));
+  const [preset, setPreset] = useState(() => guess(lines.find((l) => l.id === (line0 || lines[0]?.id))) || "bottles");
+  return (
+    <Sheet title="المواد الأساسية للخط" onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-note sky">بنضيف قائمة المواد اللي بيحتاجها الخط عادةً، بكمية وسعر صفر. بعدها المحاسب بيعدّل الأسعار وبيدخّل الكميات من «دخل بضاعة»، وبيقدر يشيل أي صنف ما بيلزمكم أو يضيف غيره.</div>
+        <div className="fx-field">نوع الخط<div className="fx-chips">{Object.entries(data.starters || {}).map(([k, v]) => <button key={k} type="button" className={`fx-chip ${preset === k ? "on" : ""}`} onClick={() => setPreset(k)}>{v.label} ({v.n})</button>)}</div></div>
+        {lines.length > 0 && (
+          <div className="fx-field">لمستودع أي خط؟<div className="fx-chips">
+            <button type="button" className={`fx-chip ${!line ? "on" : ""}`} onClick={() => setLine(null)}>عامة</button>
+            {lines.map((l) => <button key={l.id} type="button" className={`fx-chip ${line === l.id ? "on" : ""}`} onClick={() => { setLine(l.id); const g = guess(l); if (g) setPreset(g); }}>{l.name}</button>)}
+          </div></div>
+        )}
+        {lines.length === 0 && <div className="fx-note">ما في خطوط لسا — ضيف «خط المطرات» و«خط الكاسات» من «المصانع والخطوط» عشان كل خط يكون إله مستودعه.</div>}
+        <Act className="fx-btn pri block fx-huge" onClick={async () => {
+          const r = await fapi.storeStarter({ preset, line_id: line });
+          fx.toast(r.added ? `انضاف ${r.added} صنف ✓` : "كل هالأصناف موجودة من قبل");
+          onDone(r.added);
+        }}>✨ ضيفهم</Act>
       </div>
     </Sheet>
   );
