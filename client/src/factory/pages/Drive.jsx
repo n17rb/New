@@ -418,13 +418,41 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
 }
 
 const FAILS = ["المحل مسكّر", "الزبون رفض الاستلام", "ما معه مصاري", "ما لقيت الموقع"];
+const PP_DAYS = [1, 2, 3, 4, 5, 7, 10, 14];
+function addDaysAr(n) {
+  return new Date(Date.now() + n * 86400000).toLocaleDateString("ar-JO-u-nu-latn", { timeZone: "Asia/Amman", weekday: "long", day: "numeric", month: "numeric" });
+}
 function FailSheet({ o, onClose, onDone }) {
   const fx = useFx();
   const [reason, setReason] = useState("");
   const [photo, setPhoto] = useState(null);
+  const [pp, setPp] = useState(false);
+  const [days, setDays] = useState(null);
+  const [note, setNote] = useState("");
+  if (pp) {
+    return (
+      <Sheet title={`تأجيل: ${o.customer_name}`} onClose={onClose}>
+        <div className="fx-stack">
+          <b>الزبون بده إياه بعد كم يوم؟</b>
+          <div className="fx-chips">{PP_DAYS.map((d) => <button key={d} className={`fx-chip ${days === d ? "on" : ""}`} onClick={() => setDays(d)}>{d === 1 ? "بكرا" : d === 7 ? "أسبوع" : d === 14 ? "أسبوعين" : `${d} أيام`}</button>)}</div>
+          {days && <div className="fx-note sky">يعني يوم {addDaysAr(days)}</div>}
+          <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: بعد ما يفضى المحل" /></label>
+          <div className="fx-note">إنت ما بتأجّل — بتبعت طلب، ومدخل الطلبات بيثبّت الموعد. البضاعة بترجع معك.</div>
+          <Act className="fx-btn pri block fx-huge" disabled={!days} onClick={async () => {
+            const loc = await getLocation(5000);
+            const q = await sendOrQueue({ kind: "postpone", ref: o.id, label: `تأجيل: ${o.customer_name}`, path: `/driver/orders/${o.id}/postpone`, body: { days, note, lat: loc?.lat, lng: loc?.lng } });
+            fx.toast(q.queued ? "📶 انحفظ على التلفون وبينبعت لحاله" : "انبعت طلب التأجيل لمدخل الطلبات ✓");
+            onDone(q.queued ? { queued: true } : q.data);
+          }}>🗓️ ابعت طلب التأجيل</Act>
+          <button className="fx-link" onClick={() => setPp(false)}>رجوع</button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <Sheet title={`ما تم: ${o.customer_name}`} onClose={onClose}>
       <div className="fx-stack">
+        <button className="fx-btn sky block" onClick={() => setPp(true)}>🗓️ الزبون بده إياه بعدين (تأجيل)</button>
         <div className="fx-chips">{FAILS.map((r) => <button key={r} className={`fx-chip ${reason === r ? "on" : ""}`} onClick={() => setReason(r)}>{r}</button>)}</div>
         <PhotoInput label="صوّر المحل (اختياري)" hint="إثبات إنك وصلت" value={photo} onChange={setPhoto} kind="fail" />
         <Act className="fx-btn pri block" disabled={!reason} onClick={async () => {

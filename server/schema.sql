@@ -1061,3 +1061,64 @@ ALTER TABLE customer_locations ADD COLUMN IF NOT EXISTS governorate VARCHAR(80);
 
 -- كوبونات ورقية: الزبون حاسب بكوبونات مش مسجّلة برصيده (بتنعدّ بجرد السيارة)
 ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS paper_coupons INTEGER NOT NULL DEFAULT 0;
+
+-- ============================================================
+-- المصانع (١، ٢، ٣…) وخطوط الإنتاج وموظفينها
+-- ============================================================
+CREATE TABLE IF NOT EXISTS f_sites (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+CREATE TABLE IF NOT EXISTS f_plines (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  site_id INTEGER REFERENCES f_sites(id) ON DELETE SET NULL,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+CREATE TABLE IF NOT EXISTS f_pline_users (
+  line_id INTEGER NOT NULL REFERENCES f_plines(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (line_id, user_id)
+);
+ALTER TABLE f_machines ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES f_sites(id) ON DELETE SET NULL;
+ALTER TABLE f_machines ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
+
+-- مستودع المواد: مواد أولية (رول بلاستيك، كرتون، لاصق…) وقطع غيار المكنات — كلها بجدول واحد
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS kind VARCHAR(10) NOT NULL DEFAULT 'material';
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS code VARCHAR(40);
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS category VARCHAR(60);
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS price NUMERIC(12,3) NOT NULL DEFAULT 0;
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS supplier VARCHAR(100);
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS specs TEXT;
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES f_sites(id) ON DELETE SET NULL;
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS machine_id INTEGER REFERENCES f_machines(id) ON DELETE SET NULL;
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS shelf VARCHAR(40);
+ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE f_material_moves DROP CONSTRAINT IF EXISTS f_material_moves_kind_check;
+DO $$ BEGIN
+  ALTER TABLE f_material_moves ADD CONSTRAINT f_material_moves_kind_check CHECK (kind IN ('receive','use','adjust','count'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS machine_id INTEGER REFERENCES f_machines(id) ON DELETE SET NULL;
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS downtime_id INTEGER REFERENCES f_downtime(id) ON DELETE SET NULL;
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(12,3);
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS supplier VARCHAR(100);
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS invoice_no VARCHAR(40);
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS taken_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_f_material_moves_mat ON f_material_moves(material_id, id DESC);
+
+-- صيانة السيارات بالتفصيل: كل نوع إله خاناته (زيت، كوشوك، بطارية، قطع…)
+ALTER TABLE f_maint ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE f_maint ADD COLUMN IF NOT EXISTS parts JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE f_maint ADD COLUMN IF NOT EXISTS labor NUMERIC(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE f_maint ADD COLUMN IF NOT EXISTS workshop VARCHAR(100);
+ALTER TABLE f_maint ADD COLUMN IF NOT EXISTS warranty_until DATE;
+
+-- السائق بيطلب تأجيل («تعال بعد ٤ أيام») ومدخل الطلبات بيثبّت الموعد
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_to DATE;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_note TEXT;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_at TIMESTAMPTZ;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_state VARCHAR(10);

@@ -14,12 +14,15 @@ import recurring from "./recurring.js";
 import jard from "./jard.js";
 import corrections from "./corrections.js";
 import maint from "./maint.js";
+import store from "./store.js";
+import postpone from "./postpone.js";
 
 // ============================================================
 // موج للمصانع — كل مسارات المصنع تحت /api/factory
 // ============================================================
 const router = Router();
 router.use(requireAuth, requireFactory);
+router.use(postpone);
 router.use(core);
 router.use(customers);
 router.use(orders);
@@ -32,6 +35,7 @@ router.use(recurring);
 router.use(jard);
 router.use(corrections);
 router.use(maint);
+router.use(store);
 
 export const factoryPublicRouter = publicRoutes;
 export { factoryWatch } from "./reports.js";
