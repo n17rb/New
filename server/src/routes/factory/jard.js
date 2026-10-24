@@ -18,7 +18,9 @@ const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
 
 async function buildJard(date, driverId = null) {
   const params = [date];
-  let where = `t.status <> 'cancelled' AND (t.trip_date = $1 OR (t.started_at AT TIME ZONE 'Asia/Amman')::date = $1)`;
+  // رحلات اليوم + أي رحلة لسا مفتوحة (طلعت مبارح ولسا ما انحاسبت، أو جولة مندوب شغالة) — عشان ولا سائق شغال يغيب عن الجرد
+  const openToo = date === jordanDate() ? ` OR (t.status = 'planned' AND t.trip_date <= $1) OR t.status = 'active' OR (t.status = 'returned' AND t.settled_at IS NULL)` : "";
+  let where = `t.status <> 'cancelled' AND (t.trip_date = $1 OR (t.started_at AT TIME ZONE 'Asia/Amman')::date = $1${openToo})`;
   if (driverId) { params.push(driverId); where += ` AND t.driver_id = $2`; }
   const trips = await loadTrips(where, params);
   if (!trips.length) return [];
@@ -144,7 +146,14 @@ async function buildJard(date, driverId = null) {
 router.get("/jard", viewJard, async (req, res) => {
   const date = isDate(req.query.date) ? req.query.date : jordanDate();
   const drivers = await buildJard(date, Number(req.query.driver_id) || null);
-  res.json({ date, drivers, can_review: canAction(req.user, "approve_expense"), can_settle: can(req.user, "f_money", "edit") });
+  // السواقين اللي ما إلهم ولا رحلة بهاليوم — عشان تعرف إنهم موجودين
+  let idle = [];
+  if (!req.query.driver_id && (can(req.user, "f_money") || can(req.user, "f_home") || can(req.user, "f_dispatch"))) {
+    const us = (await query("SELECT id, full_name, role, permissions FROM users WHERE status = 'active' AND role <> 'super_admin'")).rows;
+    const has = new Set(drivers.map((d) => d.driver_id));
+    idle = us.filter((u) => can(u, "f_drive", "edit") && !has.has(u.id)).map((u) => ({ id: u.id, name: u.full_name }));
+  }
+  res.json({ date, drivers, idle_drivers: idle, can_review: canAction(req.user, "approve_expense"), can_settle: can(req.user, "f_money", "edit") });
 });
 
 // تسوية: استلمت من السائق — كل رحلاته اللي رجعت ولسا ما انحاسبت، الأقدم أول

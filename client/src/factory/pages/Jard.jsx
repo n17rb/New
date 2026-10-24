@@ -45,6 +45,10 @@ export default function Jard() {
       {!data && !error && <Loading />}
       {data && drivers.length === 0 && <Empty title="ما في شغل بهاليوم" text="لما سائق يطلع برحلة أو يشتغل مندوب بيطلع جرده هون." />}
 
+      {!mine && !who && isToday && data?.idle_drivers?.length > 0 && (
+        <div className="fx-note fx-noprint">ما عندهم رحلة اليوم: {data.idle_drivers.map((x) => x.name).join("، ")} — لتحمّل لواحد منهم اعمله رحلة من «الرحلات»، أو خلّيه يبلّش «جولة بيع» من رحلتي.</div>
+      )}
+
       {shown.map((d) => <DriverJard key={d.driver_id || 0} d={d} mine={mine} canReview={data.can_review} canSettle={data.can_settle} reload={reload} onInvoice={setInv} />)}
 
       {inv && <InvoiceSheet o={inv} title={`فاتورة · ${inv.customer_name}`} onClose={() => setInv(null)} />}
