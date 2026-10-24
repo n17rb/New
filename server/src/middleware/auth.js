@@ -26,6 +26,11 @@ export function signToken(user, tenantId = 1) {
 }
 
 // توكن «معاينة» لإدارة موج: بيدخل على محل مشترك بوضع مشاهدة فقط
+// المدير بيعاين حساب موظف (مشاهدة بس) — بدون كلمة سره
+export function signViewAsToken(tenantId, userId, byUserId) {
+  return jwt.sign({ id: Number(userId), tid: Number(tenantId), viewas: true, by: Number(byUserId) }, JWT_SECRET, { expiresIn: "2h" });
+}
+
 export function signInspectToken(tenantId, byUserId) {
   return jwt.sign({ id: 0, tid: Number(tenantId), imp: true, by: byUserId }, JWT_SECRET, { expiresIn: "2h" });
 }
@@ -103,6 +108,17 @@ export async function requireAuth(req, res, next) {
       };
       if (req.method !== "GET" && req.method !== "HEAD") {
         return res.status(403).json({ error: "وضع المعاينة: بتقدر تتفرج بس، ما بتقدر تعدّل إشي.", code: "INSPECT_READ_ONLY" });
+      }
+      return next();
+    }
+
+    if (payload.viewas) {
+      // معاينة حساب موظف من المدير: بيشوف شو بيشوف الموظف بالزبط، وما في أي تعديل
+      const [target, by] = await Promise.all([loadUser(Number(payload.id)), loadUser(Number(payload.by))]);
+      if (!target || !by || by.role !== "super_admin" || by.status !== "active") return res.status(401).json({ error: "انتهت المعاينة." });
+      req.user = { ...target, inspecting: true, viewing_as: true, inspected_by: by.id, inspected_by_name: by.full_name };
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return res.status(403).json({ error: "وضع المعاينة: بتشوف حساب الموظف بس، ما بتقدر تعدّل إشي.", code: "INSPECT_READ_ONLY" });
       }
       return next();
     }

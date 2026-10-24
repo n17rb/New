@@ -159,6 +159,7 @@ export const api = {
   getUsers: () => request("/users"),
   createUser: (body) => request("/users", { method: "POST", body }),
   updateUser: (id, body) => request(`/users/${id}`, { method: "PUT", body }),
+  viewAsUser: (id) => request(`/users/${id}/view-as`, { method: "POST" }),
   deleteUser: (id) => request(`/users/${id}`, { method: "DELETE" }),
 
   getOrders: (params = {}) => {

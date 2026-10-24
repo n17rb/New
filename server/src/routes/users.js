@@ -1,13 +1,24 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query, logActivity } from "../db.js";
-import { requireAuth, invalidateUserCache } from "../middleware/auth.js";
+import { requireAuth, invalidateUserCache, signViewAsToken } from "../middleware/auth.js";
 import { claimUsername, releaseUsername, findTenantIdByUsername, normalizeUsername } from "../utils/tenants.js";
 import { requireOwner, sanitizePermissions, effectivePermissions, TEMPLATES, FACTORY_TEMPLATES, ROLES } from "../permissions.js";
 
 const router = Router();
 // إدارة المستخدمين والصلاحيات للمدير العام بس
 router.use(requireAuth, requireOwner);
+
+// عاين حساب الموظف: توكن مشاهدة بس لساعتين، بدون كلمة سره
+router.post("/:id/view-as", async (req, res) => {
+  if (req.user.inspecting) return res.status(403).json({ error: "إنت أصلًا بوضع المعاينة." });
+  const r = await query("SELECT id, full_name, role, status FROM users WHERE id = $1", [req.params.id]);
+  const u = r.rows[0];
+  if (!u) return res.status(404).json({ error: "الموظف غير موجود." });
+  if (u.id === req.user.id) return res.status(400).json({ error: "هاد حسابك." });
+  await logActivity({ userId: req.user.id, action: "VIEW_AS_USER", recordType: "user", recordId: u.id, newValue: { full_name: u.full_name } }).catch(() => {});
+  res.json({ token: signViewAsToken(req.tenant.id, u.id, req.user.id), name: u.full_name });
+});
 
 const USER_COLUMNS = `id, username, full_name, role, status, permissions,
   can_discount, can_delete_customer, can_edit_product_price, can_cancel_order, created_at`;

@@ -43,6 +43,7 @@ router.post("/login", async (req, res) => {
 function publicUser(user) {
   return {
     inspecting: !!user.inspecting,
+    viewing_as: !!user.viewing_as,
     id: user.id,
     username: user.username,
     full_name: user.full_name,
