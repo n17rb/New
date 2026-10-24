@@ -1,3 +1,4 @@
+import { isViewingAs, endViewAs } from "./viewAs.js";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api, clearApiCache } from "./api.js";
@@ -201,6 +202,10 @@ function MainApp() {
   useEffect(() => {
     function onExpired() {
       // لو كنا بنعاين محل وخلصت مدة المعاينة: منرجع لحساب إدارة موج
+      if (isViewingAs()) {
+        endViewAs();
+        return;
+      }
       if (localStorage.getItem("inspect_backup")) {
         endInspection();
         return;
@@ -273,6 +278,7 @@ function MainApp() {
   }, [user?.id, locked]);
 
   async function handleLogout() {
+    if (isViewingAs()) { endViewAs(); return; }
     await disablePushForLogout();
     clearApiCache();
     localStorage.removeItem("token");
@@ -385,7 +391,14 @@ function MainApp() {
       <UserContext.Provider value={user}>
         <div className="app-shell">
           <TopBar unreadCount={unreadCount} chatUnread={chatUnread} showChat={canChat && !user.inspecting} shopName={shop?.is_home ? null : shop?.name} />
-          {user.inspecting && (
+          {user.viewing_as && (
+            <div className="shop-banner inspect" role="status">
+              <FiEye aria-hidden="true" />
+              <span style={{ flex: 1 }}>بتعاين حساب «{user.full_name}» — مشاهدة بس</span>
+              <button onClick={() => endViewAs()}>رجوع لحسابي</button>
+            </div>
+          )}
+          {user.inspecting && !user.viewing_as && (
             <div className="shop-banner inspect" role="status">
               <FiEye aria-hidden="true" />
               <span style={{ flex: 1 }}>بتعاين «{shop?.name}» — مشاهدة بس</span>

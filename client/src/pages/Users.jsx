@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { FiUserPlus, FiChevronLeft, FiArrowRight, FiTrash2, FiMessageCircle, FiCheckCircle } from "react-icons/fi";
+import { FiUserPlus, FiChevronLeft, FiArrowRight, FiTrash2, FiMessageCircle, FiCheckCircle, FiEye } from "react-icons/fi";
+import { startViewAs } from "../viewAs.js";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
 import { ROLE_LABELS as SHOP_ROLE_LABELS } from "./More.jsx";
@@ -209,12 +210,22 @@ function UserEditor({ meta, user, onClose, onSaved }) {
 
   if (done) return <SendLogin done={done} onFinish={onSaved} />;
 
+  async function viewAs() {
+    setError("");
+    try { await startViewAs(user.id); } catch (err) { setError(err.message); }
+  }
+
   return (
     <>
       <button className="btn-danger-text icon-row" style={{ color: "var(--text-secondary)", marginBottom: 6 }} onClick={onClose}>
         <FiArrowRight aria-hidden="true" /> رجوع
       </button>
       <h1 className="title-lg">{isNew ? "موظف جديد" : user.full_name}</h1>
+      {!isNew && !isSelf && user.role !== "super_admin" && !me.inspecting && (
+        <button type="button" className="btn-secondary icon-row" style={{ justifyContent: "center", marginBottom: 12 }} onClick={viewAs}>
+          <FiEye aria-hidden="true" /> عاين حسابه — شوف التطبيق زي ما بيشوفه
+        </button>
+      )}
       {error && <div className="error-box">{error}</div>}
 
       <div className="card">

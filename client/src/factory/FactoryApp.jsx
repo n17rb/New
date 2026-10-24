@@ -8,6 +8,7 @@ import { FxContext } from "./ui.jsx";
 import { HelpSheet, Tour } from "./help.jsx";
 import { saveFactoryLogin } from "./FactoryLogin.jsx";
 import { applyBrandHead } from "./brandHead.js";
+import { endViewAs } from "../viewAs.js";
 import "./factory.css";
 
 import Home from "./pages/Home.jsx";
@@ -107,7 +108,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
   // تطبيق الأندرويد: إشعارات Firebase (بترن حتى والتطبيق مسكّر)
   useEffect(() => {
     const PN = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.PushNotifications : null;
-    if (!PN || !/\bfcm\b/.test(navigator.userAgent)) return;
+    if (!PN || !/\bfcm\b/.test(navigator.userAgent) || user.inspecting) return;
     let subs = [];
     (async () => {
       try {
@@ -127,7 +128,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
   // السائق/المندوب بس — المالك والإدارة ما إلهم «رحلتي» ولا بيتتبّع موقعهم
   const isDriver = !isOwner && can("f_drive", "edit");
   useEffect(() => {
-    if (!isDriver) return;
+    if (!isDriver || user.inspecting) return; // المعاينة ما بتبعت موقع
     // تطبيق السائق (APK): تتبع من التلفون نفسه — بيكمل والشاشة مطفية أو التطبيق بالخلفية (مع إشعار ثابت)
     const BG = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.BackgroundGeolocation : null;
     if (BG) {
@@ -210,7 +211,13 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
             )}
           </header>
 
-          {user.inspecting && <div className="fx-note warn" style={{ margin: 12 }}>وضع المعاينة — مشاهدة بس.</div>}
+          {user.viewing_as && (
+            <div className="fx-note warn fx-row" style={{ margin: 12, justifyContent: "space-between", flexWrap: "nowrap", gap: 8 }}>
+              <span>👁️ بتعاين حساب <b>{user.full_name}</b> — مشاهدة بس</span>
+              <button className="fx-btn sm" onClick={() => endViewAs()}>رجوع لحسابي</button>
+            </div>
+          )}
+          {user.inspecting && !user.viewing_as && <div className="fx-note warn" style={{ margin: 12 }}>وضع المعاينة — مشاهدة بس.</div>}
           {bootError && <div className="fx-page"><div className="fx-err">{bootError}</div><button className="fx-btn" onClick={reloadBoot}>جرّب كمان مرة</button></div>}
 
           {boot && (
