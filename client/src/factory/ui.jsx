@@ -505,3 +505,24 @@ export function CliqBox({ on, setOn, amount, setAmount, photo, setPhoto, max }) 
   );
 }
 
+// موقع الزبون مش محفوظ: السائق لازم يحفظه (من مكانه عند الزبون) قبل الفاتورة
+export function LocationGuard({ customerId, name, onSaved }) {
+  const fx = useFx();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="fx-card fx-stack" style={{ gap: 8, background: "var(--fx-crit-soft)", border: "none" }}>
+      <b style={{ color: "var(--fx-crit)" }}>📍 موقع {name || "الزبون"} مش محفوظ</b>
+      <small>إنت هلأ عنده؟ احفظ موقعك كموقعه — بعدها بتقدر تعمل الفاتورة.</small>
+      <button type="button" className="fx-btn pri block" disabled={busy} onClick={async () => {
+        setBusy(true);
+        try {
+          const loc = await getLocation(10000, 0);
+          if (!loc) { fx.toast("شغّل الموقع (GPS) على التلفون وجرّب كمان مرة"); return; }
+          await fapi.customerLocation(customerId, loc.lat, loc.lng);
+          fx.toast("انحفظ موقع الزبون ✓");
+          onSaved(loc);
+        } catch (e) { fx.toast(e.message); } finally { setBusy(false); }
+      }}>{busy ? "عم بنجيب موقعك..." : "📍 احفظ موقعي كموقع الزبون"}</button>
+    </div>
+  );
+}

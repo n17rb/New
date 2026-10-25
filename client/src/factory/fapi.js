@@ -71,6 +71,7 @@ export const fapi = {
   customerLocation: (id, lat, lng) => post(`/customers/${id}/location`, { lat, lng }),
   payment: (id, b) => post(`/customers/${id}/payments`, b),
   adjust: (id, b) => post(`/customers/${id}/adjust`, b),
+  customerDebt: (id, b) => post(`/customers/${id}/debt`, b),
   trackLink: (id) => post(`/customers/${id}/track-link`),
   messages: (p) => get(`/messages${qs(p)}`),
   messageSent: (id) => post(`/messages/${id}/sent`),

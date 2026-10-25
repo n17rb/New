@@ -354,6 +354,18 @@ router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customer
 });
 
 // تعديل رصيد يدوي (بسبب) — للحسابات
+// الإدارة بتسجّل دين على زبون (دين قديم، بضاعة أخذها بدون فاتورة…)
+router.post("/customers/:id/debt", needAny(["f_money", "edit"], ["f_customers", "edit"]), async (req, res) => {
+  const amount = round2(req.body?.amount);
+  if (!(amount > 0)) return bad(res, "اكتب مبلغ الدين.");
+  const c = (await query("SELECT id, name, lat FROM f_customers WHERE id = $1 AND active", [req.params.id])).rows[0];
+  if (!c) return bad(res, "الزبون غير موجود.", 404);
+  const note = str(req.body?.note, 300) || "دين مسجّل من الإدارة";
+  const balance = await postLedger(null, { customerId: c.id, kind: "adjust", amount, note, userId: req.user.id });
+  await logActivity({ userId: req.user.id, action: "F_CUSTOMER_DEBT", recordType: "f_customer", recordId: c.id, newValue: { amount, note } });
+  res.json({ ok: true, balance, no_location: c.lat == null });
+});
+
 router.post("/customers/:id/adjust", need("f_money", "edit"), async (req, res) => {
   const amount = round2(req.body?.amount);
   const note = str(req.body?.note, 300);
