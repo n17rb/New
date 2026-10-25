@@ -1308,3 +1308,6 @@ DO $$ BEGIN
   ALTER TABLE f_meters ADD CONSTRAINT f_meters_kind_check CHECK (kind IN ('elec','water','gen','trans'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER TABLE f_meters ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
+
+-- فحص الكلور: قبل الكربون وبعده
+ALTER TABLE f_qchecks ADD COLUMN IF NOT EXISTS chlorine_before VARCHAR(10);

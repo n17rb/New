@@ -42,7 +42,7 @@ function issuesOf(c, limits = {}) {
   if (n("ozone") != null && L.ozone_min != null && n("ozone") < Number(L.ozone_min)) out.push(`الأوزون واطي (${n("ozone")})`);
   if (n("ozone") != null && L.ozone_max != null && n("ozone") > Number(L.ozone_max)) out.push(`الأوزون عالي (${n("ozone")})`);
   if (c.soft_after && c.soft_after === (L.soft_bad || "أحمر")) out.push(`السوفتنر بعد الجهاز ${c.soft_after}`);
-  if (c.chlorine && c.chlorine === (L.cl_bad || "أصفر")) out.push(`الكلور ${c.chlorine}`);
+  if (c.chlorine && c.chlorine === (L.cl_bad || "أصفر")) out.push(`الكلور بعد الكربون ${c.chlorine}`);
   return out;
 }
 
@@ -109,15 +109,16 @@ router.post("/line/:id/check", view, async (req, res) => {
     soft_before: COLORS_SOFT.includes(b.soft_before) ? b.soft_before : null,
     soft_after: COLORS_SOFT.includes(b.soft_after) ? b.soft_after : null,
     chlorine: COLORS_CL.includes(b.chlorine) ? b.chlorine : null,
+    chlorine_before: COLORS_CL.includes(b.chlorine_before) ? b.chlorine_before : null,
     note: String(b.note || "").trim().slice(0, 300) || null,
   };
   if (c.ph != null && !(c.ph >= 0 && c.ph <= 14)) return bad(res, "pH لازم بين 0 و 14.");
-  if ([c.ozone, c.tds, c.ph, c.soft_before, c.soft_after, c.chlorine].every((x) => x == null)) return bad(res, "عبّي الفحص.");
+  if ([c.ozone, c.tds, c.ph, c.soft_before, c.soft_after, c.chlorine, c.chlorine_before].every((x) => x == null)) return bad(res, "عبّي الفحص.");
   const issues = issuesOf(c, l.limits);
   const r = await query(
-    `INSERT INTO f_qchecks (line_id, user_id, ozone, tds, ph, soft_before, soft_after, chlorine, note, issues)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [l.id, req.user.id, c.ozone, c.tds, c.ph, c.soft_before, c.soft_after, c.chlorine, c.note, issues.join(" | ") || null]
+    `INSERT INTO f_qchecks (line_id, user_id, ozone, tds, ph, soft_before, soft_after, chlorine, note, issues, chlorine_before)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [l.id, req.user.id, c.ozone, c.tds, c.ph, c.soft_before, c.soft_after, c.chlorine, c.note, issues.join(" | ") || null, c.chlorine_before]
   );
   if (issues.length) {
     await alert({ level: "crit", kind: "qcheck", ref: r.rows[0].id, title: `🧪 فحص ${l.name}: ${issues[0]}`, body: `${issues.join("، ")} — سجّله ${req.user.full_name}.` });

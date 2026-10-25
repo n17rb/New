@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { FiPrinter, FiSettings, FiPlus } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, DateInput, Reload, money, num, time, date, today } from "../ui.jsx";
@@ -20,13 +20,16 @@ function untilText(iso) {
 export default function Line() {
   const fx = useFx();
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const fixed = Number(params.get("line")) || null; // جاي من صفحة المصنع
   const { data, error, reload } = useLoad(() => fapi.line(), []);
-  const [pick, setPick] = useState(null);
+  const [pick, setPick] = useState(fixed);
   const [sheet, setSheet] = useState(null);
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const lines = data?.lines || [];
   const l = lines.find((x) => x.id === pick) || lines.find((x) => x.mine) || lines[0];
+  const plantName = (n) => (n || "").replace(/^خط\s*/, "مصنع ");
   const C = data?.can || {};
   const done = () => { setSheet(null); reload(); };
   const due = l ? untilText(l.next_check_at) : null;
@@ -34,8 +37,9 @@ export default function Line() {
 
   return (
     <div className="fx-page">
+      {fixed && l && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => nav(`/f/plant/${l.id}`)}>→ {plantName(l.name)}</button>}
       <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1" style={{ margin: 0 }}>{l ? l.name : "خط الإنتاج"}</h1>
+        <h1 className="fx-h1" style={{ margin: 0 }}>{l ? (fixed ? `التعقيم والفحوصات — ${plantName(l.name)}` : l.name) : "خط الإنتاج"}</h1>
         <span className="fx-row" style={{ gap: 6 }}>
           {C.setup && l && <button className="fx-btn sm" onClick={() => setSheet({ kind: "settings" })}><FiSettings /> إعدادات</button>}
           <Reload onClick={reload} />
@@ -44,7 +48,7 @@ export default function Line() {
       <Err msg={error} />
       {!data && !error && <Loading />}
       {data && !lines.length && <Empty title="ما في خطوط إنتاج" text="الإدارة بتضيف الخطوط من «المواد وقطع الغيار» ← «المصانع والخطوط»." />}
-      {lines.length > 1 && (
+      {lines.length > 1 && !fixed && (
         <div className="fx-chips">{lines.map((x) => <button key={x.id} className={`fx-chip ${l?.id === x.id ? "on" : ""}`} onClick={() => setPick(x.id)}>{x.mine ? "★ " : ""}{x.name}</button>)}</div>
       )}
 
@@ -80,7 +84,7 @@ export default function Line() {
                 <span className="fx-avatar" style={{ fontSize: 17 }}>{q.issues.length ? "⚠️" : "✅"}</span>
                 <span className="t">
                   <b>{time(q.checked_at)} · {q.by_name || ""}</b>
-                  <span>{[q.ozone != null && `أوزون ${Number(q.ozone)}`, q.tds != null && `TDS ${Number(q.tds)}`, q.ph != null && `pH ${Number(q.ph)}`, q.soft_before && `سوفتنر قبل ${q.soft_before}`, q.soft_after && `بعد ${q.soft_after}`, q.chlorine && `كلور ${q.chlorine}`].filter(Boolean).join(" · ")}</span>
+                  <span>{[q.ozone != null && `أوزون ${Number(q.ozone)}`, q.tds != null && `TDS ${Number(q.tds)}`, q.ph != null && `pH ${Number(q.ph)}`, q.soft_before && `سوفتنر قبل ${q.soft_before}`, q.soft_after && `بعد ${q.soft_after}`, q.chlorine_before && `كلور قبل الكربون ${q.chlorine_before}`, q.chlorine && `كلور بعد الكربون ${q.chlorine}`].filter(Boolean).join(" · ")}</span>
                   {q.issues.length > 0 && <span style={{ color: "var(--fx-crit)" }}>{q.issues.join("، ")}</span>}
                   {q.note && <span>📝 {q.note}</span>}
                 </span>
@@ -118,7 +122,7 @@ function ColorPick({ label, options, value, onChange }) {
 
 function CheckSheet({ l, colors, onClose, onDone }) {
   const fx = useFx();
-  const [f, setF] = useState({ ozone: "", tds: "", ph: "", soft_before: "", soft_after: "", chlorine: "", note: "" });
+  const [f, setF] = useState({ ozone: "", tds: "", ph: "", soft_before: "", soft_after: "", chlorine_before: "", chlorine: "", note: "" });
   const [err, setErr] = useState("");
   const [res, setRes] = useState(null);
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v?.target ? v.target.value : v }));
@@ -149,7 +153,8 @@ function CheckSheet({ l, colors, onClose, onDone }) {
         {numIn("ph", "pH", range(L.ph_min, L.ph_max))}
         <ColorPick label="عينة السوفتنر — قبل الجهاز" options={colors.soft} value={f.soft_before} onChange={set("soft_before")} />
         <ColorPick label="عينة السوفتنر — بعد الجهاز" options={colors.soft} value={f.soft_after} onChange={set("soft_after")} />
-        <ColorPick label="الكلور" options={colors.cl} value={f.chlorine} onChange={set("chlorine")} />
+        <ColorPick label="الكلور — قبل الكربون" options={colors.cl} value={f.chlorine_before} onChange={set("chlorine_before")} />
+        <ColorPick label="الكلور — بعد الكربون" options={colors.cl} value={f.chlorine} onChange={set("chlorine")} />
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={f.note} onChange={set("note")} /></label>
         <Err msg={err} />
         <Act className="fx-btn pri block fx-huge" onClick={async () => {
@@ -301,15 +306,15 @@ function PrintSheet({ l, onClose }) {
   function print() {
     const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const brand = fx.boot.factory?.name || fx.shop?.name || "";
-    const rows = (data.checks || []).map((q, i) => `<tr class="${q.issues.length ? "bad" : ""}"><td>${i + 1}</td><td>${esc(time(q.checked_at))}</td><td>${q.ozone ?? ""}</td><td>${q.tds ?? ""}</td><td>${q.ph ?? ""}</td><td>${esc(q.soft_before || "")}</td><td>${esc(q.soft_after || "")}</td><td>${esc(q.chlorine || "")}</td><td>${esc(q.by_name || "")}</td><td>${esc([q.issues.join("، "), q.note].filter(Boolean).join(" · "))}</td><td></td></tr>`).join("");
-    const empty = Array.from({ length: Math.max(0, 8 - (data.checks || []).length) }, () => "<tr>" + "<td>&nbsp;</td>".repeat(11) + "</tr>").join("");
+    const rows = (data.checks || []).map((q, i) => `<tr class="${q.issues.length ? "bad" : ""}"><td>${i + 1}</td><td>${esc(time(q.checked_at))}</td><td>${q.ozone ?? ""}</td><td>${q.tds ?? ""}</td><td>${q.ph ?? ""}</td><td>${esc(q.soft_before || "")}</td><td>${esc(q.soft_after || "")}</td><td>${esc(q.chlorine_before || "")}</td><td>${esc(q.chlorine || "")}</td><td>${esc(q.by_name || "")}</td><td>${esc([q.issues.join("، "), q.note].filter(Boolean).join(" · "))}</td><td></td></tr>`).join("");
+    const empty = Array.from({ length: Math.max(0, 8 - (data.checks || []).length) }, () => "<tr>" + "<td>&nbsp;</td>".repeat(12) + "</tr>").join("");
     const list = (xs, f) => (xs.length ? `<ul>${xs.map(f).join("")}</ul>` : "<p class='m'>—</p>");
     const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فحوصات ${esc(l.name)} ${day}</title>
 <style>body{font-family:system-ui,Tahoma,sans-serif;margin:18px;color:#111}h1{font-size:20px;margin:0}h2{font-size:15px;margin:16px 0 6px}.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0456a2;padding-bottom:8px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{border:1px solid #999;padding:5px;text-align:center}th{background:#eef5fb}tr.bad td{background:#fde8e8}ul{margin:0;padding-inline-start:18px;font-size:13px}.m{color:#777;margin:0}
 .sig{display:flex;gap:40px;margin-top:28px;font-size:13px}.sig div{flex:1;border-top:1px solid #333;padding-top:6px}@media print{button{display:none}}</style></head><body>
 <div class="top"><div><h1>ورقة الفحوصات اليومية — ${esc(l.name)}</h1><div class="m">${esc(brand)}${l.site_name ? " · " + esc(l.site_name) : ""}</div></div><b>${esc(date(day))} · ${day}</b></div>
-<h2>فحوصات الجودة</h2><table><thead><tr><th>#</th><th>الساعة</th><th>أوزون</th><th>TDS</th><th>pH</th><th>سوفتنر قبل</th><th>سوفتنر بعد</th><th>كلور</th><th>الموظف</th><th>ملاحظات</th><th>توقيع</th></tr></thead><tbody>${rows}${empty}</tbody></table>
+<h2>فحوصات الجودة</h2><table><thead><tr><th>#</th><th>الساعة</th><th>أوزون</th><th>TDS</th><th>pH</th><th>سوفتنر قبل</th><th>سوفتنر بعد</th><th>كلور قبل الكربون</th><th>كلور بعد الكربون</th><th>الموظف</th><th>ملاحظات</th><th>توقيع</th></tr></thead><tbody>${rows}${empty}</tbody></table>
 <h2>غيار الفلاتر</h2>${list(data.filter_changes, (c) => `<li>${esc(time(c.changed_at))} — ${esc(c.filter_name)}${c.qty ? ` (${c.qty})` : ""} — ${esc(c.by_name || "")}</li>`)}
 <h2>المواد المسحوبة للخط</h2>${list(data.used, (x) => `<li>${esc(time(x.created_at))} — ${x.qty} ${esc(x.unit)} ${esc(x.name)} — ${esc(x.by_name || "")}</li>`)}
 <h2>التالف</h2>${list(data.waste, (x) => `<li>${esc(time(x.created_at))} — ${x.qty} ${esc(x.unit)} ${esc(x.name)}${x.machine_name ? " · " + esc(x.machine_name) : ""}${x.run_hours ? ` · ${Number(x.run_hours)} ساعة` : ""} — ${esc(x.by_name || "")}${x.note ? " · " + esc(x.note) : ""}</li>`)}
@@ -362,7 +367,7 @@ function SettingsSheet({ l, colors, onClose, onDone }) {
         <b>الحدود المسموحة (اللي برّاها بيوصل تنبيه)</b>
         <div className="fx-grid2">{limIn("tds_min", "TDS من")}{limIn("tds_max", "TDS لـ")}{limIn("ph_min", "pH من")}{limIn("ph_max", "pH لـ")}{limIn("ozone_min", "أوزون من")}{limIn("ozone_max", "أوزون لـ")}</div>
         <ColorPick label="السوفتنر بعد الجهاز — اللون الغلط" options={colors.soft} value={lim.soft_bad || "أحمر"} onChange={(v) => setLim({ ...lim, soft_bad: v || "أحمر" })} />
-        <ColorPick label="الكلور — اللون الغلط" options={colors.cl} value={lim.cl_bad || "أصفر"} onChange={(v) => setLim({ ...lim, cl_bad: v || "أصفر" })} />
+        <ColorPick label="الكلور بعد الكربون — اللون الغلط" options={colors.cl} value={lim.cl_bad || "أصفر"} onChange={(v) => setLim({ ...lim, cl_bad: v || "أصفر" })} />
         <b>دوام موظفين الخط (التذكير بيوصل بس وهو بدوامه)</b>
         {l.members.length === 0 && <div className="fx-muted">ما في موظفين على الخط — ضيفهم من «المصانع والخطوط».</div>}
         {l.members.map((m) => {
