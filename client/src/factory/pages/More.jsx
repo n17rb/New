@@ -15,8 +15,8 @@ export default function More({ onLogout }) {
   const canSetup = fx.can("f_store", "edit") || fx.can("f_fleet", "edit");
   const plants = [
     ...lines0,
-    ...(lineData && !lines0.some((l) => lineType(l.name) === "cups") && canSetup ? [{ id: "new-cups", name: "خط الكاسات", _new: true }] : []),
-    ...(lineData && !lines0.some((l) => lineType(l.name) === "bottles") && canSetup ? [{ id: "new-bottles", name: "خط المطرات", _new: true }] : []),
+    // مصانع جاهزة للتجهيز بس إذا لسا ما في ولا مصنع
+    ...(lineData && !lines0.length && canSetup ? [{ id: "new-cups", name: "خط الكاسات", _new: true }, { id: "new-bottles", name: "خط المطرات", _new: true }] : []),
   ];
   async function openPlant(l) {
     if (!l._new) return nav(`/f/plant/${l.id}`);
