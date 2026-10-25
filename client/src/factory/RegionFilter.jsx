@@ -96,52 +96,109 @@ function RegionRow({ label, n, noun, more, strong, onClick }) {
 }
 
 // ============================================================
-// اختيار أكثر من منطقة بحرية (مثلًا الشجرة + الرمثا) — وبتطلع طلبات المناطق اللي اخترتها بس
+// اختيار المناطق: المحافظة ← الألوية (بتختار أكثر من لواء)، ولو بدك أدق: مناطق جوّا اللواء
+// مثلًا إربد ← لواء بني عبيد + لواء الرمثا — وبتطلع طلباتهم بس
 // ============================================================
-const areaKey = (x) => `${gov(x)}|${area(x)}`;
+const dKey = (x) => `d|${gov(x)}|${dist(x)}`;
+const aKey = (x) => `a|${gov(x)}|${dist(x)}|${area(x)}`;
 export function matchAreas(x, keys) {
-  return !keys?.length || keys.includes(areaKey(x));
+  if (!keys?.length) return true;
+  return keys.includes(dKey(x)) || keys.includes(aKey(x));
 }
+const keyLabel = (k) => {
+  const p = k.split("|");
+  return p[0] === "a" ? p[3] : p[2] === NONE ? `${p[1]} (غير محدد)` : short(p[2]);
+};
 export function AreasFilter({ items, value = [], onChange, noun = "طلب" }) {
+  const valid = value.filter((k) => /^[da]\|/.test(k));
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [sel, setSel] = useState(value);
-  const groups = useMemo(() => {
+  const [sel, setSel] = useState(valid);
+  const [g, setG] = useState(null); // المحافظة المفتوحة
+  const [d, setD] = useState(null); // اللواء المفتوح لاختيار مناطقه
+  const tree = useMemo(() => {
     const m = new Map();
     for (const x of items) {
-      const g = gov(x), k = areaKey(x);
-      if (!m.has(g)) m.set(g, new Map());
-      const a = m.get(g);
-      a.set(k, { key: k, name: area(x), n: (a.get(k)?.n || 0) + 1 });
+      const G = gov(x), D = dist(x), A = area(x);
+      if (!m.has(G)) m.set(G, { n: 0, dists: new Map() });
+      const gg = m.get(G); gg.n++;
+      if (!gg.dists.has(D)) gg.dists.set(D, { n: 0, areas: new Map() });
+      const dd = gg.dists.get(D); dd.n++;
+      dd.areas.set(A, (dd.areas.get(A) || 0) + 1);
     }
-    return [...m.entries()].map(([g, a]) => [g, [...a.values()].sort((x, y) => y.n - x.n)]).sort((a, b) => (a[0] === NONE) - (b[0] === NONE) || b[1].reduce((s, x) => s + x.n, 0) - a[1].reduce((s, x) => s + x.n, 0));
+    return m;
   }, [items]);
-  const qn = q.trim();
-  const shown = qn ? groups.map(([g, as]) => [g, as.filter((a) => a.name.includes(qn) || g.includes(qn))]).filter(([, as]) => as.length) : groups;
+  const govs = [...tree.entries()].sort((a, b) => (a[0] === NONE) - (b[0] === NONE) || b[1].n - a[1].n);
   const count = items.filter((x) => matchAreas(x, sel)).length;
-  const names = value.map((k) => k.split("|")[1]);
   const toggle = (k) => setSel((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
+  const labels = valid.map(keyLabel);
+  const dk = (G, D) => `d|${G}|${D}`;
+  const ak = (G, D, A) => `a|${G}|${D}|${A}`;
   return (
     <>
       <div className="fx-region">
-        <button className={`fx-region-btn ${value.length ? "on" : ""}`} onClick={() => { setSel(value); setQ(""); setOpen(true); }}>
-          <FiMapPin aria-hidden="true" /> {value.length ? (names.length <= 2 ? names.join(" + ") : `${names.slice(0, 2).join(" + ")} +${names.length - 2}`) : "كل المناطق"}
+        <button className={`fx-region-btn ${valid.length ? "on" : ""}`} onClick={() => { setSel(valid); setG(null); setD(null); setOpen(true); }}>
+          <FiMapPin aria-hidden="true" /> {valid.length ? (labels.length <= 2 ? labels.join(" + ") : `${labels.slice(0, 2).join(" + ")} +${labels.length - 2}`) : "كل المناطق"}
         </button>
-        {value.length > 0 && <button className="fx-region-x" onClick={() => onChange([])} aria-label="كل المناطق"><FiX /></button>}
+        {valid.length > 0 && <button className="fx-region-x" onClick={() => onChange([])} aria-label="كل المناطق"><FiX /></button>}
       </div>
       {open && (
-        <Sheet title="اختار المناطق" onClose={() => setOpen(false)}>
-          <div className="fx-stack" style={{ gap: 10 }}>
-            <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر على منطقة" />
-            {shown.map(([g, as]) => (
-              <div key={g} className="fx-stack" style={{ gap: 6 }}>
-                <b style={{ fontSize: 13.5 }}>{g}</b>
+        <Sheet title={d ? `مناطق ${short(d)}` : g ? g : "وين بدك تطلّع السيارة؟"} onClose={() => setOpen(false)}>
+          <div className="fx-stack" style={{ gap: 8 }}>
+            {(g || d) && (
+              <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => (d ? setD(null) : setG(null))}>
+                <FiArrowRight aria-hidden="true" /> رجوع
+              </button>
+            )}
+
+            {/* ١) المحافظات */}
+            {!g && govs.map(([G, gg]) => {
+              const picked = sel.filter((k) => k.split("|")[1] === G).length;
+              return <RegionRow key={G} label={`${G}${picked ? ` · ✓ ${picked}` : ""}`} n={gg.n} noun={noun} more onClick={() => setG(G)} />;
+            })}
+
+            {/* ٢) ألوية المحافظة — بتختار أكثر من وحدة */}
+            {g && !d && (
+              <>
+                <small className="fx-muted">اختار لواء أو أكثر — أو اكبس ‹ لتختار مناطق محددة جوّاه.</small>
+                {[...tree.get(g).dists.entries()].sort((a, b) => (a[0] === NONE) - (b[0] === NONE) || b[1].n - a[1].n).map(([D, dd]) => {
+                  const on = sel.includes(dk(g, D));
+                  const partial = !on && sel.some((k) => k.startsWith(`a|${g}|${D}|`));
+                  return (
+                    <div key={D} className="fx-row" style={{ gap: 8, flexWrap: "nowrap" }}>
+                      <button type="button" className={`fx-chip ${on ? "on" : ""}`} style={{ flex: 1, justifyContent: "space-between", display: "flex", padding: "10px 14px", fontSize: 15 }} onClick={() => {
+                        setSel((s) => (on ? s.filter((x) => x !== dk(g, D)) : [...s.filter((x) => !x.startsWith(`a|${g}|${D}|`)), dk(g, D)]));
+                      }}>
+                        <span>{on ? "✓ " : partial ? "◐ " : ""}{D === NONE ? "منطقة غير محددة" : `لواء ${short(D)}`}</span>
+                        <small>{num(dd.n)} {noun}</small>
+                      </button>
+                      {D !== NONE && dd.areas.size > 1 && <button type="button" className="fx-icon-btn" onClick={() => setD(D)} aria-label="المناطق"><FiChevronLeft /></button>}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+
+            {/* ٣) مناطق اللواء (اختياري) */}
+            {g && d && (
+              <>
+                <small className="fx-muted">اختار المناطق اللي بدك إياها بلواء {short(d)}.</small>
                 <div className="fx-chips">
-                  {as.map((a) => <button key={a.key} type="button" className={`fx-chip ${sel.includes(a.key) ? "on" : ""}`} onClick={() => toggle(a.key)}>{sel.includes(a.key) ? "✓ " : ""}{a.name} <small>({num(a.n)})</small></button>)}
+                  {[...tree.get(g).dists.get(d).areas.entries()].sort((a, b) => b[1] - a[1]).map(([A, n]) => {
+                    const on = sel.includes(ak(g, d, A)) || sel.includes(dk(g, d));
+                    return <button key={A} type="button" className={`fx-chip ${on ? "on" : ""}`} onClick={() => {
+                      setSel((s) => {
+                        let x = s;
+                        // كان اللواء كله مختار؟ بنفكّه لمناطقه
+                        if (x.includes(dk(g, d))) x = [...x.filter((k) => k !== dk(g, d)), ...[...tree.get(g).dists.get(d).areas.keys()].map((a2) => ak(g, d, a2))];
+                        return x.includes(ak(g, d, A)) ? x.filter((k) => k !== ak(g, d, A)) : [...x, ak(g, d, A)];
+                      });
+                    }}>{on ? "✓ " : ""}{A} <small>({num(n)})</small></button>;
+                  })}
                 </div>
-              </div>
-            ))}
-            {!shown.length && <div className="fx-muted">ما في منطقة بهالاسم.</div>}
+              </>
+            )}
+
+            {sel.length > 0 && <div className="fx-chips">{sel.map((k) => <button key={k} type="button" className="fx-chip on" onClick={() => toggle(k)}>{keyLabel(k)} ✕</button>)}</div>}
             <div className="fx-grid2" style={{ position: "sticky", bottom: 0, background: "var(--fx-surface, #fff)", paddingTop: 8 }}>
               <button className="fx-btn" onClick={() => setSel([])}>امسح</button>
               <button className="fx-btn pri" onClick={() => { onChange(sel); setOpen(false); }}>اعرض {num(count)} {noun}</button>
