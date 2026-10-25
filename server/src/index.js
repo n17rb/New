@@ -1,4 +1,5 @@
 import express from "express";
+import { resolveMapsLink } from "./utils/mapsLink.js";
 import "express-async-errors";
 import cors from "cors";
 import zlib from "zlib";
@@ -77,6 +78,15 @@ app.use((req, res, next) => {
 app.use((req, res, next) => tenantStore.run({ schema: "public", tenant: null }, next));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
+// فحص قراءة رابط خرائط جوجل من السيرفر (بس روابط جوجل، بدون بيانات حساسة)
+let mapsDebugAt = 0;
+app.get("/api/maps-link-check", async (req, res) => {
+  if (Date.now() - mapsDebugAt < 3000) return res.status(429).json({ error: "استنى ثواني" });
+  mapsDebugAt = Date.now();
+  const trail = [];
+  const result = await resolveMapsLink(String(req.query.u || "").slice(0, 300), { trail });
+  res.json({ result, trail });
+});
 
 app.use("/api/setup", setupRoutes);
 app.use("/api/auth", authRoutes);
