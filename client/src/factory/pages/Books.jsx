@@ -353,7 +353,7 @@ function CashSheet({ kind, cats, onClose, onDone }) {
 }
 
 // ---------- إعادة التدوير ----------
-const MATS = ["كرتون", "بلاستيك", "نايلون", "قصدير"];
+const MATS = ["كرتون", "بلاستيك", "نايلون", "قصدير", "بريفورم"];
 function Recycle() {
   const fx = useFx();
   const edit = fx.can("f_money", "edit");
