@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard, FiTool, FiLayers, FiActivity, FiBookOpen } from "react-icons/fi";
+import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard, FiTool, FiLayers, FiActivity, FiBookOpen, FiRefreshCw } from "react-icons/fi";
 import { useFx, useLoad } from "../ui.jsx";
 import { fapi } from "../fapi.js";
 import { lineType, plantName, plantBg, plantIcon } from "../plants.js";
@@ -37,6 +37,7 @@ export default function More({ onLogout }) {
     (fx.can("f_maint") || fx.can("f_home")) && { to: "/f/maint", icon: FiTool, label: "صيانة السيارات", hint: "غيار زيت، ميكانيك، كوشوك، بطاريات — ومواعيدها الجاية" },
     fx.can("f_machines") && !fx.can("f_stock") && !fx.can("f_production") && { to: "/f/stock?tab=prod", icon: FiBox, label: "المكنات والأعطال", hint: "ماكنة وقفت؟ سجّلها، ولما ترجع سجّل كم خرب" },
     (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_money") || fx.can("f_home")) && { to: "/f/invoices", icon: FiFileText, label: "الفواتير", hint: "نسخة من كل فاتورة: مين سلّمها وإمتى" },
+    (fx.can("f_money") || fx.can("f_home")) && { to: "/f/books?tab=recycle", icon: FiRefreshCw, label: "إعادة التدوير", hint: "كرتون، بلاستيك، نايلون، قصدير — الوزن، سعر الطن، وكم قبضت", tone: "recycle" },
     (fx.can("f_money") || fx.can("f_home")) && { to: "/f/books", icon: FiBookOpen, label: "الدفاتر", hint: "الشركات ومين إله ومين عليه، الفواتير الرسمية، إعادة التدوير، الصندوق، التسليم، والملخّص" },
     (fx.can("f_money") || fx.can("f_home")) && { to: "/f/money", icon: FiDollarSign, label: "الحسابات", hint: "كاش السائقين، المصاريف، الديون" },
     (fx.can("f_reports") || fx.can("f_home")) && { to: "/f/reports", icon: FiBarChart2, label: "التقارير", hint: "المبيعات، التوالف، الديزل، السائقين" },
@@ -76,9 +77,9 @@ export default function More({ onLogout }) {
       )}
       <div className="fx-list">
         {items.map((i) => (
-          <button key={i.to} className="fx-item" onClick={() => nav(i.to)} style={i.tone === "debt" ? { background: "#fff4e5", boxShadow: "inset -4px 0 0 #e8890c" } : undefined}>
-            <span className="fx-avatar" style={i.tone === "debt" ? { background: "#e8890c", color: "#fff" } : undefined}><i.icon /></span>
-            <span className="t"><b style={i.tone === "debt" ? { color: "#b35f00" } : undefined}>{i.label}</b>{i.hint && <span>{i.hint}</span>}</span>
+          <button key={i.to} className="fx-item" onClick={() => nav(i.to)} style={i.tone === "debt" ? { background: "#fff4e5", boxShadow: "inset -4px 0 0 #e8890c" } : i.tone === "recycle" ? { background: "#eaf7ee", boxShadow: "inset -4px 0 0 #2f9e5b" } : undefined}>
+            <span className="fx-avatar" style={i.tone === "debt" ? { background: "#e8890c", color: "#fff" } : i.tone === "recycle" ? { background: "#2f9e5b", color: "#fff" } : undefined}><i.icon /></span>
+            <span className="t"><b style={i.tone === "debt" ? { color: "#b35f00" } : i.tone === "recycle" ? { color: "#1f7a44" } : undefined}>{i.label}</b>{i.hint && <span>{i.hint}</span>}</span>
             <FiChevronLeft style={{ color: "var(--fx-muted)" }} />
           </button>
         ))}
