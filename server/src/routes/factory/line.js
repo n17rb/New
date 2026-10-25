@@ -270,6 +270,14 @@ router.put("/line/:id/settings", setup, async (req, res) => {
   const r = await query("UPDATE f_plines SET check_every_min = $1, limits = $2 WHERE id = $3 RETURNING *", [every, JSON.stringify(limits), req.params.id]);
   res.json(r.rows[0] || {});
 });
+router.put("/line/:id/photo", setup, async (req, res) => {
+  const url = req.body?.photo_url ? String(req.body.photo_url) : null;
+  if (url && !/^https:\/\//i.test(url)) return bad(res, "الصورة غير صحيحة.");
+  const r = await query("UPDATE f_plines SET photo_url = $1 WHERE id = $2 RETURNING id", [url, req.params.id]);
+  if (!r.rows[0]) return bad(res, "المصنع غير موجود.", 404);
+  res.json({ ok: true });
+});
+
 router.put("/line/hours/:userId", setup, async (req, res) => {
   const ok = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t || "");
   const s = req.body?.start_time, e = req.body?.end_time;

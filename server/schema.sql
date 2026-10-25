@@ -1311,3 +1311,6 @@ ALTER TABLE f_meters ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_pline
 
 -- فحص الكلور: قبل الكربون وبعده
 ALTER TABLE f_qchecks ADD COLUMN IF NOT EXISTS chlorine_before VARCHAR(10);
+
+-- صورة المصنع (بتطلع على كرته بالمزيد وفوق صفحته)
+ALTER TABLE f_plines ADD COLUMN IF NOT EXISTS photo_url TEXT;

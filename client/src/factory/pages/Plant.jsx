@@ -2,13 +2,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { FiChevronLeft } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Err, Loading, Empty, Reload, time } from "../ui.jsx";
-import { lineType, plantName } from "../plants.js";
+import { lineType, plantName, plantBg, plantIcon } from "../plants.js";
+import { useRef, useState } from "react";
 
 // ============================================================
 // صفحة المصنع (مصنع الكاسات / مصنع المطرات): ٣ أفرع بس —
 // المواد الأولية، قطع الصيانة، والتعقيم (الفحوصات والفلاتر)
 // ============================================================
-const ICON = { bottles: "🍶", cups: "🥤" };
 
 export default function Plant() {
   const fx = useFx();
@@ -23,6 +23,9 @@ export default function Plant() {
   const mats = items.filter((m) => m.kind === "material"), parts = items.filter((m) => m.kind === "part");
   const due = l ? (l.next_check_at ? Math.round((new Date(l.next_check_at).getTime() - Date.now()) / 60000) : null) : null;
   const fDue = l ? l.filters.filter((f) => f.state === "due").length : 0;
+  const canPhoto = fx.can("f_store", "edit") || fx.can("f_fleet", "edit");
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
   const Tile = ({ icon, title, sub, warn, to }) => (
     <button className="fx-item" style={{ padding: 18 }} onClick={() => nav(to)}>
       <span className="fx-avatar" style={{ fontSize: 26, width: 52, height: 52 }}>{icon}</span>
@@ -32,10 +35,25 @@ export default function Plant() {
   );
   return (
     <div className="fx-page">
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1" style={{ margin: 0 }}>{l ? `${ICON[lineType(l.name)] || "🏭"} ${plantName(l.name)}` : "المصنع"}</h1>
-        <Reload onClick={reload} />
-      </div>
+      {l ? (
+        <div className="fx-plant-hero" style={l.photo_url ? undefined : { background: plantBg(lineType(l.name)) }}>
+          {l.photo_url ? <img src={l.photo_url} alt="" /> : <span className="ico">{plantIcon(lineType(l.name))}</span>}
+          <span className="shade" />
+          <span className="cap">{plantName(l.name)}</span>
+          {canPhoto && <button className="chg" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? "عم بنرفع..." : l.photo_url ? "📷 غيّر الصورة" : "📷 حط صورة"}</button>}
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={async (e) => {
+            const f = e.target.files?.[0]; e.target.value = "";
+            if (!f) return;
+            setBusy(true);
+            try { const r = await fapi.upload(f, "plant"); await fapi.linePhoto(l.id, r.url); fx.toast("انحفظت الصورة ✓"); reload(); } catch (err) { fx.toast(err.message); } finally { setBusy(false); }
+          }} />
+        </div>
+      ) : (
+        <div className="fx-row" style={{ justifyContent: "space-between" }}>
+          <h1 className="fx-h1" style={{ margin: 0 }}>المصنع</h1>
+          <Reload onClick={reload} />
+        </div>
+      )}
       <Err msg={error} />
       {!data && !error && <Loading />}
       {data && !l && <Empty title="المصنع مش موجود" />}

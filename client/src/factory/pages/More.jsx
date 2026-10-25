@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard, FiTool, FiLayers, FiActivity, FiBookOpen } from "react-icons/fi";
 import { useFx, useLoad } from "../ui.jsx";
 import { fapi } from "../fapi.js";
-import { lineType, plantName } from "../plants.js";
+import { lineType, plantName, plantBg, plantIcon } from "../plants.js";
 import PushCard from "../PushCard.jsx";
 
 export default function More({ onLogout }) {
@@ -62,13 +62,16 @@ export default function More({ onLogout }) {
       )}
       {plants.length > 0 && (
         <div className="fx-plants" role="list">
-          {plants.map((l) => (
-            <button key={l.id} role="listitem" className="fx-tile" style={{ padding: 16, opacity: l._new ? 0.75 : 1 }} onClick={() => openPlant(l)}>
-              <span style={{ fontSize: 30 }}>{lineType(l.name) === "cups" ? "🥤" : lineType(l.name) === "bottles" ? "🍶" : "🏭"}</span>
-              <span className="n" style={{ fontSize: 16, fontWeight: 800 }}>{plantName(l.name)}</span>
-              <small>{l._new ? "اكبس لتجهيزه" : "مواد أولية · قطع صيانة · تعقيم"}</small>
-            </button>
-          ))}
+          {plants.map((l) => {
+            const t = lineType(l.name);
+            return (
+              <button key={l.id} role="listitem" className={`fx-plant-card ${l._new ? "new" : ""}`} style={l.photo_url ? undefined : { background: plantBg(t) }} onClick={() => openPlant(l)}>
+                {l.photo_url ? <img src={l.photo_url} alt="" loading="lazy" /> : <span className="ico">{plantIcon(t)}</span>}
+                <span className="shade" />
+                <span className="cap"><b>{plantName(l.name)}</b><small>{l._new ? "اكبس لتجهيزه" : "مواد · قطع صيانة · تعقيم"}</small></span>
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="fx-list">

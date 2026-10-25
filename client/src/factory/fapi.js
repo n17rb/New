@@ -174,6 +174,7 @@ export const fapi = {
   lineWaste: (b) => post("/line/waste", b),
   lineSettings: (id, b) => put(`/line/${id}/settings`, b),
   workHours: (userId, b) => put(`/line/hours/${userId}`, b),
+  linePhoto: (id, photo_url) => put(`/line/${id}/photo`, { photo_url }),
 
   // الدفاتر: الشركات، إعادة التدوير، الصندوق، التسليم، الملخّص
   partners: () => get("/books/partners"),
