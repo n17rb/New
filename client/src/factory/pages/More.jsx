@@ -1,11 +1,16 @@
 import { useNavigate } from "react-router-dom";
 import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard, FiTool, FiLayers, FiActivity, FiBookOpen } from "react-icons/fi";
-import { useFx } from "../ui.jsx";
+import { useFx, useLoad } from "../ui.jsx";
+import { fapi } from "../fapi.js";
+import { lineType, plantName } from "../plants.js";
 import PushCard from "../PushCard.jsx";
 
 export default function More({ onLogout }) {
   const fx = useFx();
   const nav = useNavigate();
+  const seesPlants = fx.can("f_production") || fx.can("f_machines") || fx.can("f_store") || fx.can("f_home");
+  const { data: lineData } = useLoad(() => (seesPlants ? fapi.line().catch(() => null) : Promise.resolve(null)), [seesPlants]);
+  const plants = (lineData?.lines || []);
   const items = [
     !fx.isOwner && fx.can("f_drive", "edit") && { to: "/f/drive", icon: FiTruck, label: "رحلتي", hint: "رحلة التوزيع أو جولة البيع عالمحلات" },
     (fx.can("f_money") || fx.can("f_home") || fx.can("f_stock") || fx.can("f_dispatch") || fx.can("f_drive", "edit")) && { to: "/f/jard", icon: FiClipboard, label: fx.can("f_money") || fx.can("f_home") ? "الجرد اليومي" : "جردي", hint: "كل سائق: الكاش، المرتجع، الفواتير والمصاريف بشاشة وحدة" },
@@ -43,6 +48,17 @@ export default function More({ onLogout }) {
           <span className="fx-avatar">📲</span>
           <span className="t"><b>نزّل تطبيق السائق (أندرويد)</b><span>بيتبع السيارة حتى والشاشة مطفية</span></span>
         </a>
+      )}
+      {plants.length > 0 && (
+        <div className="fx-grid2">
+          {plants.map((l) => (
+            <button key={l.id} className="fx-tile" style={{ padding: 16 }} onClick={() => nav(`/f/plant/${l.id}`)}>
+              <span style={{ fontSize: 30 }}>{lineType(l.name) === "cups" ? "🥤" : lineType(l.name) === "bottles" ? "🍶" : "🏭"}</span>
+              <span className="n" style={{ fontSize: 16, fontWeight: 800 }}>{plantName(l.name)}</span>
+              <small>مواد أولية · قطع صيانة · تعقيم</small>
+            </button>
+          ))}
+        </div>
       )}
       <div className="fx-list">
         {items.map((i) => (

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { FiSearch, FiPlus, FiDownload, FiUpload, FiClipboard, FiChevronLeft, FiEdit2, FiX } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, Reload, DateInput, waLink, money, num, date, dateTime, today } from "../ui.jsx";
@@ -28,7 +28,8 @@ export function searchItems(items, q) {
 const fmtQty = (n) => (Number.isInteger(Number(n)) ? num(n) : Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 }));
 
 // نوع الخط من اسمه — عشان الأيقونة واقتراحات أقسام قطع الغيار
-export const lineType = (name) => (/قنا|قنين|مطر|bottle/i.test(name || "") ? "bottles" : /كاس|cup/i.test(name || "") ? "cups" : null);
+import { lineType } from "../plants.js";
+export { lineType };
 const LINE_ICON = { bottles: "🍶", cups: "🥤" };
 // أقسام قطع الغيار حسب مكانها بالخط
 export const PART_GROUPS = {
@@ -43,8 +44,10 @@ export default function Store() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState("");
   const [site, setSite] = useState(null);
-  const [lineF, setLineF] = useState(undefined);
+  const fixedLine = Number(params.get("line")) || null; // جاي من صفحة المصنع
+  const [lineF, setLineF] = useState(fixedLine ?? undefined);
   const [sheet, setSheet] = useState(null);
+  const nav = useNavigate();
   const C = data?.can || {};
   const views = [["items", "المستودع"], ["moves", "الحركة"], C.setup ? ["setup", "المصانع والخطوط"] : null].filter(Boolean);
   const view = views.find((t) => t[0] === params.get("view"))?.[0] || (["moves", "setup"].includes(params.get("tab")) ? params.get("tab") : "items");
@@ -73,22 +76,24 @@ export default function Store() {
   const canTake = kind === "part" ? C.take_part : C.take_material;
   const value = list.reduce((a, m) => a + m.value, 0);
   const countOf = (lid, k) => (data?.items || []).filter((m) => m.active && m.kind === k && (lid === 0 ? !m.line_id && !machineLine.get(m.machine_id) : m.line_id === lid || (!m.line_id && machineLine.get(m.machine_id) === lid))).length;
-  const setTab = (k) => setParams({ tab: k });
+  const setTab = (k) => setParams(fixedLine ? { tab: k, line: fixedLine } : { tab: k });
+  const plantName = (n) => (n || "").replace(/^خط\s*/, "مصنع ");
 
   return (
     <div className="fx-page">
+      {fixedLine && curLine && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => nav(`/f/plant/${fixedLine}`)}>→ {plantName(curLine.name)}</button>}
       <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1" style={{ margin: 0 }}>المواد وقطع الغيار</h1>
+        <h1 className="fx-h1" style={{ margin: 0 }}>{fixedLine && curLine ? `${kind === "part" ? "قطع الصيانة" : "المواد الأولية"} — ${plantName(curLine.name)}` : "المواد وقطع الغيار"}</h1>
         <Reload onClick={reload} />
       </div>
-      {views.length > 1 && <div className="fx-tabs">{views.map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setParams(k === "items" ? { tab: kind } : { view: k })}>{l}</button>)}</div>}
+      {views.length > 1 && !fixedLine && <div className="fx-tabs">{views.map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setParams(k === "items" ? { tab: kind } : { view: k })}>{l}</button>)}</div>}
       <Err msg={error} />
       {!data && !error && <Loading />}
 
       {data && view === "items" && (
         <>
           {/* ١) أي خط */}
-          {pLines.length > 0 && (
+          {pLines.length > 0 && !fixedLine && (
             <div className="fx-grid2" style={{ gridTemplateColumns: `repeat(${Math.min(3, pLines.length + 1)}, 1fr)` }}>
               {pLines.map((l) => (
                 <button key={l.id} className={`fx-tile ${line === l.id ? "on" : ""}`} onClick={() => { setLineF(l.id); setQ(""); }}>
@@ -102,14 +107,14 @@ export default function Store() {
               </button>
             </div>
           )}
-          {C.store && pLines.length > 0 && <button className={`fx-link ${line === "all" ? "on" : ""}`} style={{ justifySelf: "start" }} onClick={() => setLineF(line === "all" ? pLines[0].id : "all")}>{line === "all" ? "← رجوع للخطوط" : "اعرض كل المستودع مع بعض"}</button>}
+          {C.store && pLines.length > 0 && !fixedLine && <button className={`fx-link ${line === "all" ? "on" : ""}`} style={{ justifySelf: "start" }} onClick={() => setLineF(line === "all" ? pLines[0].id : "all")}>{line === "all" ? "← رجوع للخطوط" : "اعرض كل المستودع مع بعض"}</button>}
           {!pLines.length && C.setup && <div className="fx-note">ضيف خطوطك (خط القناني، خط الكاسات) من «المصانع والخطوط» عشان كل خط يكون إله مواده وقطعه لحال.</div>}
 
           {/* ٢) مواد ولا قطع */}
-          <div className="fx-pay-modes">
+          {!fixedLine && <div className="fx-pay-modes">
             <button type="button" className={kind === "material" ? "on" : ""} onClick={() => setTab("material")}>📦 المواد الأولية</button>
             <button type="button" className={kind === "part" ? "on" : ""} onClick={() => setTab("part")}>🔩 قطع الغيار</button>
-          </div>
+          </div>}
 
           <label className="fx-search"><FiSearch aria-hidden="true" />
             <input className="fx-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder={kind === "part" ? "رقم القطعة (مثلًا 1X) أو اسمها" : "اسم المادة"} />
@@ -241,18 +246,30 @@ function ItemEdit({ m, data, onClose, onDone }) {
           <button type="button" className={f.kind === "part" ? "on" : ""} onClick={() => setF({ ...f, kind: "part", unit: f.unit === "كغم" ? "حبة" : f.unit })}>🔩 قطعة غيار</button>
         </div>
         <label className="fx-field">الاسم<input className="fx-input" value={f.name} onChange={set("name")} placeholder={f.kind === "part" ? "مثلًا: سير ماكنة الكاسات" : "مثلًا: رول بلاستيك PP"} autoFocus={isNew} /></label>
-        <div className="fx-grid2">
-          <label className="fx-field">الرقم/الحرف<input className="fx-input" dir="ltr" value={f.code} onChange={set("code")} placeholder="مثلًا 1X" /></label>
+        {f.kind === "part" && (
+          <div className="fx-card fx-stack" style={{ gap: 8 }}>
+            <label className="fx-field">رقم القطعة<input className="fx-input fx-num" dir="ltr" inputMode="numeric" value={f.code} onChange={set("code")} placeholder="مثلًا 15" /></label>
+            <PhotoInput label="صورة القطعة" value={f.photo_url} onChange={(u) => setF({ ...f, photo_url: u })} />
+            <div className="fx-grid2">
+              {isNew ? <label className="fx-field">عدد القطع الموجودة<input className="fx-input fx-num" type="number" inputMode="numeric" value={f.opening} onChange={set("opening")} placeholder="0" /></label> : <div className="fx-field">عدد القطع<b className="fx-num" style={{ fontSize: 20 }}>{m.balance}</b></div>}
+              <label className="fx-field">سعر القطعة (د.أ)<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.price} onChange={set("price")} /></label>
+            </div>
+            <label className="fx-field">نبّهني لما يضل (اختياري)<input className="fx-input fx-num" type="number" inputMode="numeric" value={f.min_level} onChange={set("min_level")} placeholder="مثلًا 2" /></label>
+          </div>
+        )}
+        <div className="fx-grid2" style={f.kind === "part" ? { display: "none" } : undefined}>
+          <label className="fx-field">الرقم<input className="fx-input" dir="ltr" value={f.code} onChange={set("code")} placeholder="اختياري" /></label>
           <label className="fx-field">{f.kind === "part" ? "القسم (وين بالماكنة)" : "التصنيف"}<input className="fx-input" list="store-cats" value={f.category} onChange={set("category")} placeholder={f.kind === "part" ? "مثلًا: ماكنة الليبل" : "مثلًا: تغليف"} /></label>
           <datalist id="store-cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
         </div>
         {f.kind === "part" && cats.length > 0 && !f.category && <div className="fx-chips">{cats.slice(0, 10).map((c) => <button key={c} type="button" className="fx-chip" onClick={() => setF({ ...f, category: c })}>{c}</button>)}</div>}
-        <div className="fx-field">الوحدة<div className="fx-chips">{data.units.map((u) => <button key={u} type="button" className={`fx-chip ${f.unit === u ? "on" : ""}`} onClick={() => setF({ ...f, unit: u })}>{u}</button>)}</div></div>
-        <div className="fx-grid2">
+        {f.kind !== "part" && <div className="fx-field">الوحدة<div className="fx-chips">{data.units.map((u) => <button key={u} type="button" className={`fx-chip ${f.unit === u ? "on" : ""}`} onClick={() => setF({ ...f, unit: u })}>{u}</button>)}</div></div>}
+        {f.kind === "part" && <label className="fx-field">القسم (وين بالماكنة)<input className="fx-input" list="store-cats" value={f.category} onChange={set("category")} placeholder="مثلًا: ماكنة التسكير" /></label>}
+        <div className="fx-grid2" style={f.kind === "part" ? { display: "none" } : undefined}>
           <label className="fx-field">السعر لل{f.unit} (د.أ)<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.price} onChange={set("price")} /></label>
           <label className="fx-field">نبّهني لما يوصل<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.min_level} onChange={set("min_level")} placeholder="0 = بدون" /></label>
         </div>
-        {isNew && <label className="fx-field">الموجود هلأ بالمستودع ({f.unit})<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.opening} onChange={set("opening")} placeholder="0" /></label>}
+        {isNew && f.kind !== "part" && <label className="fx-field">الموجود هلأ بالمستودع ({f.unit})<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.opening} onChange={set("opening")} placeholder="0" /></label>}
         {data.sites.length > 0 && (
           <div className="fx-field">بأي مصنع؟<div className="fx-chips">
             <button type="button" className={`fx-chip ${!f.site_id ? "on" : ""}`} onClick={() => setF({ ...f, site_id: null })}>عام</button>
@@ -276,7 +293,7 @@ function ItemEdit({ m, data, onClose, onDone }) {
           <label className="fx-field">مكانه (رف)<input className="fx-input" value={f.shelf} onChange={set("shelf")} placeholder="مثلًا A3" /></label>
         </div>
         <label className="fx-field">المواصفات والتفاصيل<textarea value={f.specs} onChange={set("specs")} placeholder={f.kind === "part" ? "المقاس، الماركة، رقم المصنّع…" : "النوع، السماكة، اللون…"} /></label>
-        <PhotoInput label="صورة الصنف" value={f.photo_url} onChange={(u) => setF({ ...f, photo_url: u })} />
+        {f.kind !== "part" && <PhotoInput label="صورة الصنف" value={f.photo_url} onChange={(u) => setF({ ...f, photo_url: u })} />}
         {!isNew && (
           <label className="fx-row" style={{ gap: 8 }}><input type="checkbox" checked={!f.active} onChange={(e) => setF({ ...f, active: !e.target.checked })} /> وقّف هالصنف (ما عاد نستعمله)</label>
         )}
