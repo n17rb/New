@@ -5,7 +5,7 @@ import { deliveredCartons } from "./StopSheet.jsx";
 import { Who } from "./Who.jsx";
 import { sendOrQueue } from "../outbox.js";
 import { FreeBonus } from "./Orders.jsx";
-import { useFx, Sheet, Err, Act, ProductArt, SignaturePad, CliqBox, getLocation, money, num, time, bonusPreview } from "../ui.jsx";
+import { useFx, Sheet, Err, Act, ProductArt, SignaturePad, CliqBox, LocationGuard, getLocation, money, num, time, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شغل المندوب: حمّل ← بيع لمحل ← بيع لمحل … ← رجعت للمصنع
@@ -308,6 +308,8 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
   const canBonus = fx.canAction?.("give_bonus");
   const [err, setErr] = useState("");
   const [sig, setSig] = useState(null);
+  const [locSaved, setLocSaved] = useState(false);
+  const needLoc = !shop.new && shop.lat == null && !locSaved;
   const [cliqOn, setCliqOn] = useState(false);
   const [cliq, setCliq] = useState("");
   const [cliqPhoto, setCliqPhoto] = useState(null);
@@ -365,11 +367,12 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
         ))}
         {canBonus && <FreeBonus products={avail.map((x) => ({ ...x, id: x.product_id }))} value={freeB} onChange={setFreeB} />}
         <ExchangeEditor value={exch} onChange={setExch} products={avail} />
+        {needLoc && <LocationGuard customerId={shop.id} name={shop.name} onSaved={() => setLocSaved(true)} />}
         <PayBox total={total} cash={cash} onCash={setCash} balance={shop.balance} canCredit={canCredit} />
         {cashN > 0 && <CliqBox on={cliqOn} setOn={(v) => { setCliqOn(v); if (v && !cliq) setCliq(String(cashN)); }} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={cashN} />}
         <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" />
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={(!items.length && !exchangeList(exch).length) || (debt > 0 && !canCredit) || (cliqN > 0 && !cliqPhoto)} onClick={() => sell()}>
+        <Act className="fx-btn ok block fx-huge" disabled={(!items.length && !exchangeList(exch).length) || (debt > 0 && !canCredit) || (cliqN > 0 && !cliqPhoto) || needLoc} onClick={() => sell()}>
           بيع{total ? ` · ${money(total)} دينار` : ""}
         </Act>
       </div>

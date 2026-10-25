@@ -9,7 +9,7 @@ import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
 import { PaySheet } from "./Debts.jsx";
 import { smartFilter } from "../smartSearch.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, CliqBox, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, CliqBox, LocationGuard, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -298,6 +298,8 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const cliqN = cliqOn ? Math.min(cashN, Number(cliq) || 0) : 0;
   const cliqMissing = cliqN > 0 && !cliqPhoto;
   const [sig, setSig] = useState(null);
+  const [locSaved, setLocSaved] = useState(false);
+  const needLoc = o.lat == null && !locSaved;
 
   async function send() {
     setErr("");
@@ -418,6 +420,7 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
           {extra !== "dmg" && !hasDmg && <button type="button" onClick={() => setExtra("dmg")}>انكسر معي</button>}
         </div>
 
+        {needLoc && <LocationGuard customerId={o.customer_id} name={o.customer_name} onSaved={() => setLocSaved(true)} />}
         <PayBox total={total} cash={cashEdit} onCash={setCashEdit} balance={o.customer_balance} canCredit={canCredit} />
         {cashN > 0 && (
           <CliqBox on={cliqOn} setOn={(v) => { setCliqOn(v); if (v && !cliq) setCliq(String(cashN)); }} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={cashN} />
@@ -425,7 +428,7 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
         <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" />
         <PhotoInput label="صورة (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={(debt > 0.005 && !canCredit) || cliqMissing} onClick={send}>
+        <Act className="fx-btn ok block fx-huge" disabled={(debt > 0.005 && !canCredit) || cliqMissing || needLoc} onClick={send}>
           <FiCheck /> تم التسليم{debt > 0.005 ? ` · دين ${money(debt)}` : ""}
         </Act>
       </div>

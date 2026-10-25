@@ -287,6 +287,8 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   if (cliq > 0 && !b.cliq_photo) return bad(res, "صوّر وصل الكليك من تلفون الزبون.");
   const debt = round2(total - cash - cliq);
   const c = (await query("SELECT * FROM f_customers WHERE id = $1", [o.customer_id])).rows[0];
+  // موقع الزبون مش محفوظ؟ لازم ينحفظ مع أول فاتورة (من موقع السائق عنده)
+  if (c.lat == null && !(Number(b.lat) && Number(b.lng))) return res.status(400).json({ error: "موقع الزبون مش محفوظ — شغّل الموقع على تلفونك واحفظه قبل الفاتورة.", code: "NEED_LOCATION" });
   const newBal = round2(Number(c.balance) + debt);
   let overLimit = false;
   if (debt > 0) {
