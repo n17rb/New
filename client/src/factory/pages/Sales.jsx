@@ -5,7 +5,7 @@ import { deliveredCartons } from "./StopSheet.jsx";
 import { Who } from "./Who.jsx";
 import { sendOrQueue } from "../outbox.js";
 import { FreeBonus } from "./Orders.jsx";
-import { useFx, Sheet, Err, Act, ProductArt, getLocation, money, num, time, bonusPreview } from "../ui.jsx";
+import { useFx, Sheet, Err, Act, ProductArt, SignaturePad, CliqBox, getLocation, money, num, time, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شغل المندوب: حمّل ← بيع لمحل ← بيع لمحل … ← رجعت للمصنع
@@ -307,6 +307,10 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
   const [freeB, setFreeB] = useState({});
   const canBonus = fx.canAction?.("give_bonus");
   const [err, setErr] = useState("");
+  const [sig, setSig] = useState(null);
+  const [cliqOn, setCliqOn] = useState(false);
+  const [cliq, setCliq] = useState("");
+  const [cliqPhoto, setCliqPhoto] = useState(null);
 
   useEffect(() => { fapi.driverPrices(shop.new ? null : shop.id).then(setPrices).catch(() => setPrices({})); }, [shop]);
 
@@ -315,6 +319,7 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
   const total = Math.round(items.reduce((a, x) => a + x.qty * priceOf(x.product_id), 0) * 100) / 100;
   const cashN = cash === null ? total : Number(cash) || 0;
   const debt = Math.max(0, Math.round((total - cashN) * 100) / 100);
+  const cliqN = cliqOn ? Math.min(cashN, Number(cliq) || 0) : 0;
 
   async function sell(confirm = false) {
     setErr("");
@@ -323,7 +328,7 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
       const q = await sendOrQueue({ kind: "sell", ref: t.id, label: `بيع لـ ${shop.name}`, path: `/driver/sales/${t.id}/sell`, body: {
         customer_id: shop.new ? undefined : shop.id,
         new_customer: shop.new ? { name: shop.name, phone: shop.phone } : undefined,
-        items, exchanges: exchangeList(exch), cash: cashN,
+        items, exchanges: exchangeList(exch), cash: Math.round((cashN - cliqN) * 100) / 100, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined, signature: sig || undefined,
         bonus_items: Object.entries(freeB).filter(([, n]) => Number(n) > 0).map(([pid, n]) => ({ product_id: Number(pid), qty: Number(n) })), lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       } });
       if (q.queued) { fx.toast("📶 ما في شبكة — البيعة انحفظت على التلفون وبتنبعت لحالها"); onDone({ queued: true }); return; }
@@ -361,8 +366,10 @@ function SellItems({ t, stock, shop, canCredit, onBack, onClose, onDone }) {
         {canBonus && <FreeBonus products={avail.map((x) => ({ ...x, id: x.product_id }))} value={freeB} onChange={setFreeB} />}
         <ExchangeEditor value={exch} onChange={setExch} products={avail} />
         <PayBox total={total} cash={cash} onCash={setCash} balance={shop.balance} canCredit={canCredit} />
+        {cashN > 0 && <CliqBox on={cliqOn} setOn={(v) => { setCliqOn(v); if (v && !cliq) setCliq(String(cashN)); }} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={cashN} />}
+        <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" />
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={(!items.length && !exchangeList(exch).length) || (debt > 0 && !canCredit)} onClick={() => sell()}>
+        <Act className="fx-btn ok block fx-huge" disabled={(!items.length && !exchangeList(exch).length) || (debt > 0 && !canCredit) || (cliqN > 0 && !cliqPhoto)} onClick={() => sell()}>
           بيع{total ? ` · ${money(total)} دينار` : ""}
         </Act>
       </div>

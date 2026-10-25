@@ -9,7 +9,7 @@ import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
 import { PaySheet } from "./Debts.jsx";
 import { smartFilter } from "../smartSearch.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, CliqBox, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -298,7 +298,6 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const cliqN = cliqOn ? Math.min(cashN, Number(cliq) || 0) : 0;
   const cliqMissing = cliqN > 0 && !cliqPhoto;
   const [sig, setSig] = useState(null);
-  const [sigOn, setSigOn] = useState(false);
 
   async function send() {
     setErr("");
@@ -423,7 +422,7 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
         {cashN > 0 && (
           <CliqBox on={cliqOn} setOn={(v) => { setCliqOn(v); if (v && !cliq) setCliq(String(cashN)); }} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={cashN} />
         )}
-        {sigOn ? <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" /> : <button type="button" className="fx-btn block" onClick={() => setSigOn(true)}>✍️ خلّي الزبون يوقّع</button>}
+        <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" />
         <PhotoInput label="صورة (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         <Err msg={err} />
         <Act className="fx-btn ok block fx-huge" disabled={(debt > 0.005 && !canCredit) || cliqMissing} onClick={send}>
@@ -464,28 +463,6 @@ function LoadAck({ t, onDone }) {
         <Act className="fx-btn danger block" disabled={!sig || !note.trim()} onClick={async () => { setErr(""); try { await fapi.ackLoad(t.id, { signature: sig, ok: false, note }); fx.toast("وصل للإدارة وأمين المستودع"); onDone(); } catch (e) { setErr(e.message); } }}>بلّغ عن الفرق ووقّع</Act>
       )}
     </section>
-  );
-}
-
-// الزبون دفع بالكليك: المبلغ + صورة الوصل من تلفونه (بتوصل للمحاسب والإدارة)
-export function CliqBox({ on, setOn, amount, setAmount, photo, setPhoto, max }) {
-  return (
-    <div className="fx-card fx-stack" style={{ gap: 8, padding: 12 }}>
-      <label className="fx-row" style={{ gap: 8 }}>
-        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
-        <b>📲 دفع بالكليك (حوالة)</b>
-      </label>
-      {on && (
-        <>
-          <label className="fx-field">قديش حوّل بالكليك؟{max ? <small className="fx-muted"> (من {money(max)})</small> : null}
-            <input className="fx-input fx-num" type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </label>
-          <PhotoInput label="صوّر وصل الكليك من تلفون الزبون" hint="لازم — بتوصل للمحاسب" value={photo} onChange={setPhoto} kind="cliq" />
-          {Number(amount) > 0 && !photo && <small style={{ color: "var(--fx-crit)" }}>صوّر الوصل عشان تكمّل.</small>}
-          <small className="fx-muted">مبلغ الكليك ما بينحسب على الكاش اللي معك.</small>
-        </>
-      )}
-    </div>
   );
 }
 
