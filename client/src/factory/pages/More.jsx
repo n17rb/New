@@ -10,7 +10,18 @@ export default function More({ onLogout }) {
   const nav = useNavigate();
   const seesPlants = fx.can("f_production") || fx.can("f_machines") || fx.can("f_store") || fx.can("f_home");
   const { data: lineData } = useLoad(() => (seesPlants ? fapi.line().catch(() => null) : Promise.resolve(null)), [seesPlants]);
-  const plants = (lineData?.lines || []);
+  const lines0 = lineData?.lines || [];
+  // المصنعين دايمًا ظاهرين: إذا واحد لسا مش مجهّز، الإدارة بتكبس عليه فبينعمل لحاله
+  const canSetup = fx.can("f_store", "edit") || fx.can("f_fleet", "edit");
+  const plants = [
+    ...lines0,
+    ...(lineData && !lines0.some((l) => lineType(l.name) === "cups") && canSetup ? [{ id: "new-cups", name: "خط الكاسات", _new: true }] : []),
+    ...(lineData && !lines0.some((l) => lineType(l.name) === "bottles") && canSetup ? [{ id: "new-bottles", name: "خط المطرات", _new: true }] : []),
+  ];
+  async function openPlant(l) {
+    if (!l._new) return nav(`/f/plant/${l.id}`);
+    try { const r = await fapi.addPline({ name: l.name }); nav(`/f/plant/${r.id}`); } catch (e) { fx.toast(e.message); }
+  }
   const items = [
     !fx.isOwner && fx.can("f_drive", "edit") && { to: "/f/drive", icon: FiTruck, label: "رحلتي", hint: "رحلة التوزيع أو جولة البيع عالمحلات" },
     (fx.can("f_money") || fx.can("f_home") || fx.can("f_stock") || fx.can("f_dispatch") || fx.can("f_drive", "edit")) && { to: "/f/jard", icon: FiClipboard, label: fx.can("f_money") || fx.can("f_home") ? "الجرد اليومي" : "جردي", hint: "كل سائق: الكاش، المرتجع، الفواتير والمصاريف بشاشة وحدة" },
@@ -52,10 +63,10 @@ export default function More({ onLogout }) {
       {plants.length > 0 && (
         <div className="fx-grid2">
           {plants.map((l) => (
-            <button key={l.id} className="fx-tile" style={{ padding: 16 }} onClick={() => nav(`/f/plant/${l.id}`)}>
+            <button key={l.id} className="fx-tile" style={{ padding: 16, opacity: l._new ? 0.75 : 1 }} onClick={() => openPlant(l)}>
               <span style={{ fontSize: 30 }}>{lineType(l.name) === "cups" ? "🥤" : lineType(l.name) === "bottles" ? "🍶" : "🏭"}</span>
               <span className="n" style={{ fontSize: 16, fontWeight: 800 }}>{plantName(l.name)}</span>
-              <small>مواد أولية · قطع صيانة · تعقيم</small>
+              <small>{l._new ? "اكبس لتجهيزه" : "مواد أولية · قطع صيانة · تعقيم"}</small>
             </button>
           ))}
         </div>
