@@ -137,13 +137,15 @@ export default function Line() {
 }
 
 function ColorPick({ label, options, value, onChange }) {
-  const dot = { "أحمر": "#e5484d", "أزرق": "#2f7de1", "أبيض": "#f4f4f4", "أصفر": "#f5c518" };
+  const dot = { "أحمر": "#e5484d", "أزرق": "#2f7de1", "أبيض": "#ffffff", "أصفر": "#f5c518" };
   return (
-    <div className="fx-field">{label}
-      <div className="fx-pay-modes">
+    <div className="qc-pick">
+      <span className="qc-pick-l">{label}</span>
+      <div className="qc-swatches">
         {options.map((o) => (
-          <button key={o} type="button" className={value === o ? "on" : ""} onClick={() => onChange(value === o ? "" : o)}>
-            <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 7, background: dot[o], border: "1px solid #ccc", verticalAlign: "middle", marginInlineEnd: 6 }} />{o}
+          <button key={o} type="button" className={`qc-sw ${value === o ? "on" : ""}`} onClick={() => onChange(value === o ? "" : o)} aria-pressed={value === o}>
+            <i style={{ background: dot[o], ...(o === "أبيض" || o === "أصفر" ? { color: "#1d2b38", textShadow: "none" } : null) }}>{value === o ? "✓" : ""}</i>
+            <span>{o}</span>
           </button>
         ))}
       </div>
@@ -170,31 +172,34 @@ function CheckSheet({ l, colors, onClose, onDone }) {
     );
   }
   const numIn = (k, label, hint) => (
-    <label className="fx-field" style={{ textAlign: "center" }}>{label}
-      <input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" step="any" value={f[k]} onChange={set(k)} />
-      {hint ? <small className="fx-muted">{hint}</small> : null}
+    <label className={`qc-measure ${f[k] !== "" ? "filled" : ""}`}>
+      <span className="l">{label}</span>
+      <input className="fx-num" type="number" inputMode="decimal" step="any" value={f[k]} onChange={set(k)} placeholder="—" />
+      <small>{hint || " "}</small>
     </label>
   );
+  const filled = ["ozone", "tds", "ph", "soft_after", "chlorine_before", "chlorine"].filter((k) => f[k] !== "").length;
   return (
     <Sheet title={`فحص ${l.name} · ${time(new Date().toISOString())}`} onClose={onClose}>
-      <div className="fx-stack">
-        <div className="fx-card fx-stack" style={{ gap: 10 }}>
-          <b>القياسات</b>
-          <div className="fx-grid2" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div className="fx-stack" style={{ gap: 14 }}>
+        <div className="qc-progress"><span style={{ width: `${(filled / 6) * 100}%` }} /><small>عبّيت {filled} من 6</small></div>
+        <section className="qc-sec">
+          <div className="qc-head"><i style={{ background: "#e6f2fc" }}>💧</i><b>القياسات</b></div>
+          <div className="qc-measures">
             {numIn("ozone", "أوزون", range(L.ozone_min, L.ozone_max))}
             {numIn("tds", "TDS", range(L.tds_min, L.tds_max))}
             {numIn("ph", "pH", range(L.ph_min, L.ph_max))}
           </div>
-        </div>
-        <div className="fx-card fx-stack" style={{ gap: 10 }}>
-          <b>السوفتنر</b>
+        </section>
+        <section className="qc-sec">
+          <div className="qc-head"><i style={{ background: "#eef0fd" }}>🧂</i><b>السوفتنر</b></div>
           <ColorPick label="بعد الجهاز" options={colors.soft} value={f.soft_after} onChange={set("soft_after")} />
-        </div>
-        <div className="fx-card fx-stack" style={{ gap: 10 }}>
-          <b>الكلور</b>
+        </section>
+        <section className="qc-sec">
+          <div className="qc-head"><i style={{ background: "#fdf6e3" }}>🧪</i><b>الكلور</b></div>
           <ColorPick label="قبل الكربون" options={colors.cl} value={f.chlorine_before} onChange={set("chlorine_before")} />
           <ColorPick label="بعد الكربون" options={colors.cl} value={f.chlorine} onChange={set("chlorine")} />
-        </div>
+        </section>
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={f.note} onChange={set("note")} /></label>
         <Err msg={err} />
         <Act className="fx-btn pri block fx-huge" onClick={async () => {
