@@ -21,12 +21,13 @@ const balColor = (b) => (b > 0.005 ? "var(--fx-crit)" : b < -0.005 ? "var(--fx-o
 
 export default function Books() {
   const [params, setParams] = useSearchParams();
-  const tabs = [["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["recycle", "إعادة التدوير"], ["handover", "التسليم"], ["summary", "الملخّص"]];
-  const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || "partners";
+  const tabs = [["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["handover", "التسليم"], ["summary", "الملخّص"]];
+  const recycleOnly = params.get("tab") === "recycle";
+  const tab = recycleOnly ? "recycle" : tabs.find((t) => t[0] === params.get("tab"))?.[0] || "partners";
   return (
     <div className="fx-page">
-      <h1 className="fx-h1">الدفاتر</h1>
-      <div className="fx-tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}</div>
+      <h1 className="fx-h1">{recycleOnly ? "♻️ إعادة التدوير" : "الدفاتر"}</h1>
+      {!recycleOnly && <div className="fx-tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}</div>}
       {tab === "partners" && <Partners />}
       {tab === "cash" && <Cash />}
       {tab === "utils" && <Utilities />}
