@@ -877,3 +877,19 @@ a.fx-pill { text-decoration: none; }
 .fx-plants { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .fx-plants::-webkit-scrollbar { display: none; }
 .fx-plants > .fx-tile { flex: 0 0 calc(50% - 5px); scroll-snap-align: start; min-width: 0; }
+
+/* كرت المصنع بصورة: الصورة بتغطي الكرت، والاسم فوقها على تدرّج غامق خفيف */
+.fx-plant-card { position: relative; flex: 0 0 calc(50% - 5px); scroll-snap-align: start; height: 150px; border-radius: 18px; overflow: hidden; border: 0; padding: 0; cursor: pointer; background: #dfe8f1; box-shadow: 0 2px 10px rgba(4, 50, 100, .10); font: inherit; text-align: start; }
+.fx-plant-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fx-plant-card .ico { position: absolute; top: 16px; inset-inline-start: 16px; font-size: 34px; opacity: .95; }
+.fx-plant-card .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 35%, rgba(0,20,40,.62) 100%); }
+.fx-plant-card .cap { position: absolute; inset-inline: 14px; bottom: 12px; color: #fff; display: grid; gap: 2px; }
+.fx-plant-card .cap b { font-size: 16.5px; font-weight: 800; text-shadow: 0 1px 3px rgba(0,0,0,.35); }
+.fx-plant-card .cap small { font-size: 12px; opacity: .9; }
+.fx-plant-card.new { opacity: .7; }
+.fx-plant-hero { position: relative; height: 170px; border-radius: 20px; overflow: hidden; background: #dfe8f1; }
+.fx-plant-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fx-plant-hero .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,20,40,.65) 100%); }
+.fx-plant-hero .cap { position: absolute; inset-inline: 16px; bottom: 14px; color: #fff; font-size: 22px; font-weight: 800; text-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.fx-plant-hero .ico { position: absolute; top: 18px; inset-inline-start: 18px; font-size: 40px; }
+.fx-plant-hero .chg { position: absolute; top: 12px; inset-inline-end: 12px; border: 0; border-radius: 999px; padding: 7px 12px; background: rgba(255,255,255,.88); color: #0b3a66; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
