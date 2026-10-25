@@ -19,7 +19,7 @@ export default function Orders() {
   const [msgs, setMsgs] = useState(null);
 
   // المناطق اللي اختارها (بتنحفظ على هالتلفون)
-  const [region, setRegionS] = useState(() => { try { return JSON.parse(localStorage.getItem("fx-orders-areas") || "[]"); } catch { return []; } });
+  const [region, setRegionS] = useState(() => { try { return JSON.parse(localStorage.getItem("fx-orders-areas") || "[]").filter((k) => /^[da]\|/.test(k)); } catch { return []; } });
   const setRegion = (v) => { setRegionS(v); try { localStorage.setItem("fx-orders-areas", JSON.stringify(v)); } catch { /* */ } };
   const all = data || [];
   const open = all.filter((o) => matchAreas(o, region));
