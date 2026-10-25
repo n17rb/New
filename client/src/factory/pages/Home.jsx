@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router-dom";
-import { FiCheckCircle, FiChevronLeft, FiTruck } from "react-icons/fi";
+import { useState } from "react";
+import { FiCheckCircle, FiChevronLeft, FiChevronDown, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
-import { useFx, useLoad, money, num, time, Tip, Err, Loading, Reload, Act } from "../ui.jsx";
+import { useFx, useLoad, money, num, time, Err, Loading, Reload, Act } from "../ui.jsx";
 
 const STATE = {
   move: ["بالطريق", "move"], late: ["متأخرة", "late"], lost: ["التتبع مقطوع", "lost"], back: ["رجعت للمصنع", "back"],
@@ -36,13 +37,9 @@ export default function Home() {
   const fx = useFx();
   const nav = useNavigate();
   const { data: h, error, reload } = useLoad(() => fapi.home(), []);
+  const [carsOpen, setCarsOpen] = useState(false);
   const b = fx.boot;
   const needsSetup = fx.isOwner && !b.setup_done && (b.counts.products === 0 || b.counts.vehicles === 0 || b.counts.customers === 0);
-
-  async function close(id) {
-    await fapi.closeAlert(id);
-    reload();
-  }
 
   return (
     <div className="fx-page">
@@ -69,54 +66,85 @@ export default function Home() {
           <FiChevronLeft />
         </button>
       )}
-      <Tip id="home">هاي شاشتك الصبح: حالة المصنع كله بنظرة وحدة. التنبيه الأحمر بدّه تصرّف.</Tip>
       <Err msg={error} />
       {!h && !error && <Loading />}
 
       {h && (
         <>
-          <div className="fx-kpis">
-            <button className="fx-kpi" onClick={() => nav("/f/stock")}><span className="l">إنتاج اليوم</span><span className="v">{num(h.production)}</span><span className="s">كرتونة</span></button>
-            <button className="fx-kpi" onClick={() => nav("/f/reports")}><span className="l">مبيعات اليوم</span><span className="v">{money(h.sales.total)}</span><span className="s">{num(h.sales.cartons)} كرتونة · {h.sales.orders} طلب</span></button>
-            <button className="fx-kpi" onClick={() => nav("/f/money")}><span className="l">كاش مع السائقين</span><span className="v">{money(h.cash_with_drivers)}</span><span className="s">لسا ما تسلّم</span></button>
-            <button className="fx-kpi" onClick={() => nav("/f/money?tab=debts")}><span className="l">ديون على الزباين</span><span className="v">{money(h.debts.total)}</span><span className="s">{h.debts.customers} زبون</span></button>
+          {/* اليوم بنظرة: المبيعات كبيرة، والباقي صغار تحتها */}
+          <button className="fx-card" style={{ border: 0, textAlign: "start", font: "inherit", cursor: "pointer", padding: 20, background: "linear-gradient(135deg,#0b5fa8,#2a8bd8)", color: "#fff", borderRadius: 22 }} onClick={() => nav("/f/reports")}>
+            <small style={{ opacity: 0.85 }}>مبيعات اليوم</small>
+            <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1.2, margin: "4px 0" }} className="fx-num">{money(h.sales.total)} <small style={{ fontSize: 15, opacity: 0.85 }}>د.أ</small></div>
+            <small style={{ opacity: 0.9 }}>{num(h.sales.cartons)} كرتونة · {h.sales.orders} طلب</small>
+          </button>
+          <div className="fx-grid2" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            {[
+              ["إنتاج اليوم", num(h.production), "كرتونة", "/f/stock"],
+              ["كاش مع السواقين", money(h.cash_with_drivers), "د.أ", "/f/jard"],
+              ["ديون الزباين", money(h.debts.total), `${h.debts.customers} زبون`, "/f/debts"],
+            ].map(([l, v, sub, to]) => (
+              <button key={l} className="fx-card" style={{ border: 0, font: "inherit", cursor: "pointer", textAlign: "center", padding: "14px 6px" }} onClick={() => nav(to)}>
+                <small className="fx-muted" style={{ fontSize: 11.5 }}>{l}</small>
+                <b className="fx-num" style={{ display: "block", fontSize: 18, margin: "4px 0 2px" }}>{v}</b>
+                <small className="fx-muted" style={{ fontSize: 11 }}>{sub}</small>
+              </button>
+            ))}
           </div>
 
-          <div className="fx-row">
-            <span className="fx-pill sky">{h.open_orders.n} طلب مفتوح</span>
-            {h.open_orders.unassigned > 0 && <button className="fx-pill warn" style={{ border: 0, cursor: "pointer" }} onClick={() => nav("/f/orders")}>{h.open_orders.unassigned} بدون سيارة</button>}
-            {h.pending_expenses > 0 && <button className="fx-pill warn" style={{ border: 0, cursor: "pointer" }} onClick={() => nav("/f/money?tab=expenses")}>{h.pending_expenses} مصروف بستنى موافقتك</button>}
-            {h.damage_month.cartons > 0 && <button className="fx-pill crit" style={{ border: 0, cursor: "pointer" }} onClick={() => nav("/f/reports")}>توالف الشهر {num(h.damage_month.cartons)} كرتونة</button>}
-          </div>
+          {/* بدّه انتباهك — بس إذا في إشي */}
+          {(() => {
+            const rows = [
+              h.open_orders.unassigned > 0 && ["📦", `${h.open_orders.unassigned} طلب بدون سيارة`, "/f/orders"],
+              h.pending_expenses > 0 && ["🧾", `${h.pending_expenses} مصروف بستنى موافقتك`, "/f/money?tab=expenses"],
+              h.low_stock.length > 0 && ["📉", `رصيد قليل: ${h.low_stock.slice(0, 2).map((p) => p.name).join("، ")}${h.low_stock.length > 2 ? ` +${h.low_stock.length - 2}` : ""}`, "/f/stock"],
+              h.damage_month.cartons > 0 && ["⚠️", `توالف الشهر ${num(h.damage_month.cartons)} كرتونة`, "/f/reports"],
+            ].filter(Boolean);
+            if (!rows.length) return <div className="fx-pill ok" style={{ justifySelf: "start", padding: "6px 12px", fontSize: 13 }}>✓ كل إشي ماشي · {h.open_orders.n} طلب مفتوح</div>;
+            return (
+              <div className="fx-list">
+                {rows.map(([icon, text, to]) => (
+                  <button key={text} className="fx-item" onClick={() => nav(to)}>
+                    <span className="fx-avatar" style={{ fontSize: 17 }}>{icon}</span>
+                    <span className="t"><b style={{ fontWeight: 600 }}>{text}</b></span>
+                    <FiChevronLeft style={{ color: "var(--fx-muted)" }} />
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
-          {h.low_stock.length > 0 && (
-            <div className="fx-note warn">رصيد قليل: {h.low_stock.map((p) => `${p.name} (${num(p.balance)})`).join("، ")}</div>
-          )}
-
-          <div className="fx-sec"><h2>تنبيهات مفتوحة</h2><button className="fx-link" onClick={() => nav("/f/alerts")}>الكل</button></div>
-          <div className="fx-stack">
-            {h.alerts.length === 0 && <p className="fx-muted" style={{ margin: 0 }}>ما في تنبيهات. كل إشي ماشي.</p>}
-            {h.alerts.slice(0, 4).map((a) => <AlertCard key={a.id} a={a} onClose={close} />)}
-          </div>
-
-          <div className="fx-sec"><h2>السيارات هلأ</h2><button className="fx-link" onClick={() => nav("/f/live")}>🗺 شوفها على الخريطة</button></div>
-          <div className="fx-list">
-            {h.vehicles.length === 0 && <div className="fx-item"><span className="fx-muted">ما في سيارات — ضيفها من الإعدادات.</span></div>}
-            {h.vehicles.map((v) => {
-              const [label, dot] = STATE[v.state] || ["", ""];
-              return (
-                <button key={v.id} className="fx-item" onClick={() => nav("/f/trips")}>
+          {/* السيارات: سطر واحد، واكبس عليه بتنفتح */}
+          {(() => {
+            const cnt = (st) => h.vehicles.filter((v) => v.state === st).length;
+            const sum = [cnt("move") && `${cnt("move")} بالطريق`, cnt("late") && `${cnt("late")} متأخرة`, cnt("planned") && `${cnt("planned")} جاهزة`, cnt("back") && `${cnt("back")} رجعت`].filter(Boolean).join(" · ") || `${h.vehicles.length} سيارة`;
+            return (
+              <div className="fx-card" style={{ padding: 0, overflow: "hidden" }}>
+                <button className="fx-item" style={{ width: "100%", border: 0, background: "transparent" }} onClick={() => setCarsOpen(!carsOpen)}>
                   <span className="fx-avatar"><FiTruck /></span>
-                  <span className="t">
-                    <b>{v.name}{v.driver_name ? ` · ${v.driver_name}` : ""}</b>
-                    <span>{v.governorate || ""}{v.trip_id ? ` · ${v.done}/${v.stops} وقفات · ${num(v.load)} من ${num(v.capacity)}` : ""}</span>
-                  </span>
-                  <span className="end"><span className="fx-row" style={{ gap: 6 }}><i className={`fx-dot ${dot}`} />{label}</span></span>
+                  <span className="t"><b>السيارات</b><span style={cnt("late") ? { color: "var(--fx-crit)", fontWeight: 700 } : undefined}>{sum}</span></span>
+                  <FiChevronDown style={{ color: "var(--fx-muted)", transform: carsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                 </button>
-              );
-            })}
-          </div>
-          <p className="fx-muted" style={{ margin: 0 }}>ملخص اليوم بيضل محدّث هون. التنبيهات المهمة بتوصلك إشعار على التلفون.</p>
+                {carsOpen && (
+                  <div className="fx-list" style={{ borderTop: "1px solid var(--fx-line, #eef2f6)", borderRadius: 0 }}>
+                    {h.vehicles.length === 0 && <div className="fx-item"><span className="fx-muted">ما في سيارات — ضيفها من الإعدادات.</span></div>}
+                    {h.vehicles.map((v) => {
+                      const [label, dot] = STATE[v.state] || ["", ""];
+                      return (
+                        <button key={v.id} className="fx-item" onClick={() => nav("/f/trips")}>
+                          <span className="t">
+                            <b>{v.name}{v.driver_name ? ` · ${v.driver_name}` : ""}</b>
+                            <span>{v.trip_id ? `${v.done}/${v.stops} وقفات · ${num(v.load)} كرتونة` : v.governorate || ""}</span>
+                          </span>
+                          <span className="end"><span className="fx-row" style={{ gap: 6 }}><i className={`fx-dot ${dot}`} />{label}</span></span>
+                        </button>
+                      );
+                    })}
+                    <button className="fx-item" onClick={() => nav("/f/live")}><span className="t"><b style={{ color: "var(--fx-navy)" }}>🗺 شوفهم على الخريطة</b></span><FiChevronLeft /></button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
