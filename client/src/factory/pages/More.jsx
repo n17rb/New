@@ -25,7 +25,7 @@ export default function More({ onLogout }) {
   const items = [
     !fx.isOwner && fx.can("f_drive", "edit") && { to: "/f/drive", icon: FiTruck, label: "رحلتي", hint: "رحلة التوزيع أو جولة البيع عالمحلات" },
     (fx.can("f_money") || fx.can("f_home") || fx.can("f_stock") || fx.can("f_dispatch") || fx.can("f_drive", "edit")) && { to: "/f/jard", icon: FiClipboard, label: fx.can("f_money") || fx.can("f_home") ? "الجرد اليومي" : "جردي", hint: "كل سائق: الكاش، المرتجع، الفواتير والمصاريف بشاشة وحدة" },
-    (fx.can("f_money") || fx.can("f_customers") || fx.can("f_home")) && { to: "/f/debts", icon: FiDollarSign, label: "الديون", hint: "مين عليه وقديش — اطبع الكشف أو ذكّرهم برسالة لطيفة" },
+    (fx.can("f_money") || fx.can("f_customers") || fx.can("f_home")) && { to: "/f/debts", icon: FiDollarSign, label: "الديون", hint: "مين عليه وقديش — اطبع الكشف أو ذكّرهم برسالة لطيفة", tone: "debt" },
     { to: "/f/customers", icon: FiUsers, label: "العملاء", hint: "بياناتهم وطلباتهم وكشف حسابهم" },
     { to: "/f/density", icon: FiMapPin, label: "خريطة العملاء", hint: "وين زباينك متجمّعين" },
     (fx.can("f_orders") || fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/recurring", icon: FiRepeat, label: "المواعيد الثابتة", hint: "زباين بنوصّلهم كل كم يوم" },
@@ -73,9 +73,9 @@ export default function More({ onLogout }) {
       )}
       <div className="fx-list">
         {items.map((i) => (
-          <button key={i.to} className="fx-item" onClick={() => nav(i.to)}>
-            <span className="fx-avatar"><i.icon /></span>
-            <span className="t"><b>{i.label}</b>{i.hint && <span>{i.hint}</span>}</span>
+          <button key={i.to} className="fx-item" onClick={() => nav(i.to)} style={i.tone === "debt" ? { background: "#fff4e5", boxShadow: "inset -4px 0 0 #e8890c" } : undefined}>
+            <span className="fx-avatar" style={i.tone === "debt" ? { background: "#e8890c", color: "#fff" } : undefined}><i.icon /></span>
+            <span className="t"><b style={i.tone === "debt" ? { color: "#b35f00" } : undefined}>{i.label}</b>{i.hint && <span>{i.hint}</span>}</span>
             <FiChevronLeft style={{ color: "var(--fx-muted)" }} />
           </button>
         ))}
