@@ -256,6 +256,14 @@ function Loading_() {
               {t.extra_items.map((i) => <div key={`x${i.product_id}`} className="fx-kv"><span>{i.name} (زيادة للبيع)</span><b>{num(i.qty)}</b></div>)}
               <div className="fx-kv total"><span>المجموع</span><b>{num(t.load)} من {num(t.capacity)}</b></div>
             </div>
+            {t.load_confirmed_at && (
+              <div className="fx-row" style={{ justifyContent: "space-between", gap: 8 }}>
+                <small className={t.driver_ack_note ? "" : "fx-muted"} style={t.driver_ack_note ? { color: "var(--fx-crit)", fontWeight: 700 } : undefined}>
+                  {t.driver_ack_at ? (t.driver_ack_note ? `⚠️ السائق: ${t.driver_ack_note}` : "✅ السائق وقّع إنه استلم العدد") : "⏳ بانتظار توقيع السائق"}
+                </small>
+                <button className="fx-btn sm" onClick={() => printLoad(fx, t)}>🖨️ ورقة التحميل</button>
+              </div>
+            )}
             {edit && t.status === "planned" && !t.load_confirmed_at && <button className="fx-btn pri" onClick={() => setSheet({ kind: "load", t })}>أكّد التحميل</button>}
             {edit && t.status === "returned" && !t.returns_received && <button className="fx-btn pri" onClick={() => setSheet({ kind: "ret", t })}>استلم المرتجع</button>}
           </section>
@@ -265,6 +273,28 @@ function Loading_() {
       {sheet?.kind === "ret" && <ReturnSheet t={sheet.t} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
     </>
   );
+}
+
+// ورقة التحميل زي الفاتورة: شو طلع على السيارة، مين حمّل، وتوقيع السائق
+function printLoad(fx, t) {
+  const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const rows = (t.loaded?.length ? t.loaded : t.items).map((i, n) => `<tr><td>${n + 1}</td><td style="text-align:start">${esc(i.name)}</td><td>${i.qty}</td></tr>`).join("");
+  const total = (t.loaded?.length ? t.loaded : t.items).reduce((a, i) => a + i.qty, 0);
+  const b = fx.shop?.brand || {};
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تحميل ${esc(t.vehicle_name)}</title>
+<style>body{font-family:system-ui,Tahoma,sans-serif;margin:24px}h1{margin:0;font-size:20px}.top{display:flex;justify-content:space-between;border-bottom:3px solid #0456a2;padding-bottom:8px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:7px;text-align:center}th{background:#eef5fb}.sig{display:flex;gap:30px;margin-top:30px}.sig div{flex:1;text-align:center;border-top:1px solid #333;padding-top:6px;font-size:13px}
+.sig img{max-height:90px;display:block;margin:0 auto 4px}@media print{button{display:none}}</style></head><body>
+<div class="top"><div><h1>ورقة تحميل — ${esc(t.vehicle_name)}</h1><div>${esc(b.name || "")}</div></div><div style="text-align:end">السائق: <b>${esc(t.driver_name || "")}</b><br>${esc(t.trip_date || "")}</div></div>
+<table><thead><tr><th>#</th><th>الصنف</th><th>الكمية (كرتونة)</th></tr></thead><tbody>${rows}<tr><td colspan="2"><b>المجموع</b></td><td><b>${total}</b></td></tr></tbody></table>
+${t.driver_ack_note ? `<p style="color:#b00"><b>ملاحظة السائق:</b> ${esc(t.driver_ack_note)}</p>` : ""}
+<div class="sig"><div>${esc(t.load_confirmed_by_name || "أمين المستودع")}<br>حمّل</div><div>${t.driver_ack_sig ? `<img src="${t.driver_ack_sig}" alt="">` : "<br><br>"}${esc(t.driver_name || "السائق")} — استلم</div></div>
+<button onclick="print()" style="margin-top:20px;padding:10px 18px">🖨️ اطبع / PDF</button></body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) return fx.toast("اسمح بفتح النوافذ عشان تطبع");
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { try { w.print(); } catch { /* */ } }, 400);
 }
 
 function LoadSheet({ t, onClose, onDone }) {
@@ -315,7 +345,9 @@ function ReturnSheet({ t, onClose, onDone }) {
       </Sheet>
     );
   }
-  const goodOf = (e) => Math.max(0, Math.min(e.qty, Number(good[e.product_id] ?? 0) || 0));
+  const [got, setGot] = useState({});
+  const gotOf = (e) => (got[e.product_id] === undefined || got[e.product_id] === "" ? e.qty : Math.max(0, Number(got[e.product_id]) || 0));
+  const goodOf = (e) => Math.max(0, Math.min(gotOf(e), Number(good[e.product_id] ?? 0) || 0));
   return (
     <Sheet title={`مرتجع ${t.vehicle_name}`} onClose={onClose}>
       <div className="fx-stack">
@@ -330,16 +362,19 @@ function ReturnSheet({ t, onClose, onDone }) {
         {exch.length > 0 && (
           <div className="fx-card fx-stack" style={{ gap: 8, background: "var(--fx-warn-soft, #fff7e6)" }}>
             <b>🔁 تالف من الزباين — افرزه</b>
-            <small className="fx-muted">السائق جاب هالتالف (بدّله للزباين). اكتب كم منه بينفع يتصلّح أو ينعاد تغليفه — بيروح للإنتاج، والباقي بينشطب.</small>
+            <small className="fx-muted">السائق جاب هالتالف (بدّله للزباين). عدّه، واكتب كم منه بينفع يتصلّح أو ينعاد تغليفه — بيروح للإنتاج، والباقي بينشطب.</small>
             {exch.map((e) => (
               <div key={e.product_id} className="fx-stack" style={{ gap: 4 }}>
-                <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-                  <span className="fx-grow">{e.name} <span className="fx-muted">({num(e.qty)} كرتونة)</span></span>
+                <div className="fx-row" style={{ flexWrap: "nowrap", gap: 6 }}>
+                  <span className="fx-grow">{e.name} <span className="fx-muted">(المفروض {num(e.qty)})</span></span>
+                  <label className="fx-row" style={{ gap: 6, flexWrap: "nowrap" }}><small>وصلني</small>
+                    <input className="fx-input" style={{ width: 76 }} type="number" inputMode="numeric" min="0" value={got[e.product_id] ?? e.qty} onChange={(ev) => setGot({ ...got, [e.product_id]: ev.target.value })} />
+                  </label>
                   <label className="fx-row" style={{ gap: 6, flexWrap: "nowrap" }}><small>صالح</small>
                     <input className="fx-input" style={{ width: 90 }} type="number" inputMode="numeric" min="0" max={e.qty} value={good[e.product_id] ?? ""} placeholder="0" onChange={(ev) => setGood({ ...good, [e.product_id]: ev.target.value })} />
                   </label>
                 </div>
-                <small className="fx-muted">✓ {num(goodOf(e))} للإنتاج · ✗ {num(e.qty - goodOf(e))} تالف نهائي</small>
+                <small className="fx-muted">✓ {num(goodOf(e))} للإنتاج · ✗ {num(gotOf(e) - goodOf(e))} تالف نهائي{gotOf(e) < e.qty ? ` · ⚠️ ناقص ${num(e.qty - gotOf(e))}` : ""}</small>
               </div>
             ))}
           </div>
@@ -348,7 +383,7 @@ function ReturnSheet({ t, onClose, onDone }) {
           const r = await fapi.receiveReturns(
             t.id,
             expected.map((e) => ({ product_id: e.product_id, qty: Number(vals[e.product_id] ?? e.qty) })),
-            exch.map((e) => ({ product_id: e.product_id, good: goodOf(e), bad: e.qty - goodOf(e) }))
+            exch.map((e) => ({ product_id: e.product_id, received: gotOf(e), good: goodOf(e), bad: gotOf(e) - goodOf(e) }))
           );
           const g = exch.reduce((a, e) => a + goodOf(e), 0);
           fx.toast(g ? `انستلم المرتجع — و${g} كرتونة صالحة راحت للإنتاج` : "انستلم المرتجع ورجع للمستودع");
@@ -363,32 +398,36 @@ function ReturnSheet({ t, onClose, onDone }) {
 function SalvageCard({ canFix, onFixed }) {
   const fx = useFx();
   const { data, reload } = useLoad(() => fapi.salvage(), []);
-  const [fixing, setFixing] = useState(null);
+  const [sheet, setSheet] = useState(null);
   const [qty, setQty] = useState("");
-  const pending = (data || []).filter((s) => s.status === "pending");
-  if (!pending.length) return null;
+  const open = (data || []).filter((s) => s.status === "pending" || s.status === "received");
+  if (!open.length) return null;
   return (
     <section className="fx-card fx-stack" style={{ gap: 8, borderInlineStart: "4px solid var(--fx-warn)" }}>
-      <b>📥 تالف صالح وصلك — {num(pending.reduce((a, s) => a + s.good, 0))} كرتونة</b>
-      <small className="fx-muted">أمين التحميل فرزه من تالف الزباين. صلّحه أو أعد تغليفه، واكبس «صلّحته» — بيرجع لرصيد المستودع.</small>
-      {pending.map((s) => (
+      <b>📥 تالف صالح للتصليح</b>
+      <small className="fx-muted">أمين المستودع فرزه من تالف الزباين. ١) أكّد إنك استلمت العدد ٢) صلّحه أو أعد تغليفه واكبس «صلّحته» — بيرجع لرصيد المستودع.</small>
+      {open.map((s) => (
         <div key={s.id} className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
-          <span className="fx-grow"><b>{num(s.good)} {s.name}</b><br /><small className="fx-muted">{[s.vehicle_name, s.sorted_by_name && `فرزه ${s.sorted_by_name}`, date(s.sorted_at)].filter(Boolean).join(" · ")}</small></span>
-          {canFix && <button className="fx-btn sm ok" onClick={() => { setFixing(s); setQty(String(s.good)); }}>✓ صلّحته</button>}
+          <span className="fx-grow">
+            <b>{num(s.status === "received" ? s.received_qty ?? s.good : s.good)} {s.name}</b><br />
+            <small className="fx-muted">{s.status === "received" ? `استلمها ${s.received_by_name || ""} — بانتظار التصليح` : [s.vehicle_name, s.sorted_by_name && `من ${s.sorted_by_name}`, date(s.sorted_at)].filter(Boolean).join(" · ")}</small>
+          </span>
+          {canFix && s.status === "pending" && <button className="fx-btn sm" onClick={() => { setSheet({ kind: "recv", s }); setQty(String(s.good)); }}>✓ استلمت</button>}
+          {canFix && s.status === "received" && <button className="fx-btn sm ok" onClick={() => { setSheet({ kind: "fix", s }); setQty(String(s.received_qty ?? s.good)); }}>♻️ صلّحته</button>}
         </div>
       ))}
-      {fixing && (
-        <Sheet title={`تصليح ${fixing.name}`} onClose={() => setFixing(null)}>
+      {sheet && (
+        <Sheet title={sheet.kind === "recv" ? `استلام ${sheet.s.name}` : `تصليح ${sheet.s.name}`} onClose={() => setSheet(null)}>
           <div className="fx-stack">
-            <label className="fx-field">كم كرتونة صارت جاهزة؟ (من {num(fixing.good)})
+            <label className="fx-field">{sheet.kind === "recv" ? `كم كرتونة استلمت فعليًا؟ (سلّمك ${num(sheet.s.good)})` : `كم كرتونة صارت جاهزة؟ (من ${num(sheet.s.received_qty ?? sheet.s.good)})`}
               <input className="fx-input fx-num" style={{ fontSize: 22, textAlign: "center", fontWeight: 800 }} type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} />
             </label>
-            <small className="fx-muted">اللي ما زبط منها بينشطب كتالف.</small>
+            <small className="fx-muted">{sheet.kind === "recv" ? "إذا العدد أقل، بيوصل تنبيه لأمين المستودع والإدارة." : "اللي ما زبط بينشطب كتالف، والجاهز بينضاف للإنتاج لحاله."}</small>
             <Act className="fx-btn ok block fx-huge" onClick={async () => {
-              const r = await fapi.fixSalvage(fixing.id, qty);
-              fx.toast(`رجع ${r.qty} كرتونة للمستودع ✓`);
-              setFixing(null); reload(); onFixed?.();
-            }}>✓ رجّعها للمستودع</Act>
+              if (sheet.kind === "recv") { await fapi.salvageReceive(sheet.s.id, qty); fx.toast("انسجّل الاستلام ✓"); }
+              else { const r = await fapi.fixSalvage(sheet.s.id, qty); fx.toast(`رجع ${r.qty} كرتونة للمستودع ✓`); onFixed?.(); }
+              setSheet(null); reload();
+            }}>{sheet.kind === "recv" ? "✓ استلمت" : "✓ رجّعها للمستودع"}</Act>
           </div>
         </Sheet>
       )}

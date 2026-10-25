@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query } from "../../db.js";
 import { can } from "../../permissions.js";
-import { need, needAny, bad, jordanDate, alert, pushTo, once } from "./lib.js";
+import { need, needAny, bad, jordanDate, alert, pushTo, once, queueMessage, ensureTrackToken, itemsText } from "./lib.js";
 import { loadOrders } from "./orders.js";
 
 // ============================================================
@@ -72,6 +72,22 @@ router.post("/orders/:id/postpone/reject", editOrders, async (req, res) => {
   await query("UPDATE f_orders SET postpone_state = 'rejected', updated_at = now() WHERE id = $1 AND postpone_state = 'pending'", [req.params.id]);
   await query("UPDATE f_alerts SET closed_at = now(), closed_by = $1 WHERE kind = 'postpone' AND ref_id = $2 AND closed_at IS NULL", [req.user.id, req.params.id]);
   res.json({ ok: true });
+});
+
+// الإدارة: «طلبك تحمّل والسائق جاي عليك» لكل زباين السيارة
+router.post("/trips/:id/notify-loaded", editOrders, async (req, res) => {
+  const t = (await query("SELECT t.id, u.full_name AS driver_name FROM f_trips t LEFT JOIN users u ON u.id = t.driver_id WHERE t.id = $1", [req.params.id])).rows[0];
+  if (!t) return bad(res, "الرحلة غير موجودة.", 404);
+  const os = await loadOrders("o.trip_id = $1 AND o.status IN ('assigned','onway')", [t.id]);
+  const ids = [];
+  for (const o of os) {
+    const track = await ensureTrackToken(o.customer_id);
+    ids.push(await queueMessage({
+      customerId: o.customer_id, orderId: o.id, kind: "loaded", userId: req.user.id,
+      data: { customer: o.customer_name, order: o.id, items: itemsText(o.items.map((i) => ({ qty: i.qty, name: i.name, bonus: i.bonus_qty }))), driver: t.driver_name || "", eta: o.eta_at, track },
+    }));
+  }
+  res.json({ ok: true, ids: ids.filter(Boolean) });
 });
 
 export default router;

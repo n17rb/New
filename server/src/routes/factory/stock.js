@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, logActivity } from "../../db.js";
-import { canAction } from "../../permissions.js";
-import { need, needAny, bad, round2, jordanDate, alert } from "./lib.js";
+import { canAction, can } from "../../permissions.js";
+import { need, needAny, bad, round2, jordanDate, alert, pushTo, pushManagers } from "./lib.js";
 import { confirmLoad } from "./driver.js";
 import { loadTrips } from "./orders.js";
 
@@ -150,6 +150,7 @@ router.post("/stock/adjust", editStock, async (req, res) => {
 // ---------- التحميل: شو لازم يطلع على كل سيارة اليوم ----------
 router.get("/stock/loading", viewStock, async (req, res) => {
   const trips = await loadTrips("t.status IN ('planned','active','returned') AND t.trip_date <= $1", [jordanDate()]);
+  const names = new Map((await query("SELECT id, full_name FROM users WHERE id = ANY($1::int[])", [[...new Set(trips.map((t) => t.load_confirmed_by).filter(Boolean))]])).rows.map((u) => [u.id, u.full_name]));
   res.json(trips.map((t) => {
     const per = new Map();
     for (const o of t.stops.filter((s) => s.status !== "cancelled")) for (const i of o.items) per.set(i.product_id, { product_id: i.product_id, name: i.name, qty: (per.get(i.product_id)?.qty || 0) + i.qty + (i.bonus_qty || 0) });
@@ -158,6 +159,9 @@ router.get("/stock/loading", viewStock, async (req, res) => {
       load_confirmed_at: t.load_confirmed_at, items: [...per.values()], extra_items: t.extra_items,
       returns_expected: t.status === "returned" ? expectedReturns(t) : null, returns_received: !!t.returns_received_at,
       exchanged: exchangedPer(t),
+      loaded: (t.loaded_per || []).filter((x) => x.qty > 0).map((x) => ({ product_id: x.product_id, name: x.name, qty: x.qty })),
+      load_confirmed_by_name: names.get(t.load_confirmed_by) || null,
+      driver_ack_at: t.driver_ack_at, driver_ack_sig: t.driver_ack_sig, driver_ack_note: t.driver_ack_note,
     };
   }));
 });
@@ -216,6 +220,9 @@ router.post("/stock/trips/:id/load", editStock, async (req, res) => {
   } catch (e) {
     return bad(res, e.message);
   }
+  // السائق لازم يراجع العدد ويوقّع إنه استلم
+  const t = (await query("SELECT t.driver_id, v.name FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [req.params.id])).rows[0];
+  if (t?.driver_id && t.driver_id !== req.user.id) pushTo(t.driver_id, { title: `📦 ${req.user.full_name} حمّل ${t.name}`, body: "راجع العدد ووقّع إنك استلمت قبل ما تطلع.", url: "/f/drive", tag: `ld-${req.params.id}` }).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -238,18 +245,28 @@ router.post("/stock/trips/:id/returns", editStock, async (req, res) => {
   }
   // فرز التالف اللي جابه من الزباين: الصالح بيروح للإنتاج يصلّحه، والخربان بينشطب
   const exch = exchangedPer(t);
+  const salvageNew = [];
   for (const sv of Array.isArray(req.body?.salvage) ? req.body.salvage : []) {
     const e = exch.find((x) => x.product_id === Number(sv.product_id));
     if (!e) continue;
-    const good = Math.max(0, Math.min(e.qty, Math.round(Number(sv.good) || 0)));
-    const badQ = Math.max(0, Math.round(Number(sv.bad) || 0));
+    const got = sv.received == null || sv.received === "" ? e.qty : Math.max(0, Math.round(Number(sv.received) || 0));
+    const good = Math.max(0, Math.min(got, Math.round(Number(sv.good) || 0)));
+    const badQ = Math.max(0, got - good);
+    if (got < e.qty) await alert({ level: "warn", kind: "salvage_short", ref: t.id, title: `تالف ناقص مع ${t.driver_name || "السائق"}`, body: `${e.name}: المفروض ${e.qty} ووصل ${got}.` });
     if (!good && !badQ) continue;
-    await query(
-      "INSERT INTO f_salvage (trip_id, product_id, good, bad, status, sorted_by) VALUES ($1,$2,$3,$4,$5,$6)",
-      [t.id, e.product_id, good, badQ, good > 0 ? "pending" : "done", req.user.id]
-    );
+    const sv2 = (await query(
+      "INSERT INTO f_salvage (trip_id, product_id, good, bad, status, sorted_by, expected) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id",
+      [t.id, e.product_id, good, badQ, good > 0 ? "pending" : "done", req.user.id, e.qty]
+    )).rows[0];
+    if (good > 0) salvageNew.push({ id: sv2.id, name: e.name, good });
   }
   await query("UPDATE f_trips SET returns_received_at = now(), returns_received_by = $1 WHERE id = $2", [req.user.id, t.id]);
+  // الإنتاج بيوصله إشعار: في تالف صالح بانتظارك تأكّد استلامه
+  if (salvageNew.length) {
+    const prod = (await query("SELECT id, role, permissions FROM users WHERE status = 'active'")).rows.filter((u) => u.role !== "super_admin" && can(u, "f_production", "edit"));
+    const txt = salvageNew.map((x) => `${x.good} ${x.name}`).join("، ");
+    for (const u of prod) pushTo(u.id, { title: `📥 تالف صالح للتصليح: ${txt}`, body: `من ${req.user.full_name} — أكّد إنك استلمت العدد.`, url: "/f/stock" }).catch(() => {});
+  }
   if (short.length && t.driver_id) {
     const prices = new Map((await query("SELECT id, price FROM f_products")).rows.map((p) => [p.id, Number(p.price)]));
     const value = round2(short.reduce((s, x) => s + x.missing * (prices.get(x.product_id) || 0), 0));
@@ -266,24 +283,44 @@ router.post("/stock/trips/:id/returns", editStock, async (req, res) => {
 // ---------- التالف الصالح: أمين التحميل فرزه، والإنتاج بيصلّحه/بيعيد تغليفه وبيرجع للمستودع ----------
 router.get("/stock/salvage", viewStock, async (req, res) => {
   const r = await query(
-    `SELECT s.*, p.name, v.name AS vehicle_name, u1.full_name AS sorted_by_name, u2.full_name AS fixed_by_name
+    `SELECT s.*, p.name, v.name AS vehicle_name, u1.full_name AS sorted_by_name, u2.full_name AS fixed_by_name, (SELECT full_name FROM users WHERE id = s.received_by) AS received_by_name
      FROM f_salvage s JOIN f_products p ON p.id = s.product_id
      LEFT JOIN f_trips t ON t.id = s.trip_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id
      LEFT JOIN users u1 ON u1.id = s.sorted_by LEFT JOIN users u2 ON u2.id = s.fixed_by
-     WHERE s.status = 'pending' OR s.sorted_at > now() - interval '7 days' ORDER BY s.status = 'pending' DESC, s.id DESC LIMIT 100`
+     WHERE s.status IN ('pending','received') OR s.sorted_at > now() - interval '7 days' ORDER BY s.status IN ('pending','received') DESC, s.id DESC LIMIT 100`
   );
   res.json(r.rows);
+});
+
+// الإنتاج بيأكّد إنه استلم من أمين المستودع (بالعدد الصحيح)
+router.post("/stock/salvage/:id/receive", editProd, async (req, res) => {
+  const s = (await query("SELECT s.*, p.name FROM f_salvage s JOIN f_products p ON p.id = s.product_id WHERE s.id = $1", [req.params.id])).rows[0];
+  if (!s) return bad(res, "غير موجود.", 404);
+  if (s.status !== "pending") return bad(res, "انستلم من قبل.");
+  const qty = req.body?.qty == null || req.body.qty === "" ? s.good : Math.round(Number(req.body.qty));
+  if (!(qty >= 0 && qty <= s.good)) return bad(res, `اكتب رقم من 0 لـ${s.good}.`);
+  await query("UPDATE f_salvage SET status = 'received', received_qty = $1, received_by = $2, received_at = now() WHERE id = $3 AND status = 'pending'", [qty, req.user.id, s.id]);
+  if (qty < s.good) {
+    await alert({ level: "warn", kind: "salvage_short", ref: s.id, title: `الإنتاج استلم ${qty} من ${s.good} ${s.name}`, body: `أمين المستودع سلّم ${s.good} والإنتاج عدّ ${qty}. استلمه ${req.user.full_name}.` });
+    if (s.sorted_by) pushTo(s.sorted_by, { title: "⚠️ فرق بتسليم التالف للإنتاج", body: `${s.name}: سلّمت ${s.good} والإنتاج عدّ ${qty}.`, url: "/f/stock" }).catch(() => {});
+  } else if (s.sorted_by) {
+    pushTo(s.sorted_by, { title: `✅ الإنتاج استلم ${qty} ${s.name}`, body: req.user.full_name, url: "/f/stock" }).catch(() => {});
+  }
+  res.json({ ok: true, qty });
 });
 
 router.post("/stock/salvage/:id/fix", editProd, async (req, res) => {
   const s = (await query("SELECT s.*, p.name FROM f_salvage s JOIN f_products p ON p.id = s.product_id WHERE s.id = $1", [req.params.id])).rows[0];
   if (!s) return bad(res, "غير موجود.", 404);
-  if (s.status !== "pending") return bad(res, "انسجّل من قبل.");
-  const qty = req.body?.qty == null || req.body.qty === "" ? s.good : Math.round(Number(req.body.qty));
-  if (!(qty >= 0 && qty <= s.good)) return bad(res, `اكتب رقم من 0 لـ${s.good}.`);
-  const u = await query("UPDATE f_salvage SET status = 'done', fixed_qty = $1, fixed_by = $2, fixed_at = now() WHERE id = $3 AND status = 'pending' RETURNING id", [qty, req.user.id, s.id]);
+  if (s.status === "pending") return bad(res, "أكّد استلامك أول.");
+  if (s.status !== "received") return bad(res, "انسجّل من قبل.");
+  const max = s.received_qty ?? s.good;
+  const qty = req.body?.qty == null || req.body.qty === "" ? max : Math.round(Number(req.body.qty));
+  if (!(qty >= 0 && qty <= max)) return bad(res, `اكتب رقم من 0 لـ${max}.`);
+  const u = await query("UPDATE f_salvage SET status = 'done', fixed_qty = $1, fixed_by = $2, fixed_at = now() WHERE id = $3 AND status = 'received' RETURNING id", [qty, req.user.id, s.id]);
   if (!u.rows[0]) return bad(res, "انسجّل من قبل.");
   if (qty > 0) await query("INSERT INTO f_stock_moves (product_id, kind, qty, reason, created_by) VALUES ($1,'production',$2,'تصليح تالف من الزباين',$3)", [s.product_id, qty, req.user.id]);
+  await pushManagers({ title: `♻️ الإنتاج صلّح ${qty} ${s.name}`, body: `من ${max} استلمهم — رجعوا لرصيد المستودع. ${req.user.full_name}.`, url: "/f/stock", tag: `sv-${s.id}` });
   res.json({ ok: true, qty });
 });
 

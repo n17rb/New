@@ -85,10 +85,11 @@ export default function Trips() {
         </>
       )}
 
+      {sheet?.kind === "notify" && <NotifyLoaded t={sheet.t} onClose={() => setSheet(null)} onReady={(ids) => { setSheet(null); setMsgs(ids); }} />}
       {sheet?.kind === "delay" && <DelaySheet t={sheet.t} onClose={() => setSheet(null)} onSaved={(r) => { setSheet(null); reload(); setMsgs(r.message_ids); }} />}
       {sheet?.kind === "order" && <TripDetail t={sheet.t} onClose={() => setSheet(null)} onChanged={() => { setSheet(null); reload(); }} onStop={(o) => setSheet({ kind: "stop", t: sheet.t, o, back: "order" })} />}
       {sheet?.kind === "stop" && <StopSheet o={sheet.o} t={sheet.t} onClose={() => setSheet(sheet.back ? { kind: sheet.back, t: sheet.t } : null)} />}
-      {msgs && <SendMessages ids={msgs} title="رسالة التأخير للزباين" onClose={() => setMsgs(null)} />}
+      {msgs && <SendMessages ids={msgs} title="ابعت للزباين — اكبس «ابعت» لكل وحدة" onClose={() => setMsgs(null)} />}
     </div>
   );
 }
@@ -172,8 +173,12 @@ function TripCard({ t, lv, color, on, first, dispatch, onOpen, onFocus }) {
         {dispatch && ["planned", "active"].includes(t.status) && t.stops.some((o) => ["assigned", "onway"].includes(o.status)) && (
           <button className="fx-btn sm" data-hl={first ? "delay-btn" : undefined} onClick={() => onOpen("delay")}><FiClock /> تأخير</button>
         )}
+        {dispatch && ["planned", "active"].includes(t.status) && t.load_confirmed_at && t.stops.some((o) => ["assigned", "onway"].includes(o.status)) && (
+          <button className="fx-btn sm" onClick={() => onOpen("notify")}>📣 بلّغ الزباين</button>
+        )}
         {lv?.driver_phone && <a className="fx-btn sm" href={`tel:${lv.driver_phone}`}><FiPhone /> اتصل</a>}
       </div>
+      {t.driver_ack_note && <div className="fx-note crit" style={{ fontSize: 13 }}>⚠️ السائق: {t.driver_ack_note}</div>}
       {lv?.minutes_ago != null && t.status === "active" && <small className="fx-muted" style={{ fontSize: 12 }}>آخر موقع {lv.minutes_ago < 1 ? "هلأ" : `قبل ${lv.minutes_ago} دقيقة`}</small>}
     </section>
   );
@@ -306,3 +311,17 @@ function TripSummary({ t }) {
   );
 }
 
+
+// «طلبك تحمّل والسائق جاي عليك» — لكل زباين السيارة
+function NotifyLoaded({ t, onClose, onReady }) {
+  const fx = useFx();
+  const n = t.stops.filter((o) => ["assigned", "onway"].includes(o.status)).length;
+  return (
+    <Sheet title={`بلّغ زباين ${t.vehicle_name}`} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-note sky">بتطلع رسالة لكل زبون ({n}): «طلبك تحمّل على السيارة والسائق {t.driver_name || ""} جاي عليك» مع وقت الوصول ورابط المتابعة.</div>
+        <Act className="fx-btn pri block fx-huge" onClick={async () => { const r = await fapi.notifyLoaded(t.id); if (!r.ids.length) { fx.toast("ما في رسائل (الزباين بدون أرقام؟)"); onClose(); return; } onReady(r.ids); }}>📣 جهّز الرسائل</Act>
+      </div>
+    </Sheet>
+  );
+}

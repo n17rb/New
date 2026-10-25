@@ -86,7 +86,7 @@ router.get("/f/track/:token", async (req, res) => {
 router.get("/f/invoice/:token", async (req, res) => {
   if (!(await enter(req.params.token, res))) return;
   const o = (await query(
-    `SELECT o.id, o.delivered_total, o.cash_paid, o.delivered_at, o.signature, c.name AS customer_name, c.city, c.phone, c.track_token,
+    `SELECT o.id, o.delivered_total, o.cash_paid, o.cliq_paid, o.delivered_at, o.signature, c.name AS customer_name, c.city, c.phone, c.track_token,
             u.full_name AS driver_name, v.name AS vehicle_name,
             (SELECT balance_after FROM f_ledger g WHERE g.order_id = o.id ORDER BY g.id DESC LIMIT 1) AS balance_after
      FROM f_orders o JOIN f_customers c ON c.id = o.customer_id LEFT JOIN f_trips t ON t.id = o.trip_id
@@ -106,7 +106,7 @@ router.get("/f/invoice/:token", async (req, res) => {
   res.json({
     brand: await brand(),
     exchanges,
-    invoice: { ...o, total: Number(o.delivered_total), paid: Number(o.cash_paid), balance_after: o.balance_after == null ? null : Number(o.balance_after) },
+    invoice: { ...o, total: Number(o.delivered_total), paid: Number(o.cash_paid) + Number(o.cliq_paid || 0), cliq: Number(o.cliq_paid || 0), balance_after: o.balance_after == null ? null : Number(o.balance_after) },
     items: items.rows.map((i) => ({ ...i, price: Number(i.price), line: round2((i.delivered_qty ?? i.qty) * Number(i.price)) })),
   });
 });
