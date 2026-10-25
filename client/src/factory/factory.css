@@ -922,3 +922,26 @@ a.fx-pill { text-decoration: none; }
 .fx-trip-h .t, .fx-trip-next span, .fx-trips-day, .fx-trip-legend { min-width: 0; }
 .fx-trip-h .t b, .fx-trip-h .t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-date, .fx-date .boxes > * { min-width: 0; }
+
+/* التوقيع: زر + شاشة كاملة بالعرض */
+.fx-sig-btn { width: 100%; display: grid; justify-items: center; gap: 4px; padding: 18px 12px; border-radius: 16px; border: 1.5px dashed #b9cde3; background: #f5f9fd; color: var(--fx-navy); cursor: pointer; font: inherit; }
+.fx-sig-btn svg { width: 26px; height: 26px; }
+.fx-sig-btn b { font-size: 16px; }
+.fx-sig-btn small { color: var(--fx-muted); font-size: 12.5px; }
+.fx-sig-done { display: grid; gap: 8px; }
+.fx-sig-done img { width: 100%; max-height: 130px; object-fit: contain; background: #fff; border: 1px solid var(--fx-line); border-radius: 14px; padding: 8px; }
+.fx-signscreen { position: fixed; inset: 0; z-index: 10000; background: #eef3f8; overflow: hidden; touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; font-family: inherit; }
+.fx-signstage { position: absolute; top: 0; left: 0; display: flex; flex-direction: column; align-items: center; }
+.fx-sign-top { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; color: #10304d; }
+.fx-sign-top b { font-size: 18px; }
+.fx-sign-top small { color: #6b7f95; font-size: 13px; }
+.fx-sign-pad { position: relative; background: #fff; border-radius: 18px; box-shadow: 0 4px 18px rgba(16, 48, 77, .08); overflow: hidden; }
+.fx-sign-pad canvas { display: block; touch-action: none; position: relative; z-index: 2; }
+.fx-sign-ghost { position: absolute; inset: 0; display: grid; place-items: center; color: #c9d6e3; font-size: 30px; font-weight: 800; pointer-events: none; z-index: 1; }
+.fx-sign-line { position: absolute; left: 8%; right: 8%; bottom: 26%; border-bottom: 2px dashed #d5e0eb; pointer-events: none; z-index: 1; }
+.fx-sign-foot { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; }
+.fx-sign-b { min-width: 96px; height: 50px; border-radius: 14px; border: 0; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.fx-sign-b.ghost { background: transparent; color: #6b7f95; }
+.fx-sign-b.soft { background: #fff; color: #10304d; box-shadow: 0 1px 4px rgba(16, 48, 77, .1); }
+.fx-sign-b.pri { background: #0A66F5; color: #fff; min-width: 150px; }
+.fx-sign-b:disabled { opacity: .45; }
