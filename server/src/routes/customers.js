@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { matchRegion } from "./geocode.js";
+import { resolveMapsLink } from "../utils/mapsLink.js";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
@@ -333,14 +334,8 @@ router.post("/fix-locations", requireCanManageCustomers, async (req, res) => {
 
     if (!parsed) {
       try {
-        const response = await fetch(row.maps_url, {
-          method: "GET",
-          redirect: "follow",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          },
-        });
-        parsed = tryParseCoordsFromLink(response.url);
+        const c = await resolveMapsLink(row.maps_url);
+        if (c) parsed = { lat: c.lat, lng: c.lng };
       } catch {
         // تجاهل — يبقى بقائمة الفاشلين
       }
