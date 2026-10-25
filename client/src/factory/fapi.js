@@ -160,6 +160,7 @@ export const fapi = {
   editSite: (id, b) => put(`/store/sites/${id}`, b),
   addPline: (b) => post("/store/lines", b),
   editPline: (id, b) => put(`/store/lines/${id}`, b),
+  deletePline: (id) => del(`/store/lines/${id}`),
   setMachineSite: (id, b) => put(`/store/machines/${id}`, b),
   storeStaff: () => get("/store/staff"),
   storeStarter: (b) => post("/store/starter", b),

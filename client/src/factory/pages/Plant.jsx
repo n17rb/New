@@ -93,8 +93,8 @@ function PlantEdit({ l, onClose, onDone }) {
           try { await fapi.editPline(l.id, { name: name.trim(), site_id: l.site_id, user_ids: userIds, active: true }); fx.toast("انحفظ"); onDone(false); } catch (e) { setErr(e.message); }
         }}>حفظ</Act>
         <Act className="fx-btn danger block" onClick={async () => {
-          if (!confirm(`توقّف «${l.name}»؟ بيختفي من المزيد والرئيسية، وإنتاجه وفحوصاته القديمة بتضل محفوظة.`)) return;
-          try { await fapi.editPline(l.id, { name: l.name, site_id: l.site_id, user_ids: userIds, active: false }); fx.toast("انوقّف"); onDone(true); } catch (e) { setErr(e.message); }
+          if (!confirm(`تحذف «${l.name}»؟ بيختفي من المزيد والرئيسية. إذا إله إنتاج أو فحوصات قديمة بتضل محفوظة بالتقارير.`)) return;
+          try { const r = await fapi.deletePline(l.id); fx.toast(r.mode === "deleted" ? "انحذف" : "انحذف من القوائم — تاريخه محفوظ بالتقارير"); onDone(true); } catch (e) { setErr(e.message); }
         }}>🗑 احذف المصنع</Act>
       </div>
     </Sheet>
