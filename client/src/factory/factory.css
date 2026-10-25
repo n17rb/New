@@ -915,3 +915,10 @@ a.fx-pill { text-decoration: none; }
 .qc-sw { display: grid; justify-items: center; gap: 4px; min-width: 70px; padding: 8px 10px; border-radius: 14px; border: 1.5px solid #e3eaf1; background: #fff; font: inherit; font-size: 12.5px; color: #3d536b; cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; }
 .qc-sw i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
 .qc-sw.on { border-color: #0b5fa8; background: #f2f8fe; box-shadow: 0 0 0 3px rgba(11, 95, 168, .12); font-weight: 700; color: #0b3a66; }
+
+/* منع تمدد الصفحة أفقيا على الجوال (الرحلات وغيرها) */
+.fx-page, .fx-stack, .fx-trip, .fx-trip-stops, .fx-trip-prog { grid-template-columns: minmax(0, 1fr); }
+.fx-page > *, .fx-stack > *, .fx-trip > * { min-width: 0; }
+.fx-trip-h .t, .fx-trip-next span, .fx-trips-day, .fx-trip-legend { min-width: 0; }
+.fx-trip-h .t b, .fx-trip-h .t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-date, .fx-date .boxes > * { min-width: 0; }
