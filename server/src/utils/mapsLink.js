@@ -54,11 +54,17 @@ function coordsInHtml(html) {
   return null;
 }
 // مركز الخريطة اللي جوجل فتحها عليه (بنقبله بس إذا داخل الأردن والمنطقة، عشان ما ناخذ مركز عشوائي)
+// منطقة الشغل (الأردن وحواليه): أي موقع جاي من صفحة جوجل وطالع برّاها بيكون غلط
+// (جوجل لما ما تعرف المكان بتفتح على موقع السيرفر نفسه بأمريكا)
+const BOX = (process.env.SERVICE_BBOX || "29,34.8,33.6,39.4").split(",").map(Number);
+function inArea(p) {
+  return p && p.lat > BOX[0] && p.lat < BOX[2] && p.lng > BOX[1] && p.lng < BOX[3] ? p : null;
+}
 function appCenter(html) {
   const m = String(html || "").match(/APP_INITIALIZATION_STATE=\[\[\[\s*[\d.]+\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/);
   if (!m) return null;
   const lng = +m[1], lat = +m[2];
-  return valid(lat, lng) && lat > 29 && lat < 33.6 && lng > 34.8 && lng < 39.4 ? { lat, lng } : null;
+  return valid(lat, lng) && inArea({ lat, lng }) ? { lat, lng } : null;
 }
 
 // اسم المكان من الرابط (?q=سوبرماركت النور، عمّان) — للبحث عنه إذا ما لقينا أرقام
@@ -73,16 +79,33 @@ function placeQuery(url) {
   return null;
 }
 
-// بحث عن الاسم بجوجل (بيشتغل إذا «Geocoding API» مفعّلة على نفس مفتاح GOOGLE_MAPS_KEY — اختياري)
-async function geocodeText(text) {
+// بحث عن المحل باسمه وعنوانه على جوجل داخل الأردن (بنفس مفتاح GOOGLE_MAPS_KEY):
+// أول اشي «Places API (New)» — بتلاقي المحل نفسه؛ وبعدها «Geocoding API» بس إذا النتيجة دقيقة (مش مركز مدينة)
+async function geocodeText(text, trail = []) {
   const key = process.env.GOOGLE_MAPS_KEY;
-  if (!key || !text) return null;
+  if (!key || !text) { trail.push(key ? "no-query" : "no-key"); return null; }
   try {
-    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(text)}&region=jo&language=ar&key=${encodeURIComponent(key)}`);
+    const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.location,places.displayName" },
+      body: JSON.stringify({
+        textQuery: text, languageCode: "ar", regionCode: "JO", pageSize: 1,
+        locationRestriction: { rectangle: { low: { latitude: BOX[0], longitude: BOX[1] }, high: { latitude: BOX[2], longitude: BOX[3] } } },
+      }),
+    });
     const j = await r.json();
-    const loc = j?.results?.[0]?.geometry?.location;
-    return loc && valid(loc.lat, loc.lng) ? { lat: loc.lat, lng: loc.lng } : null;
-  } catch { return null; }
+    trail.push(`places ${r.status}${j?.error ? " " + String(j.error.message).slice(0, 80) : ""}`);
+    const loc = j?.places?.[0]?.location;
+    if (loc && valid(loc.latitude, loc.longitude)) return inArea({ lat: loc.latitude, lng: loc.longitude });
+  } catch (e) { trail.push("places err"); }
+  try {
+    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(text)}&region=jo&components=country:JO&language=ar&key=${encodeURIComponent(key)}`);
+    const j = await r.json();
+    trail.push(`geocode ${j?.status || r.status}`);
+    const res = (j?.results || []).find((x) => x?.geometry?.location_type && x.geometry.location_type !== "APPROXIMATE");
+    const loc = res?.geometry?.location;
+    return loc && valid(loc.lat, loc.lng) ? inArea({ lat: loc.lat, lng: loc.lng }) : null;
+  } catch { trail.push("geocode err"); return null; }
 }
 
 // الدالة الرئيسية: بترجّع { lat, lng } أو null
@@ -101,13 +124,13 @@ export async function resolveMapsLink(input, opts = {}) {
   for (const ua of [BOT_UA, UA, IPHONE_UA]) {
     const got = await follow(url, ua, trail);
     query = got.query || query;
-    const c = coordsIn(got.cur, { loose: false }) || coordsInHtml(got.html);
+    // بنوثق بس بالأرقام اللي بالرابط نفسه (مكان محدد). أرقام صفحة جوجل ممكن تكون مركز خريطة عشوائي
+    const c = inArea(coordsIn(got.cur, { loose: false }));
     if (c) return c;
-    const ac = appCenter(got.html);
-    if (ac && !query) return ac;
-    if (got.html && ac) { const g = query ? await geocodeText(query) : null; return g || ac; }
+    if (query) break;
   }
-  const g = query ? await geocodeText(query) : null;
+  trail.push("q=" + String(query || "").slice(0, 80));
+  const g = query ? await geocodeText(query, trail) : null;
   if (g) return g;
   console.error("maps link failed:", url, "|", trail.join(" -> ").slice(0, 1500));
   return null;
@@ -128,6 +151,7 @@ async function follow(start, ua, trail) {
         const cont = new URL(cur).searchParams.get("continue");
         if (cont) { cur = cont; trail.push("consent"); continue; }
       }
+      if (/(^|\.)google\.[a-z.]+$/i.test(host) && /\/maps/.test(cur) && !/[?&]gl=/.test(cur)) cur += (cur.includes("?") ? "&" : "?") + "hl=ar&gl=jo";
       const r = await fetch(cur, {
         redirect: "manual",
         signal: ctl.signal,
