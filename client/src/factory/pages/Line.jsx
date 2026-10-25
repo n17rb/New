@@ -8,6 +8,7 @@ import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, DateInput, Reload, mon
 // خطي: فحص الجودة كل كم ساعة، الفلاتر ومواعيدها، تالف الخط، وورقة اليوم للطباعة
 // ============================================================
 const EVERY = [30, 60, 90, 120, 180, 240];
+const DOT = { "أحمر": "#e5484d", "أزرق": "#2f7de1", "أبيض": "#f4f4f4", "أصفر": "#f5c518" };
 const fmtQty = (n) => (Number.isInteger(Number(n)) ? num(n) : Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 }));
 
 function untilText(iso) {
@@ -25,6 +26,7 @@ export default function Line() {
   const { data, error, reload } = useLoad(() => fapi.line(), []);
   const [pick, setPick] = useState(fixed);
   const [sheet, setSheet] = useState(null);
+  const [showAll, setShowAll] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const lines = data?.lines || [];
@@ -39,9 +41,9 @@ export default function Line() {
     <div className="fx-page">
       {fixed && l && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => nav(`/f/plant/${l.id}`)}>→ {plantName(l.name)}</button>}
       <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <h1 className="fx-h1" style={{ margin: 0 }}>{l ? (fixed ? `التعقيم والفحوصات — ${plantName(l.name)}` : l.name) : "خط الإنتاج"}</h1>
+        <h1 className="fx-h1" style={{ margin: 0 }}>{l ? (fixed ? "التعقيم والفلاتر" : l.name) : "خط الإنتاج"}</h1>
         <span className="fx-row" style={{ gap: 6 }}>
-          {C.setup && l && <button className="fx-btn sm" onClick={() => setSheet({ kind: "settings" })}><FiSettings /> إعدادات</button>}
+          {C.setup && l && <button className="fx-icon-btn" onClick={() => setSheet({ kind: "settings" })} aria-label="الإعدادات"><FiSettings /></button>}
           <Reload onClick={reload} />
         </span>
       </div>
@@ -54,43 +56,72 @@ export default function Line() {
 
       {l && (
         <>
-          <section className="fx-card fx-stack" style={{ gap: 8, borderInlineStart: `4px solid ${due.late ? "var(--fx-crit)" : "var(--fx-ok)"}` }}>
-            <div className="fx-row" style={{ justifyContent: "space-between" }}>
-              <span><small className="fx-muted">الفحص الجاي (كل {l.check_every_min >= 60 ? `${l.check_every_min / 60} ساعة` : `${l.check_every_min} دقيقة`})</small><br /><b style={{ fontSize: 18, color: due.late ? "var(--fx-crit)" : "var(--fx-ok)" }}>{due.text}</b></span>
-              <span className="fx-muted" style={{ fontSize: 12.5 }}>{l.last_check_at ? `آخر فحص ${time(l.last_check_at)}` : ""}</span>
-            </div>
-            {C.record && <button className="fx-btn pri block fx-huge" onClick={() => setSheet({ kind: "check" })}>🧪 سجّل فحص هلأ</button>}
+          {/* الفحص الجاي: كرت وحدة واضح */}
+          <section className="fx-card fx-stack" style={{ gap: 10, textAlign: "center", padding: 20, background: due.late ? "var(--fx-crit-soft)" : "var(--fx-ok-soft)", border: "none" }}>
+            <small style={{ color: "var(--fx-muted)" }}>الفحص الجاي</small>
+            <b style={{ fontSize: 26, color: due.late ? "var(--fx-crit)" : "var(--fx-ok)" }}>{due.text}</b>
+            <small className="fx-muted">كل {l.check_every_min >= 60 ? `${l.check_every_min / 60 === 1 ? "ساعة" : l.check_every_min / 60 === 2 ? "ساعتين" : `${l.check_every_min / 60} ساعات`}` : `${l.check_every_min} دقيقة`}{l.last_check_at ? ` · آخر فحص ${time(l.last_check_at)}` : ""}</small>
+            {C.record && <button className="fx-btn pri block fx-huge" onClick={() => setSheet({ kind: "check" })}>🧪 سجّل فحص</button>}
           </section>
 
-          <div className="fx-grid2">
-            <button className="fx-btn" onClick={() => setSheet({ kind: "filters" })}>🔁 الفلاتر{fDue ? ` (${fDue} مستحق)` : ""}</button>
-            {C.record && <button className="fx-btn" onClick={() => setSheet({ kind: "waste" })}>⚠️ سجّل تالف</button>}
-            <button className="fx-btn" onClick={() => setSheet({ kind: "print" })}><FiPrinter /> ورقة الفحوصات</button>
-            <button className="fx-btn" onClick={() => nav("/f/store?tab=material")}>📤 سحب من المستودع</button>
+          {/* الفلاتر: كل فلتر بشريط بيبين قديش ضل لغياره */}
+          <div className="fx-row" style={{ justifyContent: "space-between", marginTop: 4 }}>
+            <b style={{ fontSize: 16 }}>الفلاتر</b>
+            <button className="fx-link" onClick={() => setSheet({ kind: "filters" })}>{C.setup ? "تعديل وإضافة" : "التفاصيل"}</button>
+          </div>
+          {l.filters.length === 0 && <div className="fx-card fx-muted" style={{ textAlign: "center" }}>ما في فلاتر مسجّلة{C.setup ? " — اكبس «تعديل وإضافة»." : "."}</div>}
+          {l.filters.length > 0 && (
+            <div className="fx-card fx-stack" style={{ gap: 14 }}>
+              {l.filters.map((f) => {
+                const left = f.days_left;
+                const pct = left == null ? 100 : Math.max(0, Math.min(100, ((f.every_days - Math.max(0, left)) / f.every_days) * 100));
+                const tone = f.state === "due" ? "var(--fx-crit)" : f.state === "soon" ? "var(--fx-warn)" : "var(--fx-ok)";
+                return (
+                  <div key={f.id} className="fx-stack" style={{ gap: 6 }}>
+                    <div className="fx-row" style={{ justifyContent: "space-between", flexWrap: "nowrap", gap: 8 }}>
+                      <span style={{ fontWeight: 700 }}>{f.name}</span>
+                      <span className="fx-row" style={{ gap: 8, flexWrap: "nowrap" }}>
+                        <small style={{ color: tone, fontWeight: 700 }}>{left == null ? "بدّه غيار" : left <= 0 ? (left === 0 ? "اليوم" : `فات ${-left} يوم`) : `باقي ${left} يوم`}</small>
+                        {C.record && f.state !== "ok" && <button className="fx-btn sm ok" onClick={() => setSheet({ kind: "change", f })}>غيّرته</button>}
+                      </span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 6, background: "var(--fx-surface-2)", overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: tone, borderRadius: 6 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* إشيات ثانية: صغيرة وهادية */}
+          <div className="fx-grid2" style={{ gridTemplateColumns: C.record ? "1fr 1fr 1fr" : "1fr 1fr" }}>
+            {C.record && <button className="fx-tile" style={{ justifyItems: "center", textAlign: "center" }} onClick={() => setSheet({ kind: "waste" })}><span style={{ fontSize: 22 }}>⚠️</span><span className="n">تالف</span></button>}
+            <button className="fx-tile" style={{ justifyItems: "center", textAlign: "center" }} onClick={() => setSheet({ kind: "print" })}><span style={{ fontSize: 22 }}>🖨️</span><span className="n">ورقة اليوم</span></button>
+            <button className="fx-tile" style={{ justifyItems: "center", textAlign: "center" }} onClick={() => nav(fixed ? `/f/store?line=${l.id}&tab=material` : "/f/store?tab=material")}><span style={{ fontSize: 22 }}>📤</span><span className="n">سحب مواد</span></button>
           </div>
 
-          {l.filters.filter((f) => f.state !== "ok").map((f) => (
-            <div key={f.id} className={`fx-alert ${f.state === "due" ? "crit" : "warn"}`}>
-              <div className="h"><b>🔁 {f.name}</b><time>{f.days_left == null ? "ما في غيار مسجّل" : f.days_left <= 0 ? `فات بـ${-f.days_left} يوم` : `باقي ${f.days_left} يوم`}</time></div>
-              {C.record && <button className="fx-btn sm" onClick={() => setSheet({ kind: "change", f })}>✓ غيّرته</button>}
+          {/* فحوصات اليوم */}
+          <div className="fx-row" style={{ justifyContent: "space-between", marginTop: 4 }}>
+            <b style={{ fontSize: 16 }}>فحوصات اليوم</b>
+            <small className="fx-muted">{l.checks_today.length ? `${l.checks_today.length} فحص` : ""}</small>
+          </div>
+          {l.checks_today.length === 0 && <div className="fx-card fx-muted" style={{ textAlign: "center" }}>ما في فحوصات اليوم لسا.</div>}
+          {(showAll ? l.checks_today : l.checks_today.slice(0, 3)).map((q) => (
+            <div key={q.id} className="fx-card fx-stack" style={{ gap: 8, padding: 12, borderInlineStart: `4px solid ${q.issues.length ? "var(--fx-crit)" : "var(--fx-ok)"}` }}>
+              <div className="fx-row" style={{ justifyContent: "space-between" }}>
+                <b>{time(q.checked_at)}</b>
+                <small className="fx-muted">{q.by_name || ""}</small>
+              </div>
+              <div className="fx-row" style={{ gap: 6, flexWrap: "wrap" }}>
+                {[["أوزون", q.ozone], ["TDS", q.tds], ["pH", q.ph]].filter(([, v]) => v != null).map(([k, v]) => <span key={k} className="fx-pill">{k} <b>{Number(v)}</b></span>)}
+                {[["سوفتنر قبل", q.soft_before], ["سوفتنر بعد", q.soft_after], ["كلور قبل الكربون", q.chlorine_before], ["كلور بعد الكربون", q.chlorine]].filter(([, v]) => v).map(([k, v]) => <span key={k} className="fx-pill"><i style={{ display: "inline-block", width: 9, height: 9, borderRadius: 5, background: DOT[v], border: "1px solid #ccc" }} />{k}</span>)}
+              </div>
+              {q.issues.length > 0 && <small style={{ color: "var(--fx-crit)", fontWeight: 700 }}>{q.issues.join("، ")}</small>}
+              {q.note && <small className="fx-muted">{q.note}</small>}
             </div>
           ))}
-
-          <div className="fx-sec"><h2>فحوصات اليوم ({l.checks_today.length})</h2></div>
-          {l.checks_today.length === 0 && <div className="fx-muted">ما في فحوصات اليوم لسا.</div>}
-          <div className="fx-list">
-            {l.checks_today.map((q) => (
-              <div key={q.id} className="fx-item" style={{ alignItems: "flex-start" }}>
-                <span className="fx-avatar" style={{ fontSize: 17 }}>{q.issues.length ? "⚠️" : "✅"}</span>
-                <span className="t">
-                  <b>{time(q.checked_at)} · {q.by_name || ""}</b>
-                  <span>{[q.ozone != null && `أوزون ${Number(q.ozone)}`, q.tds != null && `TDS ${Number(q.tds)}`, q.ph != null && `pH ${Number(q.ph)}`, q.soft_before && `سوفتنر قبل ${q.soft_before}`, q.soft_after && `بعد ${q.soft_after}`, q.chlorine_before && `كلور قبل الكربون ${q.chlorine_before}`, q.chlorine && `كلور بعد الكربون ${q.chlorine}`].filter(Boolean).join(" · ")}</span>
-                  {q.issues.length > 0 && <span style={{ color: "var(--fx-crit)" }}>{q.issues.join("، ")}</span>}
-                  {q.note && <span>📝 {q.note}</span>}
-                </span>
-              </div>
-            ))}
-          </div>
+          {l.checks_today.length > 3 && <button className="fx-link" style={{ justifySelf: "center" }} onClick={() => setShowAll(!showAll)}>{showAll ? "أقل" : `اعرض الكل (${l.checks_today.length})`}</button>}
         </>
       )}
 
@@ -139,22 +170,32 @@ function CheckSheet({ l, colors, onClose, onDone }) {
     );
   }
   const numIn = (k, label, hint) => (
-    <label className="fx-field">{label}{hint ? <small className="fx-muted"> (المسموح {hint})</small> : null}
+    <label className="fx-field" style={{ textAlign: "center" }}>{label}
       <input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" step="any" value={f[k]} onChange={set(k)} />
+      {hint ? <small className="fx-muted">{hint}</small> : null}
     </label>
   );
   return (
     <Sheet title={`فحص ${l.name} · ${time(new Date().toISOString())}`} onClose={onClose}>
       <div className="fx-stack">
-        <div className="fx-grid2">
-          {numIn("ozone", "أوزون", range(L.ozone_min, L.ozone_max))}
-          {numIn("tds", "TDS", range(L.tds_min, L.tds_max))}
+        <div className="fx-card fx-stack" style={{ gap: 10 }}>
+          <b>القياسات</b>
+          <div className="fx-grid2" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            {numIn("ozone", "أوزون", range(L.ozone_min, L.ozone_max))}
+            {numIn("tds", "TDS", range(L.tds_min, L.tds_max))}
+            {numIn("ph", "pH", range(L.ph_min, L.ph_max))}
+          </div>
         </div>
-        {numIn("ph", "pH", range(L.ph_min, L.ph_max))}
-        <ColorPick label="عينة السوفتنر — قبل الجهاز" options={colors.soft} value={f.soft_before} onChange={set("soft_before")} />
-        <ColorPick label="عينة السوفتنر — بعد الجهاز" options={colors.soft} value={f.soft_after} onChange={set("soft_after")} />
-        <ColorPick label="الكلور — قبل الكربون" options={colors.cl} value={f.chlorine_before} onChange={set("chlorine_before")} />
-        <ColorPick label="الكلور — بعد الكربون" options={colors.cl} value={f.chlorine} onChange={set("chlorine")} />
+        <div className="fx-card fx-stack" style={{ gap: 10 }}>
+          <b>السوفتنر</b>
+          <ColorPick label="قبل الجهاز" options={colors.soft} value={f.soft_before} onChange={set("soft_before")} />
+          <ColorPick label="بعد الجهاز" options={colors.soft} value={f.soft_after} onChange={set("soft_after")} />
+        </div>
+        <div className="fx-card fx-stack" style={{ gap: 10 }}>
+          <b>الكلور</b>
+          <ColorPick label="قبل الكربون" options={colors.cl} value={f.chlorine_before} onChange={set("chlorine_before")} />
+          <ColorPick label="بعد الكربون" options={colors.cl} value={f.chlorine} onChange={set("chlorine")} />
+        </div>
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={f.note} onChange={set("note")} /></label>
         <Err msg={err} />
         <Act className="fx-btn pri block fx-huge" onClick={async () => {
