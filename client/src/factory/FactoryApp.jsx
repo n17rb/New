@@ -271,9 +271,6 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
             ))}
           </nav>
 
-          <button className={`fx-fab ${location.pathname === "/f/orders" ? "low" : ""}`} onClick={() => setHelp(true)}>
-            <FiZap aria-hidden="true" /> المساعد
-          </button>
 
           {help && <HelpSheet onClose={() => setHelp(false)} />}
           {tour != null && boot && (
