@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { FiPrinter, FiSettings, FiPlus } from "react-icons/fi";
 import { fapi } from "../fapi.js";
+import { openPrint } from "../printView.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, DateInput, Reload, money, num, time, date, today } from "../ui.jsx";
 
 // ============================================================
@@ -365,11 +366,7 @@ table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{border:1px soli
 <h2>التالف</h2>${list(data.waste, (x) => `<li>${esc(time(x.created_at))} — ${x.qty} ${esc(x.unit)} ${esc(x.name)}${x.machine_name ? " · " + esc(x.machine_name) : ""}${x.run_hours ? ` · ${Number(x.run_hours)} ساعة` : ""} — ${esc(x.by_name || "")}${x.note ? " · " + esc(x.note) : ""}</li>`)}
 <div class="sig"><div>مسؤول الخط</div><div>مسؤول الجودة</div><div>الإدارة</div></div>
 <button onclick="print()" style="margin-top:20px;padding:10px 18px;font-size:15px">🖨️ اطبع / احفظ PDF</button></body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) return fx.toast("اسمح بفتح النوافذ عشان تطبع");
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => { try { w.print(); } catch { /* المستخدم بيطبع من الزر */ } }, 400);
+    openPrint(html);
   }
   return (
     <Sheet title="ورقة الفحوصات" onClose={onClose}>

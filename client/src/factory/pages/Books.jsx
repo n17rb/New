@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiPlus, FiPrinter, FiMessageCircle, FiSearch, FiX } from "react-icons/fi";
 import { fapi } from "../fapi.js";
+import { openPrint } from "../printView.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, DateInput, SignaturePad, Reload, waLink, money, num, date, dateTime, today } from "../ui.jsx";
 import { smartFilter } from "../smartSearch.js";
 
@@ -270,11 +271,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{border:1px solid 
 ${e.note ? `<p style="font-size:13px">ملاحظات: ${esc(e.note)}</p>` : ""}
 <div class="sig"><div>توقيع وختم ${esc(name)}</div><div>توقيع وختم ${esc(p.name)}</div></div>
 <button onclick="print()" style="margin-top:24px;padding:10px 18px;font-size:15px">🖨️ اطبع / احفظ PDF</button></body></html>`;
-  const w = window.open("", "_blank");
-  if (!w) return fx.toast("اسمح بفتح النوافذ عشان تطبع");
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => { try { w.print(); } catch { /* من الزر */ } }, 500);
+  openPrint(html);
 }
 
 // ---------- الصندوق ----------
@@ -528,12 +525,9 @@ function Summary() {
   const { data, error } = useLoad(() => fapi.booksSummary({ period, date: day }), [period, day]);
   const Row = ({ l, v, tone }) => <div className="fx-kv"><span>{l}</span><b style={{ color: tone }}>{money(v)}</b></div>;
   function print() {
-    const w = window.open("", "_blank");
-    if (!w || !data) return;
+    if (!data) return;
     const el = document.getElementById("books-summary");
-    w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملخّص ${data.from} — ${data.to}</title><style>body{font-family:system-ui,Tahoma,sans-serif;margin:20px}.fx-card{border:1px solid #ccc;border-radius:8px;padding:10px;margin-bottom:10px}.fx-kv{display:flex;justify-content:space-between;padding:3px 0}</style></head><body><h2>${fx.shop?.brand?.name || ""} — ملخّص ${data.from} لـ ${data.to}</h2>${el?.innerHTML || ""}</body></html>`);
-    w.document.close();
-    setTimeout(() => { try { w.print(); } catch { /* */ } }, 400);
+    openPrint(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملخّص ${data.from} — ${data.to}</title><style>body{font-family:system-ui,Tahoma,sans-serif;margin:20px}.fx-card{border:1px solid #ccc;border-radius:8px;padding:10px;margin-bottom:10px}.fx-kv{display:flex;justify-content:space-between;padding:3px 0}</style></head><body><h2>${fx.shop?.brand?.name || ""} — ملخّص ${data.from} لـ ${data.to}</h2>${el?.innerHTML || ""}</body></html>`);
   }
   return (
     <div className="fx-stack">
