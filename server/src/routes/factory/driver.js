@@ -4,7 +4,7 @@ import { can, canAction } from "../../permissions.js";
 import { km, chainNearest } from "../../utils/factoryGeo.js";
 import { smartFilter } from "../../utils/fuzzySearch.js";
 import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once, pushTo } from "./lib.js";
-import { cleanCustomer, nextSeq } from "./customers.js";
+import { cleanCustomer, nextSeq, findSameCustomer } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 import { factoryPoint } from "./lib.js";
 
@@ -632,9 +632,10 @@ router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
     if (!c) return bad(res, "المحل غير موجود.");
   } else {
     let nc; try { nc = await cleanCustomer({ ...(b.new_customer || {}), lat: b.lat, lng: b.lng }); } catch (e) { return bad(res, e.message); }
+    // نفس الرقم ونفس الموقع = نفس المحل (منبيع على حسابه). نفس الرقم بموقع ثاني = فرع جديد
     if (nc.phone) {
-      const same = (await query("SELECT * FROM f_customers WHERE phone = $1 AND active LIMIT 1", [nc.phone])).rows[0];
-      if (same) c = same;
+      const dup = await findSameCustomer(nc);
+      if (dup.same) c = (await query("SELECT * FROM f_customers WHERE id = $1", [dup.same.id])).rows[0];
     }
     if (!c) {
       const client = await pool.connect();
