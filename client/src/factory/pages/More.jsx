@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard, FiTool, FiLayers } from "react-icons/fi";
+import { FiUsers, FiTruck, FiBox, FiDollarSign, FiBarChart2, FiBell, FiBriefcase, FiShield, FiSettings, FiCheckSquare, FiCreditCard, FiMessageSquare, FiList, FiZap, FiPlayCircle, FiLogOut, FiChevronLeft, FiUser, FiMap, FiRepeat, FiMapPin, FiFileText, FiClipboard, FiTool, FiLayers, FiActivity } from "react-icons/fi";
 import { useFx } from "../ui.jsx";
 import PushCard from "../PushCard.jsx";
 
@@ -16,6 +16,7 @@ export default function More({ onLogout }) {
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/live", icon: FiMap, label: "وين السيارات", hint: "كل السيارات على الخريطة ولوين متجهة" },
     (fx.can("f_dispatch") || fx.can("f_home")) && { to: "/f/trips", icon: FiTruck, label: "الرحلات", hint: "وين كل سيارة وشو ضل عليها" },
     (fx.can("f_stock") || fx.can("f_production") || fx.can("f_home")) && { to: "/f/stock", icon: FiBox, label: "المستودع والإنتاج", hint: "الأرصدة، التحميل، التالف، المكنات" },
+    (fx.can("f_production") || fx.can("f_machines") || fx.can("f_store") || fx.can("f_home")) && { to: "/f/line", icon: FiActivity, label: "خطوط الإنتاج والفحوصات", hint: "فحص الجودة، الفلاتر ومواعيدها، التالف، وورقة اليوم PDF" },
     (fx.can("f_store") || fx.can("f_production") || fx.can("f_machines") || fx.can("f_home")) && { to: "/f/store", icon: FiLayers, label: "المواد وقطع الغيار", hint: "المواد الأولية، قطع غيار المكنات، دخل وسحب، والجرد الكامل" },
     (fx.can("f_maint") || fx.can("f_home")) && { to: "/f/maint", icon: FiTool, label: "صيانة السيارات", hint: "غيار زيت، ميكانيك، كوشوك، بطاريات — ومواعيدها الجاية" },
     fx.can("f_machines") && !fx.can("f_stock") && !fx.can("f_production") && { to: "/f/stock?tab=prod", icon: FiBox, label: "المكنات والأعطال", hint: "ماكنة وقفت؟ سجّلها، ولما ترجع سجّل كم خرب" },

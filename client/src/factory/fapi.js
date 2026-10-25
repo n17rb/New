@@ -160,6 +160,17 @@ export const fapi = {
   storeStaff: () => get("/store/staff"),
   storeStarter: (b) => post("/store/starter", b),
 
+  // خط الإنتاج: فحوصات، فلاتر، تالف
+  line: () => get("/line"),
+  lineCheck: (id, b) => post(`/line/${id}/check`, b),
+  lineSheet: (id, date) => get(`/line/${id}/sheet${qs({ date })}`),
+  addFilter: (b) => post("/line/filters", b),
+  editFilter: (id, b) => put(`/line/filters/${id}`, b),
+  filterChange: (id, b) => post(`/line/filters/${id}/change`, b),
+  lineWaste: (b) => post("/line/waste", b),
+  lineSettings: (id, b) => put(`/line/${id}/settings`, b),
+  workHours: (userId, b) => put(`/line/hours/${userId}`, b),
+
   // التأجيل
   postpones: () => get("/orders/postpones"),
   confirmPostpone: (id, due_date) => post(`/orders/${id}/postpone/confirm`, { due_date }),
