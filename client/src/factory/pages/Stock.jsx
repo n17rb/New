@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { FiAlertTriangle, FiClipboard, FiPlus, FiPower, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { TakeSheet } from "./Store.jsx";
+import { plantName } from "../plants.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, Reload, ProductArt, num, time, dateTime, date } from "../ui.jsx";
 
 export default function Stock() {
@@ -497,11 +498,18 @@ function ProdSheet({ onClose, onDone }) {
   const [qty, setQty] = useState("");
   const [shift, setShift] = useState(() => { const h = new Date().getHours(); return h < 14 ? "صبحي" : h < 22 ? "مسائي" : "ليلي"; });
   const [machine, setMachine] = useState("");
+  const { data: L } = useLoad(() => fapi.line().catch(() => null), []);
+  const plines = L?.lines || [];
+  const [line, setLine] = useState(null);
+  const lineId = line ?? (plines.find((l) => l.mine)?.id || (plines.length === 1 ? plines[0].id : null));
   const n = Number(qty) || 0;
   const name = list.find((p) => p.id === product)?.name || "";
   return (
     <Sheet title="سجّل إنتاج" onClose={onClose}>
       <div className="fx-stack">
+        {plines.length > 1 && (
+          <div className="fx-field">بأي مصنع؟<div className="fx-chips">{plines.map((l) => <button key={l.id} type="button" className={`fx-chip ${lineId === l.id ? "on" : ""}`} onClick={() => setLine(l.id)}>{plantName(l.name)}</button>)}</div></div>
+        )}
         <div className="fx-field">شو أنتجتوا؟</div>
         <div className="fx-pick-grid">
           {list.map((p) => (
@@ -516,7 +524,7 @@ function ProdSheet({ onClose, onDone }) {
         <div className="fx-chips">{[100, 500, 1000].map((q) => <button key={q} className="fx-chip" onClick={() => setQty(String(n + q))}>+{num(q)}</button>)}{n > 0 && <button className="fx-chip" onClick={() => setQty("")}>صفّر</button>}</div>
         <div className="fx-chips">{["صبحي", "مسائي", "ليلي"].map((s) => <button key={s} className={`fx-chip ${shift === s ? "on" : ""}`} onClick={() => setShift(s)}>وردية {s}</button>)}</div>
         {fx.boot.machines.length > 0 && <select value={machine} onChange={(e) => setMachine(e.target.value)} aria-label="الماكنة"><option value="">الماكنة (اختياري)</option>{fx.boot.machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>}
-        <Act className="fx-btn pri block" disabled={!(n > 0) || !product} onClick={async () => { await fapi.production({ product_id: product, qty: n, shift, machine_id: machine || null }); fx.toast(`انضاف ${num(n)} ${name} للمستودع`); onDone(); }}>
+        <Act className="fx-btn pri block" disabled={!(n > 0) || !product || (plines.length > 1 && !lineId)} onClick={async () => { await fapi.production({ product_id: product, qty: n, shift, machine_id: machine || null, line_id: lineId }); fx.toast(`انضاف ${num(n)} ${name} للمستودع`); onDone(); }}>
           {n > 0 ? `ضيف ${num(n)} كرتونة ${name} للمستودع` : "اكتب العدد"}
         </Act>
       </div>

@@ -97,7 +97,11 @@ router.post("/stock/production", editProd, async (req, res) => {
   const qty = Math.round(Number(req.body?.qty));
   if (!pid || !(qty > 0)) return bad(res, "اختار المنتج واكتب عدد الكراتين.");
   const shift = ["صبحي", "مسائي", "ليلي"].includes(req.body?.shift) ? req.body.shift : null;
-  await query("INSERT INTO f_stock_moves (product_id, kind, qty, shift, machine_id, created_by) VALUES ($1,'production',$2,$3,$4,$5)", [pid, qty, shift, req.body?.machine_id || null, req.user.id]);
+  // أي مصنع أنتج: المختار، أو خط الماكنة، أو خط الموظف إذا إله خط واحد
+  let lineId = Number(req.body?.line_id) || null;
+  if (!lineId && req.body?.machine_id) lineId = (await query("SELECT line_id FROM f_machines WHERE id = $1", [req.body.machine_id])).rows[0]?.line_id || null;
+  if (!lineId) { const mine = (await query("SELECT line_id FROM f_pline_users WHERE user_id = $1", [req.user.id])).rows; if (mine.length === 1) lineId = mine[0].line_id; }
+  await query("INSERT INTO f_stock_moves (product_id, kind, qty, shift, machine_id, created_by, line_id) VALUES ($1,'production',$2,$3,$4,$5,$6)", [pid, qty, shift, req.body?.machine_id || null, req.user.id, lineId]);
   res.status(201).json({ ok: true });
 });
 

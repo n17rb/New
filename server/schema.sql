@@ -1314,3 +1314,6 @@ ALTER TABLE f_qchecks ADD COLUMN IF NOT EXISTS chlorine_before VARCHAR(10);
 
 -- صورة المصنع (بتطلع على كرته بالمزيد وفوق صفحته)
 ALTER TABLE f_plines ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- الإنتاج لكل مصنع (خط): مصنع الكاسات ١، ٢، المطرات…
+ALTER TABLE f_stock_moves ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
