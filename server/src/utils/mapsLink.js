@@ -54,11 +54,17 @@ function coordsInHtml(html) {
   return null;
 }
 // مركز الخريطة اللي جوجل فتحها عليه (بنقبله بس إذا داخل الأردن والمنطقة، عشان ما ناخذ مركز عشوائي)
+// منطقة الشغل (الأردن وحواليه): أي موقع جاي من صفحة جوجل وطالع برّاها بيكون غلط
+// (جوجل لما ما تعرف المكان بتفتح على موقع السيرفر نفسه بأمريكا)
+const BOX = (process.env.SERVICE_BBOX || "29,34.8,33.6,39.4").split(",").map(Number);
+function inArea(p) {
+  return p && p.lat > BOX[0] && p.lat < BOX[2] && p.lng > BOX[1] && p.lng < BOX[3] ? p : null;
+}
 function appCenter(html) {
   const m = String(html || "").match(/APP_INITIALIZATION_STATE=\[\[\[\s*[\d.]+\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/);
   if (!m) return null;
   const lng = +m[1], lat = +m[2];
-  return valid(lat, lng) && lat > 29 && lat < 33.6 && lng > 34.8 && lng < 39.4 ? { lat, lng } : null;
+  return valid(lat, lng) && inArea({ lat, lng }) ? { lat, lng } : null;
 }
 
 // اسم المكان من الرابط (?q=سوبرماركت النور، عمّان) — للبحث عنه إذا ما لقينا أرقام
@@ -78,10 +84,10 @@ async function geocodeText(text) {
   const key = process.env.GOOGLE_MAPS_KEY;
   if (!key || !text) return null;
   try {
-    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(text)}&region=jo&language=ar&key=${encodeURIComponent(key)}`);
+    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(text)}&region=jo&components=country:JO&language=ar&key=${encodeURIComponent(key)}`);
     const j = await r.json();
     const loc = j?.results?.[0]?.geometry?.location;
-    return loc && valid(loc.lat, loc.lng) ? { lat: loc.lat, lng: loc.lng } : null;
+    return loc && valid(loc.lat, loc.lng) ? inArea({ lat: loc.lat, lng: loc.lng }) : null;
   } catch { return null; }
 }
 
@@ -101,7 +107,7 @@ export async function resolveMapsLink(input, opts = {}) {
   for (const ua of [BOT_UA, UA, IPHONE_UA]) {
     const got = await follow(url, ua, trail);
     query = got.query || query;
-    const c = coordsIn(got.cur, { loose: false }) || coordsInHtml(got.html);
+    const c = inArea(coordsIn(got.cur, { loose: false })) || inArea(coordsInHtml(got.html));
     if (c) return c;
     const ac = appCenter(got.html);
     if (ac && !query) return ac;
@@ -128,6 +134,7 @@ async function follow(start, ua, trail) {
         const cont = new URL(cur).searchParams.get("continue");
         if (cont) { cur = cont; trail.push("consent"); continue; }
       }
+      if (/(^|\.)google\.[a-z.]+$/i.test(host) && /\/maps/.test(cur) && !/[?&]gl=/.test(cur)) cur += (cur.includes("?") ? "&" : "?") + "hl=ar&gl=jo";
       const r = await fetch(cur, {
         redirect: "manual",
         signal: ctl.signal,
