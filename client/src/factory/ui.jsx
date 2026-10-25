@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
-import { FiX, FiInfo, FiCamera, FiCheck, FiMessageCircle, FiRefreshCw, FiMapPin, FiLink } from "react-icons/fi";
+import { FiX, FiInfo, FiCamera, FiCheck, FiMessageCircle, FiRefreshCw, FiMapPin, FiLink, FiEdit3 } from "react-icons/fi";
+import { createPortal } from "react-dom";
 import { fapi } from "./fapi.js";
 
 // ============================================================
@@ -182,47 +183,201 @@ export function PhotoInput({ label, hint, value, onChange, kind = "f" }) {
 }
 
 // توقيع الزبون بإصبعه
-export function SignaturePad({ onChange, label = "توقيع الزبون", hint = "خلي الزبون يوقّع بإصبعه هون" }) {
-  const ref = useRef(null);
-  const drawing = useRef(false);
-  const [signed, setSigned] = useState(false);
+// التوقيع: زر بيفتح شاشة كاملة بالعرض — لفّ التلفون ووقّع براحتك، والتوقيع بيرجع معدول على الفاتورة
+export function SignaturePad({ onChange, label = "توقيع الزبون", hint = "اضغط وخلي الزبون يوقّع" }) {
+  const [img, setImg] = useState(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="fx-field">
+      {label}
+      {img ? (
+        <div className="fx-sig-done">
+          <img src={img} alt="التوقيع" />
+          <div className="fx-row" style={{ justifyContent: "space-between" }}>
+            <span className="fx-pill ok"><FiCheck /> تم التوقيع</span>
+            <span className="fx-row" style={{ gap: 14 }}>
+              <button type="button" className="fx-link" onClick={() => setOpen(true)}>وقّع من جديد</button>
+              <button type="button" className="fx-link" onClick={() => { setImg(null); onChange(null); }}>امسح</button>
+            </span>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="fx-sig-btn" onClick={() => setOpen(true)}>
+          <FiEdit3 aria-hidden="true" />
+          <b>اضغط للتوقيع</b>
+          <small>{hint}</small>
+        </button>
+      )}
+      {open && (
+        <SignScreen
+          title={label}
+          onCancel={() => setOpen(false)}
+          onDone={(data) => { setImg(data); onChange(data); setOpen(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// شاشة التوقيع الكاملة: إذا التلفون واقف بنلف الشاشة 90° عشان توقّع بالعرض
+function SignScreen({ title, onCancel, onDone }) {
+  const portraitQ = () => window.matchMedia?.("(orientation: portrait)").matches ?? window.innerHeight > window.innerWidth;
+  const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight, portrait: portraitQ() }));
+  const [has, setHas] = useState(false);
+  const cvRef = useRef(null);
+  const st = useRef({ drawing: false, pts: [], box: null });
+
   useEffect(() => {
-    const cv = ref.current;
+    const onR = () => setVp({ w: window.innerWidth, h: window.innerHeight, portrait: portraitQ() });
+    window.addEventListener("resize", onR);
+    window.addEventListener("orientationchange", onR);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const back = () => onCancel();
+    history.pushState({ fxSign: 1 }, "");
+    window.addEventListener("popstate", back);
+    return () => {
+      window.removeEventListener("resize", onR);
+      window.removeEventListener("orientationchange", onR);
+      window.removeEventListener("popstate", back);
+      document.body.style.overflow = prev;
+      if (history.state?.fxSign) history.back();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rot = vp.portrait;                 // بنلف الشاشة؟
+  const W = rot ? vp.h : vp.w;             // عرض «ورقة» التوقيع
+  const H = rot ? vp.w : vp.h;
+  const padH = 64, foot = 76;              // شريط فوق وتحت
+  const cw = W - 24, ch = Math.max(120, H - padH - foot);
+
+  // تجهيز اللوحة كل ما تغيّر الحجم (بتنمسح — طبيعي لما تلف التلفون)
+  useEffect(() => {
+    const cv = cvRef.current;
+    if (!cv) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cv.width = Math.round(cw * dpr);
+    cv.height = Math.round(ch * dpr);
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#10304d";
+    ctx.lineWidth = 3.6;
+    st.current = { drawing: false, pts: [], box: null };
+    setHas(false);
+  }, [cw, ch]);
+
+  useEffect(() => {
+    const cv = cvRef.current;
     if (!cv) return;
     const ctx = cv.getContext("2d");
-    ctx.lineWidth = 4.5;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#10304d";
+    // من نقطة على الشاشة لنقطة على اللوحة (مع حساب اللفّة)
     const pt = (e) => {
       const r = cv.getBoundingClientRect();
-      return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height];
+      const sx = e.clientX - r.left, sy = e.clientY - r.top;
+      return rot ? [sy, r.width - sx] : [sx, sy];
     };
-    const down = (e) => { drawing.current = true; cv.setPointerCapture(e.pointerId); const [x, y] = pt(e); ctx.beginPath(); ctx.moveTo(x, y); };
-    const move = (e) => { if (!drawing.current) return; const [x, y] = pt(e); ctx.lineTo(x, y); ctx.stroke(); };
+    const grow = (x, y) => {
+      const b = st.current.box || { x0: x, y0: y, x1: x, y1: y };
+      st.current.box = { x0: Math.min(b.x0, x), y0: Math.min(b.y0, y), x1: Math.max(b.x1, x), y1: Math.max(b.y1, y) };
+    };
+    const down = (e) => {
+      e.preventDefault();
+      cv.setPointerCapture?.(e.pointerId);
+      const [x, y] = pt(e);
+      st.current.drawing = true;
+      st.current.pts = [[x, y]];
+      ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fillStyle = "#10304d"; ctx.fill();
+      grow(x, y);
+    };
+    const move = (e) => {
+      if (!st.current.drawing) return;
+      e.preventDefault();
+      const [x, y] = pt(e);
+      const p = st.current.pts;
+      const [lx, ly] = p[p.length - 1];
+      const mx = (lx + x) / 2, my = (ly + y) / 2;
+      ctx.beginPath();
+      if (p.length > 1) { const [px, py] = p[p.length - 2]; ctx.moveTo((px + lx) / 2, (py + ly) / 2); } else ctx.moveTo(lx, ly);
+      ctx.quadraticCurveTo(lx, ly, mx, my);
+      ctx.stroke();
+      p.push([x, y]);
+      grow(x, y);
+    };
     const up = () => {
-      if (!drawing.current) return;
-      drawing.current = false;
-      setSigned(true);
-      onChange(cv.toDataURL("image/png"));
+      if (!st.current.drawing) return;
+      st.current.drawing = false;
+      setHas(true);
     };
     cv.addEventListener("pointerdown", down);
     cv.addEventListener("pointermove", move);
     cv.addEventListener("pointerup", up);
+    cv.addEventListener("pointercancel", up);
     return () => {
       cv.removeEventListener("pointerdown", down);
       cv.removeEventListener("pointermove", move);
       cv.removeEventListener("pointerup", up);
+      cv.removeEventListener("pointercancel", up);
     };
-  }, [onChange]);
-  return (
-    <div className="fx-field">
-      {label}
-      <canvas ref={ref} className="fx-sig" width={600} height={240} />
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <small className="fx-muted">{signed ? "تم التوقيع" : hint}</small>
-        <button type="button" className="fx-link" onClick={() => { const cv = ref.current; cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); setSigned(false); onChange(null); }}>امسح</button>
+  }, [rot, cw, ch]);
+
+  function clear() {
+    const cv = cvRef.current;
+    const ctx = cv.getContext("2d");
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ctx.restore();
+    st.current = { drawing: false, pts: [], box: null };
+    setHas(false);
+  }
+
+  // بنقص التوقيع على قدّه وبنصغّره — صورة خفيفة ومعدولة
+  function done() {
+    const cv = cvRef.current;
+    const b = st.current.box;
+    if (!b) return;
+    const dpr = cv.width / cw;
+    const pad = 14;
+    const x0 = Math.max(0, (b.x0 - pad) * dpr), y0 = Math.max(0, (b.y0 - pad) * dpr);
+    const x1 = Math.min(cv.width, (b.x1 + pad) * dpr), y1 = Math.min(cv.height, (b.y1 + pad) * dpr);
+    const sw = Math.max(1, x1 - x0), sh = Math.max(1, y1 - y0);
+    let maxW = 700, data = "";
+    for (let i = 0; i < 4; i++) {
+      const k = Math.min(1, maxW / sw, 300 / sh);
+      const out = document.createElement("canvas");
+      out.width = Math.max(1, Math.round(sw * k));
+      out.height = Math.max(1, Math.round(sh * k));
+      out.getContext("2d").drawImage(cv, x0, y0, sw, sh, 0, 0, out.width, out.height);
+      data = out.toDataURL("image/png");
+      if (data.length < 150000) break;
+      maxW = Math.round(maxW * 0.7);
+    }
+    onDone(data);
+  }
+
+  const stage = rot
+    ? { width: W, height: H, transform: `translate(${vp.w}px, 0) rotate(90deg)`, transformOrigin: "0 0" }
+    : { width: W, height: H };
+  return createPortal(
+    <div className="fx-signscreen" dir="rtl">
+      <div className="fx-signstage" style={stage}>
+        <div className="fx-sign-top" style={{ height: padH }}>
+          <b>{title}</b>
+          <small>{rot ? "لفّ التلفون بالعرض ووقّع" : "وقّع بإصبعك على الخط"}</small>
+        </div>
+        <div className="fx-sign-pad" style={{ width: cw, height: ch }}>
+          <canvas ref={cvRef} style={{ width: cw, height: ch }} />
+          {!has && <span className="fx-sign-ghost">وقّع هون</span>}
+          <i className="fx-sign-line" aria-hidden="true" />
+        </div>
+        <div className="fx-sign-foot" style={{ height: foot }}>
+          <button type="button" className="fx-sign-b ghost" onClick={onCancel}>إلغاء</button>
+          <button type="button" className="fx-sign-b soft" onClick={clear} disabled={!has}>امسح</button>
+          <button type="button" className="fx-sign-b pri" onClick={done} disabled={!has}><FiCheck /> تم</button>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
