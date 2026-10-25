@@ -590,7 +590,7 @@ function Summary() {
 }
 
 // ---------- الكهربا والمي والمولّدات ----------
-const MK = { elec: { icon: "⚡", label: "كهربا", unit: "كيلوواط" }, water: { icon: "💧", label: "مي", unit: "متر³" }, gen: { icon: "🔌", label: "مولّد", unit: "ساعة" } };
+const MK = { elec: { icon: "⚡", label: "عداد كهربا", unit: "كيلوواط" }, trans: { icon: "🔆", label: "محوّل كهربا", unit: "كيلوواط" }, water: { icon: "💧", label: "مي", unit: "متر³" }, gen: { icon: "🔌", label: "مولّد", unit: "ساعة" } };
 function Utilities() {
   const fx = useFx();
   const edit = fx.can("f_money", "edit");
@@ -607,19 +607,19 @@ function Utilities() {
             <div className="fx-card" style={{ textAlign: "center" }}><small className="fx-muted">هالشهر</small><b className="fx-num" style={{ display: "block", fontSize: 22 }}>{money(data.month_total)}</b></div>
             <div className="fx-card" style={{ textAlign: "center" }}><small className="fx-muted">مش مدفوع</small><b className="fx-num" style={{ display: "block", fontSize: 22, color: data.unpaid_total > 0 ? "var(--fx-crit)" : "var(--fx-ok)" }}>{money(data.unpaid_total)}</b></div>
           </div>
-          {edit && <button className="fx-btn block" onClick={() => setSheet({ kind: "meter", m: {} })}><FiPlus /> عداد جديد (كهربا، مي، مولّد)</button>}
+          {edit && <button className="fx-btn block" onClick={() => setSheet({ kind: "meter", m: {} })}><FiPlus /> عداد جديد (كهربا، محوّل، مي، مولّد)</button>}
           {data.meters.length === 0 && <Empty title="ما في عدادات" text="ضيف عداد الكهربا برقمه، وعداد المي، والمولّدات." />}
           {data.meters.map((m) => (
             <section key={m.id} className="fx-card fx-stack" style={{ gap: 8, opacity: m.active ? 1 : 0.6 }}>
               <div className="fx-row" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-                <span><b>{MK[m.kind].icon} {m.name}</b><br /><small className="fx-muted">{[m.number && `رقم ${m.number}`, m.site_name].filter(Boolean).join(" · ") || MK[m.kind].label}</small></span>
+                <span><b>{MK[m.kind].icon} {m.name}</b><br /><small className="fx-muted">{[m.line_name && `لـ${m.line_name}`, m.number && `رقم ${m.number}`, m.site_name].filter(Boolean).join(" · ") || MK[m.kind].label}</small></span>
                 <span style={{ textAlign: "end" }}><small className="fx-muted">هالسنة</small><br /><b className="fx-num">{money(m.year)}</b></span>
               </div>
               <div className="fx-kv"><span>هالشهر</span><b>{money(m.month)}</b></div>
               {m.last_reading != null && <div className="fx-kv"><span>آخر قراءة</span><b className="fx-num">{num(m.last_reading)}</b></div>}
               {m.unpaid > 0 && <div className="fx-kv"><span>مش مدفوع</span><b style={{ color: "var(--fx-crit)" }}>{money(m.unpaid)}</b></div>}
               <div className="fx-row" style={{ gap: 8 }}>
-                {edit && m.active && <button className="fx-btn sm pri" onClick={() => setSheet({ kind: "entry", m })}><FiPlus /> {m.kind === "elec" ? "فاتورة" : m.kind === "water" ? "قراءة" : "تعبئة/فاتورة"}</button>}
+                {edit && m.active && <button className="fx-btn sm pri" onClick={() => setSheet({ kind: "entry", m })}><FiPlus /> {m.kind === "elec" || m.kind === "trans" ? "فاتورة/قراءة" : m.kind === "water" ? "قراءة" : "تعبئة/فاتورة"}</button>}
                 {m.entries.length > 0 && <button className="fx-btn sm" onClick={() => setOpen(open === m.id ? null : m.id)}>{open === m.id ? "سكّر" : `السجل (${m.entries.length})`}</button>}
                 {edit && <button className="fx-btn sm" onClick={() => setSheet({ kind: "meter", m })}>تعديل</button>}
               </div>
@@ -641,21 +641,27 @@ function Utilities() {
           ))}
         </>
       )}
-      {sheet?.kind === "meter" && <MeterSheet m={sheet.m} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "meter" && <MeterSheet m={sheet.m} lines={data?.lines || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "entry" && <MeterEntrySheet m={sheet.m} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
     </div>
   );
 }
-function MeterSheet({ m, onClose, onDone }) {
+function MeterSheet({ m, lines, onClose, onDone }) {
   const fx = useFx();
-  const [f, setF] = useState({ kind: m.kind || "elec", name: m.name || "", number: m.number || "", notes: m.notes || "", active: m.active !== false });
+  const [f, setF] = useState({ kind: m.kind || "elec", name: m.name || "", number: m.number || "", notes: m.notes || "", active: m.active !== false, line_id: m.line_id || null });
   const [err, setErr] = useState("");
   return (
     <Sheet title={m.id ? `تعديل ${m.name}` : "عداد جديد"} onClose={onClose}>
       <div className="fx-stack">
         {!m.id && <div className="fx-chips">{Object.entries(MK).map(([k, v]) => <button key={k} type="button" className={`fx-chip ${f.kind === k ? "on" : ""}`} onClick={() => setF({ ...f, kind: k })}>{v.icon} {v.label}</button>)}</div>}
-        <label className="fx-field">الاسم<input className="fx-input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={f.kind === "elec" ? "مثلًا: كهربا المصنع ١" : f.kind === "water" ? "مثلًا: عداد المي على التنك" : "مثلًا: المولّد الكبير"} /></label>
-        <label className="fx-field">{f.kind === "gen" ? "الرقم/الموديل" : "رقم العداد"}<input className="fx-input" dir="ltr" value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></label>
+        <label className="fx-field">الاسم<input className="fx-input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={f.kind === "elec" ? "مثلًا: كهربا المصنع ١" : f.kind === "trans" ? "مثلًا: محوّل خط القناني" : f.kind === "water" ? "مثلًا: عداد المي على التنك" : "مثلًا: المولّد الكبير"} /></label>
+        {lines.length > 0 && (
+          <div className="fx-field">{f.kind === "trans" ? "محوّل أي خط؟" : "لأي خط؟ (اختياري)"}<div className="fx-chips">
+            <button type="button" className={`fx-chip ${!f.line_id ? "on" : ""}`} onClick={() => setF({ ...f, line_id: null })}>عام</button>
+            {lines.map((l) => <button key={l.id} type="button" className={`fx-chip ${f.line_id === l.id ? "on" : ""}`} onClick={() => setF({ ...f, line_id: l.id, name: f.name || (f.kind === "trans" ? `محوّل ${l.name}` : f.name) })}>{l.name}</button>)}
+          </div></div>
+        )}
+        <label className="fx-field">{f.kind === "gen" ? "الرقم/الموديل" : f.kind === "trans" ? "رقم المحوّل/العداد" : "رقم العداد"}<input className="fx-input" dir="ltr" value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></label>
         <label className="fx-field">ملاحظات<input className="fx-input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></label>
         {m.id && <label className="fx-row" style={{ gap: 8 }}><input type="checkbox" checked={!f.active} onChange={(e) => setF({ ...f, active: !e.target.checked })} /> موقّف</label>}
         <Err msg={err} />

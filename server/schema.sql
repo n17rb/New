@@ -1301,3 +1301,10 @@ ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS expected INTEGER;
 ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS received_qty INTEGER;
 ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS received_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ;
+
+-- محوّلات الكهربا: محوّل لكل خط إنتاج
+ALTER TABLE f_meters DROP CONSTRAINT IF EXISTS f_meters_kind_check;
+DO $$ BEGIN
+  ALTER TABLE f_meters ADD CONSTRAINT f_meters_kind_check CHECK (kind IN ('elec','water','gen','trans'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+ALTER TABLE f_meters ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;

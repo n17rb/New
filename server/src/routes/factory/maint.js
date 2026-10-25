@@ -41,6 +41,7 @@ function cleanParts(ps) {
     qty: Math.max(0, Number(p?.qty) || 1),
     price: Math.max(0, Number(p?.price) || 0),
     note: String(p?.note || "").trim().slice(0, 200) || undefined,
+    shop: String(p?.shop || "").trim().slice(0, 100) || undefined,
   })).filter((p) => p.name);
 }
 
