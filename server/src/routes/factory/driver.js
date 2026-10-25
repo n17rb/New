@@ -687,9 +687,11 @@ router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
   }
   if (!items.length && !exch.length) return bad(res, "اختار شو بدك تبيع.");
   const total = round2(items.reduce((a, i) => a + i.qty * i.price, 0));
-  const cash = b.cash === undefined || b.cash === "" || b.cash === null ? total : round2(b.cash);
+  const cliqS = Math.max(0, round2(b.cliq) || 0);
+  const cash = b.cash === undefined || b.cash === "" || b.cash === null ? round2(total - cliqS) : round2(b.cash);
   if (!(cash >= 0)) return bad(res, "المبلغ غير صحيح.");
-  const debt = round2(total - cash);
+  if (cliqS > 0 && !b.cliq_photo) return bad(res, "صوّر وصل الكليك من تلفون الزبون.");
+  const debt = round2(total - cash - cliqS);
   if (debt > 0) {
     if (!canAction(req.user, "give_credit")) return bad(res, "ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.");
     const newBal = round2(Number(c.balance) + debt);
@@ -709,7 +711,7 @@ router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
   // البيع كله أو ولا إشي: إذا التسليم ما زبط منشيل الطلب اللي انعمل
   const drop = () => query("DELETE FROM f_orders WHERE id = $1 AND status <> 'delivered'", [oid]).catch(() => {});
   try {
-    await deliverOrder(req, res, o, t, { cash, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true, exchanges: exch, exchange_photo: b.exchange_photo }, { sale: true });
+    await deliverOrder(req, res, o, t, { cash, cliq: cliqS || undefined, cliq_photo: b.cliq_photo, signature: b.signature, photo_url: b.photo_url, lat: b.lat, lng: b.lng, confirm_over_limit: true, exchanges: exch, exchange_photo: b.exchange_photo }, { sale: true });
   } catch (e) { await drop(); throw e; }
   if (res.statusCode >= 400) await drop();
 }));

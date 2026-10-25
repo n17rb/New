@@ -482,3 +482,26 @@ export function DateInput({ value, onChange, quick = false, ariaLabel = "الت�
     </div>
   );
 }
+
+// الزبون دفع بالكليك: المبلغ + صورة الوصل من تلفونه (بتوصل للمحاسب والإدارة)
+export function CliqBox({ on, setOn, amount, setAmount, photo, setPhoto, max }) {
+  return (
+    <div className="fx-card fx-stack" style={{ gap: 8, padding: 12 }}>
+      <label className="fx-row" style={{ gap: 8 }}>
+        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+        <b>📲 دفع بالكليك (حوالة)</b>
+      </label>
+      {on && (
+        <>
+          <label className="fx-field">قديش حوّل بالكليك؟{max ? <small className="fx-muted"> (من {money(max)})</small> : null}
+            <input className="fx-input fx-num" type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+          <PhotoInput label="صوّر وصل الكليك من تلفون الزبون" hint="لازم — بتوصل للمحاسب" value={photo} onChange={setPhoto} kind="cliq" />
+          {Number(amount) > 0 && !photo && <small style={{ color: "var(--fx-crit)" }}>صوّر الوصل عشان تكمّل.</small>}
+          <small className="fx-muted">مبلغ الكليك ما بينحسب على الكاش اللي معك.</small>
+        </>
+      )}
+    </div>
+  );
+}
+
