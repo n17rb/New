@@ -639,7 +639,7 @@ function LineSheet({ l, sites, staff, onClose, onDone }) {
         <div className="fx-field">موظفين هالخط <small className="fx-muted">(اللي بيسحبوا مواد إله)</small>
           <div className="fx-chips">{staff.map((u) => <button key={u.id} type="button" className={`fx-chip ${users.has(u.id) ? "on" : ""}`} onClick={() => toggle(u.id)}>{users.has(u.id) ? "✓ " : ""}{u.full_name}</button>)}</div>
         </div>
-        {l.id && <label className="fx-row" style={{ gap: 8 }}><input type="checkbox" checked={!on} onChange={(e) => setOn(!e.target.checked)} /> موقّف</label>}
+        {l.id && !on && <label className="fx-row" style={{ gap: 8 }}><input type="checkbox" checked={!on} onChange={(e) => setOn(!e.target.checked)} /> موقّف (شيل العلامة لترجّعه)</label>}
         <Err msg={err} />
         <Act className="fx-btn pri block" disabled={!name.trim()} onClick={async () => {
           setErr("");
@@ -649,6 +649,12 @@ function LineSheet({ l, sites, staff, onClose, onDone }) {
             fx.toast("انحفظ"); onDone();
           } catch (e) { setErr(e.message); }
         }}>حفظ</Act>
+        {l.id && l.active !== false && (
+          <Act className="fx-btn danger block" onClick={async () => {
+            if (!confirm(`تحذف «${l.name}»؟ بيختفي من المزيد والرئيسية. إذا إله إنتاج أو فحوصات قديمة بتضل محفوظة بالتقارير.`)) return;
+            try { const r = await fapi.deletePline(l.id); fx.toast(r.mode === "deleted" ? "انحذف" : "انحذف من القوائم — تاريخه محفوظ"); onDone(); } catch (e) { setErr(e.message); }
+          }}>🗑 احذف الخط</Act>
+        )}
       </div>
     </Sheet>
   );

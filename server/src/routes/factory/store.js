@@ -361,6 +361,28 @@ router.put("/store/lines/:id", setup, async (req, res) => {
   await saveLineUsers(r.id, req.body?.user_ids);
   res.json(r);
 });
+// حذف خط إنتاج: إذا ما إله أي تاريخ بينحذف نهائيًا، وإلا بيتوقّف (بيختفي وتاريخه بيضل للتقارير)
+router.delete("/store/lines/:id", setup, async (req, res) => {
+  const id = Number(req.params.id);
+  const l = (await query("SELECT id, name FROM f_plines WHERE id = $1", [id])).rows[0];
+  if (!l) return bad(res, "الخط غير موجود.", 404);
+  const used = (await query(
+    `SELECT (SELECT COUNT(*) FROM f_stock_moves WHERE line_id = $1) + (SELECT COUNT(*) FROM f_material_moves WHERE line_id = $1)
+          + (SELECT COUNT(*) FROM f_qchecks WHERE line_id = $1) AS n`,
+    [id]
+  )).rows[0].n;
+  if (Number(used) > 0) {
+    await query("UPDATE f_plines SET active = false WHERE id = $1", [id]);
+    return res.json({ ok: true, mode: "stopped" });
+  }
+  await query("UPDATE f_materials SET line_id = NULL WHERE line_id = $1", [id]);
+  await query("UPDATE f_filters SET line_id = NULL WHERE line_id = $1", [id]);
+  await query("UPDATE f_machines SET line_id = NULL WHERE line_id = $1", [id]);
+  await query("UPDATE f_meters SET line_id = NULL WHERE line_id = $1", [id]).catch(() => {});
+  await query("DELETE FROM f_plines WHERE id = $1", [id]);
+  res.json({ ok: true, mode: "deleted" });
+});
+
 router.put("/store/machines/:id", setup, async (req, res) => {
   const r = await query("UPDATE f_machines SET site_id = $1, line_id = $2 WHERE id = $3 RETURNING *", [numOrNull(req.body?.site_id), numOrNull(req.body?.line_id), req.params.id]);
   res.json(r.rows[0] || {});
