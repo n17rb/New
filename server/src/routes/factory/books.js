@@ -224,6 +224,70 @@ router.post("/books/handover/:id/reject", needAny(["f_money"], ["f_home"]), asyn
   res.json({ ok: true });
 });
 
+// ---------- الكهربا والمي والمولدات ----------
+router.get("/books/meters", view, async (req, res) => {
+  const ms = (await query("SELECT m.*, s.name AS site_name FROM f_meters m LEFT JOIN f_sites s ON s.id = m.site_id ORDER BY m.active DESC, m.kind, m.id")).rows;
+  const es = (await query(
+    `SELECT e.*, e.doc_date::text AS doc_date, u.full_name AS by_name FROM f_meter_entries e LEFT JOIN users u ON u.id = e.created_by
+     ORDER BY e.doc_date DESC, e.id DESC LIMIT 1000`
+  )).rows.map((e) => ({ ...e, reading: e.reading == null ? null : Number(e.reading), prev_reading: e.prev_reading == null ? null : Number(e.prev_reading), consumption: e.consumption == null ? null : Number(e.consumption), unit_price: e.unit_price == null ? null : Number(e.unit_price), amount: Number(e.amount), liters: e.liters == null ? null : Number(e.liters) }));
+  const month = jordanDate().slice(0, 7), year = jordanDate().slice(0, 4);
+  res.json({
+    meters: ms.map((m) => {
+      const mine = es.filter((e) => e.meter_id === m.id);
+      return {
+        ...m, entries: mine.slice(0, 60),
+        last_reading: mine.find((e) => e.reading != null)?.reading ?? null,
+        unpaid: round2(mine.filter((e) => !e.paid).reduce((a, e) => a + e.amount, 0)),
+        month: round2(mine.filter((e) => e.doc_date.startsWith(month)).reduce((a, e) => a + e.amount, 0)),
+        year: round2(mine.filter((e) => e.doc_date.startsWith(year)).reduce((a, e) => a + e.amount, 0)),
+        last_price: mine.find((e) => e.unit_price != null)?.unit_price ?? null,
+      };
+    }),
+    month_total: round2(es.filter((e) => e.doc_date.startsWith(month)).reduce((a, e) => a + e.amount, 0)),
+    unpaid_total: round2(es.filter((e) => !e.paid).reduce((a, e) => a + e.amount, 0)),
+  });
+});
+router.post("/books/meters", edit, async (req, res) => {
+  const b = req.body || {};
+  const kind = ["elec", "water", "gen"].includes(b.kind) ? b.kind : "elec";
+  const name = str(b.name, 80) || { elec: "عداد كهربا", water: "عداد مي", gen: "مولّد" }[kind];
+  const r = await query("INSERT INTO f_meters (kind, name, number, site_id, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *", [kind, name, str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null]);
+  res.status(201).json(r.rows[0]);
+});
+router.put("/books/meters/:id", edit, async (req, res) => {
+  const b = req.body || {};
+  const r = await query("UPDATE f_meters SET name = $1, number = $2, site_id = $3, notes = $4, active = $5 WHERE id = $6 RETURNING *", [str(b.name, 80) || "عداد", str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null, b.active !== false, req.params.id]);
+  res.json(r.rows[0] || {});
+});
+router.post("/books/meters/:id/entries", edit, async (req, res) => {
+  const m = (await query("SELECT * FROM f_meters WHERE id = $1", [req.params.id])).rows[0];
+  if (!m) return bad(res, "العداد غير موجود.", 404);
+  const b = req.body || {};
+  const num = (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  const reading = num(b.reading);
+  const last = (await query("SELECT reading FROM f_meter_entries WHERE meter_id = $1 AND reading IS NOT NULL ORDER BY doc_date DESC, id DESC LIMIT 1", [m.id])).rows[0];
+  const prev = num(b.prev_reading) ?? (last ? Number(last.reading) : null);
+  if (reading != null && prev != null && reading < prev) return bad(res, `القراءة أقل من اللي قبلها (${prev}).`);
+  const consumption = num(b.consumption) ?? (reading != null && prev != null ? round2(reading - prev) : null);
+  const unitPrice = num(b.unit_price);
+  let amount = num(b.amount);
+  if (amount == null && consumption != null && unitPrice != null) amount = round2(consumption * unitPrice);
+  if (amount == null) amount = 0;
+  if (!(amount >= 0)) return bad(res, "المبلغ غير صحيح.");
+  if (!amount && reading == null) return bad(res, "اكتب القراءة أو قيمة الفاتورة.");
+  const r = await query(
+    `INSERT INTO f_meter_entries (meter_id, doc_date, reading, prev_reading, consumption, unit_price, amount, liters, bill_no, paid, paid_at, photo_url, note, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $10 THEN now() END,$11,$12,$13) RETURNING *`,
+    [m.id, isDate(b.doc_date) ? b.doc_date : jordanDate(), reading, prev, consumption, unitPrice, amount, num(b.liters), str(b.bill_no, 40) || null, !!b.paid, b.photo_url || null, str(b.note, 300) || null, req.user.id]
+  );
+  res.status(201).json({ ...r.rows[0], amount, consumption });
+});
+router.post("/books/meter-entries/:id/paid", edit, async (req, res) => {
+  await query("UPDATE f_meter_entries SET paid = true, paid_at = now() WHERE id = $1", [req.params.id]);
+  res.json({ ok: true });
+});
+
 // ---------- الملخّص: يومي / أسبوعي / شهري / سنوي ----------
 function range(period, day) {
   const d = new Date(`${day}T12:00:00Z`);
@@ -239,7 +303,7 @@ router.get("/books/summary", view, async (req, res) => {
   const [from, to] = range(period, day);
   const D = (col) => `(${col} AT TIME ZONE 'Asia/Amman')::date BETWEEN $1 AND $2`;
   const one = async (sql) => (await query(sql, [from, to])).rows[0] || {};
-  const [sales, coll, drvExp, cash, purch, paid, recyc, prod, used, waste, maint] = await Promise.all([
+  const [sales, coll, drvExp, cash, purch, paid, recyc, prod, used, waste, maint, util] = await Promise.all([
     one(`SELECT COALESCE(SUM(delivered_total),0) AS total, COUNT(*)::int AS n FROM f_orders WHERE status = 'delivered' AND ${D("delivered_at")}`),
     one(`SELECT COALESCE(SUM(CASE WHEN method = 'cash' THEN -amount END),0) AS cash, COALESCE(SUM(CASE WHEN method = 'cliq' THEN -amount END),0) AS cliq, COALESCE(SUM(CASE WHEN method NOT IN ('cash','cliq') THEN -amount END),0) AS other FROM f_ledger WHERE kind = 'payment' AND ${D("created_at")}`),
     one(`SELECT COALESCE(SUM(amount),0) AS total FROM f_expenses WHERE status = 'approved' AND ${D("created_at")}`).catch(() => ({ total: 0 })),
@@ -251,18 +315,19 @@ router.get("/books/summary", view, async (req, res) => {
     one(`SELECT COALESCE(SUM(cost),0) AS cost FROM f_material_moves WHERE kind = 'use' AND ${D("created_at")}`),
     one(`SELECT COALESCE(SUM(cost),0) AS cost FROM f_material_moves WHERE kind = 'waste' AND ${D("created_at")}`),
     one(`SELECT COALESCE(SUM(cost),0) AS cost FROM f_maint WHERE done_on BETWEEN $1 AND $2`),
+    one(`SELECT COALESCE(SUM(e.amount),0) AS total, COALESCE(SUM(CASE WHEN m.kind = 'elec' THEN e.amount END),0) AS elec, COALESCE(SUM(CASE WHEN m.kind = 'water' THEN e.amount END),0) AS water, COALESCE(SUM(CASE WHEN m.kind = 'gen' THEN e.amount END),0) AS gen FROM f_meter_entries e JOIN f_meters m ON m.id = e.meter_id WHERE e.doc_date BETWEEN $1 AND $2`),
   ]);
   const N = (x) => round2(Number(x || 0));
   const store = (await query("SELECT COALESCE(SUM(balance * price),0) AS v FROM f_materials WHERE active AND balance > 0")).rows[0].v;
   const owe = (await query("SELECT COALESCE(SUM(CASE WHEN balance > 0 THEN balance END),0) AS we, COALESCE(SUM(CASE WHEN balance < 0 THEN -balance END),0) AS they FROM f_partners")).rows[0];
   const debts = (await query("SELECT COALESCE(SUM(balance),0) AS v FROM f_customers WHERE balance > 0")).rows[0].v;
   const income = N(coll.cash) + N(coll.cliq) + N(coll.other) + N(cash.inn) + N(paid.received) + N(recyc.received_direct); // قبض إعادة التدوير من شركة محسوب بقبض الشركات
-  const spend = N(drvExp.total) + N(cash.out) + N(paid.paid) + N(maint.cost);
+  const spend = N(drvExp.total) + N(cash.out) + N(paid.paid) + N(maint.cost) + N(util.total);
   res.json({
     period, from, to,
     sales: { invoices: N(sales.total), count: sales.n || 0, partner_sales: N(purch.sales), recycle: N(recyc.amount), recycle_kg: N(recyc.kg) },
     collected: { cash: N(coll.cash), cliq: N(coll.cliq), other: N(coll.other), partners: N(paid.received), recycle: N(recyc.received), other_income: N(cash.inn) },
-    spent: { driver_expenses: N(drvExp.total), cashbook: N(cash.out), suppliers: N(paid.paid), maintenance: N(maint.cost) },
+    spent: { driver_expenses: N(drvExp.total), cashbook: N(cash.out), suppliers: N(paid.paid), maintenance: N(maint.cost), electricity: N(util.elec), water: N(util.water), generators: N(util.gen) },
     purchases: N(purch.purchases),
     production: { cartons: prod.cartons || 0, materials_used: N(used.cost), waste: N(waste.cost) },
     totals: { income: round2(income), spend: round2(spend), net: round2(income - spend) },

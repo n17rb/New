@@ -1261,3 +1261,33 @@ CREATE TABLE IF NOT EXISTS f_handover (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   confirmed_at TIMESTAMPTZ
 );
+
+-- الكهربا والمي والمولدات: كل عداد وفواتيره/قراءاته — المي: القراءة الجديدة − القديمة × سعر المتر (بيتغيّر كل مرة)
+CREATE TABLE IF NOT EXISTS f_meters (
+  id SERIAL PRIMARY KEY,
+  kind VARCHAR(6) NOT NULL CHECK (kind IN ('elec','water','gen')),
+  name VARCHAR(80) NOT NULL,
+  number VARCHAR(40),
+  site_id INTEGER REFERENCES f_sites(id) ON DELETE SET NULL,
+  notes TEXT,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+CREATE TABLE IF NOT EXISTS f_meter_entries (
+  id SERIAL PRIMARY KEY,
+  meter_id INTEGER NOT NULL REFERENCES f_meters(id) ON DELETE CASCADE,
+  doc_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  reading NUMERIC(14,2),
+  prev_reading NUMERIC(14,2),
+  consumption NUMERIC(14,2),
+  unit_price NUMERIC(10,4),
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  liters NUMERIC(10,2),
+  bill_no VARCHAR(40),
+  paid BOOLEAN NOT NULL DEFAULT false,
+  paid_at TIMESTAMPTZ,
+  photo_url TEXT,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_meter_entries ON f_meter_entries(meter_id, doc_date DESC, id DESC);
