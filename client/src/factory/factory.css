@@ -893,3 +893,25 @@ a.fx-pill { text-decoration: none; }
 .fx-plant-hero .cap { position: absolute; inset-inline: 16px; bottom: 14px; color: #fff; font-size: 22px; font-weight: 800; text-shadow: 0 1px 4px rgba(0,0,0,.35); }
 .fx-plant-hero .ico { position: absolute; top: 18px; inset-inline-start: 18px; font-size: 40px; }
 .fx-plant-hero .chg { position: absolute; top: 12px; inset-inline-end: 12px; border: 0; border-radius: 999px; padding: 7px 12px; background: rgba(255,255,255,.88); color: #0b3a66; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+
+/* شاشة الفحص اليومي: أقسام هادية، خانات قياس ناعمة، وألوان كبيرة سهلة الكبس */
+.qc-progress { position: relative; height: 26px; border-radius: 999px; background: var(--fx-surface-2); overflow: hidden; }
+.qc-progress > span { position: absolute; inset-block: 0; inset-inline-start: 0; background: linear-gradient(90deg, #bfe6cf, #8fd3ad); border-radius: 999px; transition: width .25s; }
+.qc-progress > small { position: relative; display: block; text-align: center; line-height: 26px; font-size: 12.5px; font-weight: 700; color: #2b5d43; }
+.qc-sec { background: #fff; border-radius: 18px; padding: 14px; display: grid; gap: 12px; box-shadow: 0 1px 6px rgba(4, 50, 100, .06); border: 1px solid #edf2f7; }
+.qc-head { display: flex; align-items: center; gap: 10px; }
+.qc-head i { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-style: normal; font-size: 17px; }
+.qc-head b { font-size: 15.5px; color: #17324d; }
+.qc-measures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.qc-measure { display: grid; justify-items: center; gap: 2px; padding: 10px 6px 8px; border-radius: 14px; background: #f5f8fb; border: 1.5px solid transparent; transition: border-color .15s, background .15s; }
+.qc-measure.filled { background: #f0faf4; border-color: #bfe6cf; }
+.qc-measure .l { font-size: 12.5px; font-weight: 700; color: #5b7088; }
+.qc-measure input { width: 100%; border: 0; background: transparent; text-align: center; font-size: 22px; font-weight: 800; color: #17324d; padding: 4px 0; outline: none; font-family: inherit; }
+.qc-measure input::placeholder { color: #c3cfdb; }
+.qc-measure small { font-size: 11px; color: #8a9bb0; min-height: 14px; }
+.qc-pick { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.qc-pick-l { font-size: 14px; font-weight: 600; color: #3d536b; }
+.qc-swatches { display: flex; gap: 8px; }
+.qc-sw { display: grid; justify-items: center; gap: 4px; min-width: 70px; padding: 8px 10px; border-radius: 14px; border: 1.5px solid #e3eaf1; background: #fff; font: inherit; font-size: 12.5px; color: #3d536b; cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; }
+.qc-sw i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.qc-sw.on { border-color: #0b5fa8; background: #f2f8fe; box-shadow: 0 0 0 3px rgba(11, 95, 168, .12); font-weight: 700; color: #0b3a66; }
