@@ -240,6 +240,22 @@ export function getLocation(timeout = 8000, maxAge = 60000) {
     .then((r) => r || once({ enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 }));
 }
 
+// أي نص ملصوق فيه موقع: رابط (حتى لو معه اسم المحل والعنوان) أو إحداثيات «31.95, 35.91»
+export function locText(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/https?:\/\/\S+/.test(s)) return s;
+  return /-?\d{1,2}(\.\d+)?\s*[,،]\s*-?\d{1,3}(\.\d+)?/.test(s) ? s : "";
+}
+export function mapsUrlFor(t, p) {
+  const url = String(t || "").match(/https?:\/\/[^\s"'<>]+/)?.[0];
+  return url || `https://www.google.com/maps?q=${p.lat},${p.lng}`;
+}
+// قراءة المنسوخ بكبسة وحدة (الآيفون بيطلع «لصق» صغيرة توافق عليها)
+export async function readClipboard() {
+  try { return (await navigator.clipboard?.readText?.()) || ""; } catch { return ""; }
+}
+
 // تثبيت موقع: «أنا هون هلأ» أو لصق رابط خرائط جوجل / واتساب
 export function LocationPicker({ lat, lng, onChange, hereLabel = "أنا هون هلأ — خذ موقعي", title = "الموقع", hl, bare = false }) {
   const fx = useFx();
@@ -247,14 +263,18 @@ export function LocationPicker({ lat, lng, onChange, hereLabel = "أنا هون 
   const [busy, setBusy] = useState("");
   const has = lat !== "" && lat != null && lng !== "" && lng != null;
   async function fromLink(raw) {
-    const url = String(raw || "").trim().match(/https?:\/\/\S+/)?.[0];
-    if (!url) return fx.toast("الصق رابط خرائط جوجل (بيبلّش بـ https://)");
+    const t = locText(raw);
+    if (!t) return fx.toast("الصق رابط الموقع من خرائط جوجل أو واتساب");
     setBusy("link");
     try {
-      const p = await fapi.resolveMapLink(url);
-      await onChange({ lat: p.lat, lng: p.lng, maps_url: url });
+      const p = await fapi.resolveMapLink(t);
+      await onChange({ lat: p.lat, lng: p.lng, maps_url: mapsUrlFor(t, p) });
       setLink("");
     } catch (e) { fx.toast(e.message); } finally { setBusy(""); }
+  }
+  async function pasteNow() {
+    const t = await readClipboard();
+    if (locText(t)) { setLink(t); fromLink(t); } else fx.toast("ما في رابط موقع منسوخ — انسخ الرابط والصقه بالخانة");
   }
   async function here() {
     setBusy("gps");
@@ -274,9 +294,11 @@ export function LocationPicker({ lat, lng, onChange, hereLabel = "أنا هون 
       <div className="fx-iconfield">
         <FiLink aria-hidden="true" />
         <input className="fx-input" value={link} onChange={(e) => setLink(e.target.value)}
-          onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/https?:\/\//.test(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
+          onPaste={(e) => { const t = e.clipboardData.getData("text"); if (locText(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
           placeholder="أو الصق رابط الموقع (اختياري)" />
-        {link.trim() && <button type="button" className="fx-btn sm" disabled={!!busy} onClick={() => fromLink(link)}>{busy === "link" ? "..." : "ثبّت"}</button>}
+        {link.trim()
+          ? <button type="button" className="fx-btn sm" disabled={!!busy} onClick={() => fromLink(link)}>{busy === "link" ? "..." : "ثبّت"}</button>
+          : <button type="button" className="fx-btn sm" disabled={!!busy} onClick={pasteNow}>{busy === "link" ? "..." : "الصق"}</button>}
       </div>
     </>
   );

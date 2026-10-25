@@ -1,4 +1,5 @@
 import { query } from "../db.js";
+import { resolveMapsLink } from "./mapsLink.js";
 
 // ============================================================
 // محرك ترتيب مسار التوزيع
@@ -462,25 +463,6 @@ export function parseCoordsFromText(text, strict = false) {
 
 // يفتح الروابط المختصرة (maps.app.goo.gl) ويطلع منها الإحداثيات
 export async function resolveCoordsFromMapsLink(link) {
-  const direct = parseCoordsFromText(link);
-  if (direct) return direct;
-  if (!/^https?:\/\//i.test(String(link || "").trim())) return null;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  try {
-    const res = await fetch(String(link).trim(), {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36" },
-    });
-    const fromUrl = parseCoordsFromText(res.url);
-    if (fromUrl) return fromUrl;
-    const html = await res.text();
-    return parseCoordsFromText(html.slice(0, 200000), true);
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const p = await resolveMapsLink(link);
+  return p ? { lat: p.lat, lon: p.lng } : null;
 }

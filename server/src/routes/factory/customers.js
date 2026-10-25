@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { resolveMapsLink } from "../../utils/mapsLink.js";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
@@ -110,18 +111,7 @@ export function coordsFromLink(link) {
 }
 
 async function resolveLink(link) {
-  const direct = coordsFromLink(link);
-  if (direct) return direct;
-  if (!/^https?:\/\/([a-z0-9-]+\.)*(goo\.gl|google\.[a-z.]+|g\.co)\//i.test(link)) return null;
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(link, { redirect: "follow", signal: ctl.signal, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" } });
-    clearTimeout(t);
-    return coordsFromLink(r.url) || coordsFromLink((await r.text()).slice(0, 200000).match(/https:\/\/www\.google\.[a-z.]+\/maps[^"'\s]+/)?.[0]);
-  } catch {
-    return null;
-  }
+  return resolveMapsLink(link);
 }
 
 export async function nextSeq(client = null) {
@@ -134,7 +124,7 @@ router.get("/customers-next-seq", view, async (req, res) => res.json({ next: awa
 // رابط موقع ملصوق: بنرجّع الإحداثيات عشان الشاشة توري «الموقع محفوظ»
 router.post("/customers-resolve-link", editOrFleet, async (req, res) => {
   const p = await resolveLink(String(req.body?.url || "").trim());
-  if (!p) return bad(res, "ما قدرنا نقرأ الموقع من الرابط. افتح الموقع بخرائط جوجل ← مشاركة ← نسخ الرابط، والصقه هون.");
+  if (!p) return bad(res, "ما قدرنا نقرأ الموقع من هذا الرابط. جرّب «أنا عنده هلأ» إذا أنت بالمحل، أو ابعت الرابط مرة ثانية.");
   res.json(p);
 });
 
@@ -144,7 +134,7 @@ export async function cleanCustomer(b) {
   let lat = b.lat === "" || b.lat == null ? null : Number(b.lat);
   let lng = b.lng === "" || b.lng == null ? null : Number(b.lng);
   const maps_url = str(b.maps_url, 600);
-  if (maps_url && !/^https?:\/\//i.test(maps_url)) throw new Error("رابط الموقع لازم يبلّش بـ https://");
+  if (maps_url && !/^https?:\/\//i.test(maps_url) && !b.from_link) throw new Error("رابط الموقع لازم يبلّش بـ https://");
   if (maps_url && b.from_link) {
     const p = await resolveLink(maps_url);
     if (!p) throw new Error("ما قدرنا نقرأ الموقع من الرابط. افتح الموقع بخرائط جوجل ← مشاركة ← نسخ الرابط، والصقه هون.");

@@ -6,7 +6,7 @@ import { OrderSheet } from "./Orders.jsx";
 import { RecurringCard } from "./Recurring.jsx";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
 import { GOVERNORATES, inferRegion } from "../regions.js";
-import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime, DateInput } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, getLocation, waLink, money, num, date, dateTime, DateInput, locText, mapsUrlFor, readClipboard } from "../ui.jsx";
 
 const KIND = { invoice: "فاتورة", payment: "دفعة", return: "مرتجع", adjust: "تعديل", opening: "رصيد افتتاحي" };
 
@@ -263,14 +263,20 @@ function SimpleLocation({ f, setF }) {
     setF((x) => ({ ...x, lat: loc.lat, lng: loc.lng, maps_url: `https://www.google.com/maps?q=${loc.lat},${loc.lng}` }));
   }
   async function fromLink(raw) {
-    const url = String(raw || "").trim().match(/https?:\/\/\S+/)?.[0];
-    if (!url) return fx.toast("الصق رابط الموقع (بيبلّش بـ https://)");
+    const t = locText(raw);
+    if (!t) return fx.toast("الصق رابط الموقع من خرائط جوجل أو واتساب");
     setBusy("link");
     try {
-      const p = await fapi.resolveMapLink(url);
-      setF((x) => ({ ...x, lat: p.lat, lng: p.lng, maps_url: url }));
+      const p = await fapi.resolveMapLink(t);
+      setF((x) => ({ ...x, lat: p.lat, lng: p.lng, maps_url: mapsUrlFor(t, p) }));
       setLink(""); setLinkOpen(false);
-    } catch (e) { fx.toast(e.message); } finally { setBusy(""); }
+    } catch (e) { setLinkOpen(true); setLink(String(raw || "")); fx.toast(e.message); } finally { setBusy(""); }
+  }
+  // كبسة وحدة: إذا في رابط منسوخ بنثبّته فورا، وإلا بتفتح خانة اللصق
+  async function pasteTap() {
+    if (linkOpen) return setLinkOpen(false);
+    const t = await readClipboard();
+    if (locText(t)) fromLink(t); else setLinkOpen(true);
   }
   if (has) {
     return (
@@ -286,13 +292,13 @@ function SimpleLocation({ f, setF }) {
     <div className="fx-stack" style={{ gap: 8 }}>
       <div className="fx-grid2">
         <button type="button" className="fx-soft-btn" onClick={here} disabled={!!busy}><FiMapPin /> {busy === "gps" ? "لحظة..." : "أنا عنده هلأ"}</button>
-        <button type="button" className={`fx-soft-btn ${linkOpen ? "on" : ""}`} onClick={() => setLinkOpen(!linkOpen)} disabled={!!busy}><FiLink /> الصق رابط</button>
+        <button type="button" className={`fx-soft-btn ${linkOpen ? "on" : ""}`} onClick={pasteTap} disabled={!!busy}><FiLink /> {busy === "link" ? "لحظة..." : "الصق رابط"}</button>
       </div>
       {linkOpen && (
         <div className="fx-row" style={{ flexWrap: "nowrap" }}>
           <input className="fx-input" dir="ltr" autoFocus value={link} onChange={(e) => setLink(e.target.value)}
-            onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/https?:\/\//.test(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
-            placeholder="https://maps.app.goo.gl/..." />
+            onPaste={(e) => { const t = e.clipboardData.getData("text"); if (locText(t)) { e.preventDefault(); setLink(t); fromLink(t); } }}
+            placeholder="الصق رابط الموقع هون" />
           <button type="button" className="fx-btn sm pri" disabled={!link.trim() || !!busy} onClick={() => fromLink(link)}>{busy === "link" ? "..." : "ثبّت"}</button>
         </div>
       )}
