@@ -34,7 +34,7 @@ export function maintSummary(h) {
   const parts = Array.isArray(h.parts) ? h.parts : [];
   const bits = [];
   if (h.kind === "oil") bits.push([d.brand, d.viscosity, d.liters && `${d.liters} لتر`].filter(Boolean).join(" "), (d.filters || []).join("، "));
-  else if (h.kind === "tires") bits.push([d.count && `${d.count} ×`, d.brand, d.size, d.condition].filter(Boolean).join(" "), (d.positions || []).join("، "), d.made && `صنع ${d.made}`);
+  else if (h.kind === "tires") bits.push([d.count && `${d.count} ×`, d.brand, d.size, d.condition].filter(Boolean).join(" "), d.tire_no && `رقم ${d.tire_no}`, (d.positions || []).join("، "), d.made && `صنع ${d.made}`);
   else if (h.kind === "battery") bits.push([d.brand, d.amp && `${d.amp} أمبير`].filter(Boolean).join(" "), d.serial && `رقم ${d.serial}`, h.warranty_until && `كفالة لحد ${date(h.warranty_until)}`);
   else if (h.kind === "brakes") bits.push([(d.where || []).join(" و"), (d.what || []).join("، ")].filter(Boolean).join(": "));
   if (parts.length && h.kind !== "tires" && h.kind !== "battery") bits.push(parts.map((p) => `${p.name}${p.qty > 1 ? ` ×${p.qty}` : ""}`).join("، "));
@@ -129,7 +129,7 @@ function HistoryList({ rows, kinds, showCar = false }) {
             <span>{date(h.done_on)}{h.odo ? ` · عداد ${num(h.odo)}` : ""}{h.by_name ? ` · ${h.by_name}` : ""}</span>
             {maintSummary(h) && <span>{maintSummary(h)}</span>}
             {Array.isArray(h.parts) && h.parts.length > 0 && h.kind !== "tires" && h.kind !== "battery" && (
-              <span>{h.parts.map((p) => `${p.code ? `[${p.code}] ` : ""}${p.name}${p.qty > 1 ? ` ×${p.qty}` : ""}${p.price ? ` ${money(p.price * p.qty)}` : ""}`).join(" · ")}{h.labor ? ` · أجرة ${money(h.labor)}` : ""}</span>
+              <span>{h.parts.map((p) => `${p.code ? `[${p.code}] ` : ""}${p.name}${p.qty > 1 ? ` ×${p.qty}` : ""}${p.price ? ` ${money(p.price * p.qty)}` : ""}${p.shop && p.shop !== h.workshop ? ` (${p.shop})` : ""}`).join(" · ")}{h.labor ? ` · أجرة ${money(h.labor)}` : ""}</span>
             )}
             {h.note && <span>📝 {h.note}</span>}
           </span>
@@ -161,7 +161,7 @@ function LogSearch({ data }) {
   const [car, setCar] = useState(null);
   const all = useMemo(() => data.vehicles.flatMap((v) => v.history.map((h) => ({
     ...h, vehicle_name: v.name,
-    hay: [h.title, data.kinds[h.kind]?.label, h.note, h.workshop, maintSummary(h), ...(h.parts || []).flatMap((p) => [p.name, p.code, p.note]), ...Object.values(h.details || {}).flat()].filter(Boolean).join(" "),
+    hay: [h.title, data.kinds[h.kind]?.label, h.note, h.workshop, maintSummary(h), ...(h.parts || []).flatMap((p) => [p.name, p.code, p.note, p.shop]), ...Object.values(h.details || {}).flat()].filter(Boolean).join(" "),
   }))).sort((a, b) => (a.done_on < b.done_on ? 1 : -1)), [data]);
   const inCar = all.filter((h) => !car || h.vehicle_id === car);
   const rows = q.trim() ? smartFilter(inCar, q, ["hay"]) : inCar.slice(0, 60);
@@ -234,9 +234,10 @@ function PartsEditor({ parts, setParts }) {
             <input className="fx-input fx-num" style={{ flex: 0.8 }} type="number" inputMode="numeric" value={p.qty} onChange={(e) => upd(i, "qty", e.target.value)} placeholder="العدد" />
             <input className="fx-input fx-num" style={{ flex: 1 }} type="number" inputMode="decimal" value={p.price} onChange={(e) => upd(i, "price", e.target.value)} placeholder="السعر" />
           </div>
+          <input className="fx-input" style={{ marginTop: 6 }} value={p.shop || ""} onChange={(e) => upd(i, "shop", e.target.value)} placeholder="المحل اللي تغيّرت عنده / انشرت منه" />
         </div>
       ))}
-      <button type="button" className="fx-btn sm" onClick={() => setParts([...parts, { name: "", code: "", qty: 1, price: "" }])}><FiPlus /> ضيف قطعة</button>
+      <button type="button" className="fx-btn sm" onClick={() => setParts([...parts, { name: "", code: "", qty: 1, price: "", shop: parts[parts.length - 1]?.shop || "" }])}><FiPlus /> ضيف قطعة</button>
     </div>
   );
 }
@@ -280,7 +281,7 @@ function AddSheet({ vehicles, kinds, v0, k0, onClose, onDone }) {
   // الكلفة حسب النوع
   const tireCost = (Number(d.count) || 0) * (Number(d.unit_price) || 0);
   const partsCost = parts.reduce((a, p) => a + (Number(p.qty) || 0) * (Number(p.price) || 0), 0);
-  const base = kind === "tires" ? tireCost : kind === "battery" ? Number(d.unit_price) || 0 : kind === "oil" ? (Number(d.oil_cost) || 0) + (Number(d.filters_cost) || 0) + partsCost : partsCost;
+  const base = kind === "tires" ? tireCost : kind === "battery" ? Number(d.unit_price) || 0 : kind === "oil" ? (Number(d.oil_cost) || 0) + (d.filters || []).reduce((a, f) => a + (Number(d.fprices?.[f]) || 0), 0) + partsCost : partsCost;
   const autoCost = Math.round((base + (Number(labor) || 0)) * 100) / 100;
   const cost = costOver !== "" ? Number(costOver) : autoCost;
 
@@ -293,14 +294,14 @@ function AddSheet({ vehicles, kinds, v0, k0, onClose, onDone }) {
       ttl = `زيت ${d.oil_for || "ماتور"}`;
       ps = [
         ...(d.oil_cost ? [{ name: `زيت ${d.oil_for} ${d.viscosity || ""}`.trim(), qty: 1, price: Number(d.oil_cost) }] : []),
-        ...(d.filters_cost && d.filters?.length ? [{ name: d.filters.join(" + "), qty: 1, price: Number(d.filters_cost) }] : []),
+        ...(d.filters || []).map((f) => ({ name: f, qty: 1, price: Number(d.fprices?.[f]) || 0, shop: workshop || undefined })),
         ...ps,
       ];
     } else if (kind === "tires") {
-      Object.assign(det, { count: Number(d.count) || undefined, positions: d.positions, brand: d.brand, size: d.size, made: d.made, condition: d.condition });
+      Object.assign(det, { count: Number(d.count) || undefined, positions: d.positions, brand: d.brand, size: d.size, made: d.made, condition: d.condition, tire_no: d.tire_no });
       if (d.unit_price) ps = [{ name: `كوشوك ${d.brand || ""} ${d.size || ""}`.trim(), qty: Number(d.count) || 1, price: Number(d.unit_price) }];
     } else if (kind === "battery") {
-      Object.assign(det, { brand: d.brand, amp: Number(d.amp) || undefined, serial: d.serial, warranty_months: Number(d.warranty_months) || undefined });
+      Object.assign(det, { brand: d.brand, amp: Number(d.amp) || undefined, serial: d.serial, warranty_months: Number(d.warranty_months) || undefined, shop: workshop || undefined });
       if (d.unit_price) ps = [{ name: `بطارية ${d.brand || ""} ${d.amp ? `${d.amp}A` : ""}`.trim(), qty: 1, price: Number(d.unit_price) }];
       if (Number(d.warranty_months) > 0) warranty = addMonths(doneOn, Number(d.warranty_months));
     } else if (kind === "brakes") {
@@ -330,11 +331,17 @@ function AddSheet({ vehicles, kinds, v0, k0, onClose, onDone }) {
               <label className="fx-field">الماركة<input className="fx-input" value={d.brand || ""} onChange={(e) => setDet("brand", e.target.value)} placeholder="مثلًا: توتال" /></label>
               <label className="fx-field">كم لتر<input className="fx-input fx-num" type="number" inputMode="decimal" value={d.liters || ""} onChange={(e) => setDet("liters", e.target.value)} /></label>
             </div>
+            <label className="fx-field">سعر الزيت<input className="fx-input fx-num" type="number" inputMode="decimal" value={d.oil_cost || ""} onChange={(e) => setDet("oil_cost", e.target.value)} /></label>
             <div className="fx-field">شو غيّرت معه؟<Chips multi options={FILTERS} value={d.filters} onChange={(val) => setDet("filters", val)} /></div>
-            <div className="fx-grid2">
-              <label className="fx-field">سعر الزيت<input className="fx-input fx-num" type="number" inputMode="decimal" value={d.oil_cost || ""} onChange={(e) => setDet("oil_cost", e.target.value)} /></label>
-              <label className="fx-field">سعر الفلاتر<input className="fx-input fx-num" type="number" inputMode="decimal" value={d.filters_cost || ""} onChange={(e) => setDet("filters_cost", e.target.value)} /></label>
-            </div>
+            {(d.filters || []).length > 0 && (
+              <div className="fx-grid2">
+                {d.filters.map((f) => (
+                  <label key={f} className="fx-field">سعر {f}
+                    <input className="fx-input fx-num" type="number" inputMode="decimal" value={d.fprices?.[f] || ""} onChange={(e) => setDet("fprices", { ...(d.fprices || {}), [f]: e.target.value })} />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -344,6 +351,7 @@ function AddSheet({ vehicles, kinds, v0, k0, onClose, onDone }) {
             <div className="fx-field">وين ركبوا؟<Chips multi options={TIRE_POS} value={d.positions} onChange={(val) => { setDet("positions", val); if (val.length) setDet("count", val.length); }} /></div>
             <div className="fx-grid2">
               <label className="fx-field">الماركة<input className="fx-input" value={d.brand || ""} onChange={(e) => setDet("brand", e.target.value)} placeholder="مثلًا: ميشلان" /></label>
+              <label className="fx-field">رقم الكوشوك<input className="fx-input" dir="ltr" value={d.tire_no || ""} onChange={(e) => setDet("tire_no", e.target.value)} placeholder="المكتوب على الجنب (DOT)" /></label>
               <label className="fx-field">المقاس<input className="fx-input" dir="ltr" value={d.size || ""} onChange={(e) => setDet("size", e.target.value)} placeholder="195/65R15" /></label>
               <label className="fx-field">سنة الصنع<input className="fx-input fx-num" inputMode="numeric" value={d.made || ""} onChange={(e) => setDet("made", e.target.value)} placeholder="2026" /></label>
               <label className="fx-field">سعر الوحدة<input className="fx-input fx-num" type="number" inputMode="decimal" value={d.unit_price || ""} onChange={(e) => setDet("unit_price", e.target.value)} /></label>
@@ -382,7 +390,7 @@ function AddSheet({ vehicles, kinds, v0, k0, onClose, onDone }) {
 
         <div className="fx-grid2">
           <label className="fx-field">أجرة الفني/الكراج<input className="fx-input fx-num" type="number" inputMode="decimal" value={labor} onChange={(e) => setLabor(e.target.value)} placeholder="0" /></label>
-          <label className="fx-field">الكراج/المحل<input className="fx-input" value={workshop} onChange={(e) => setWorkshop(e.target.value)} /></label>
+          <label className="fx-field">{kind === "battery" ? "المحل اللي انشرت منه" : kind === "tires" ? "محل الكوشوك" : "الكراج/المحل"}<input className="fx-input" value={workshop} onChange={(e) => setWorkshop(e.target.value)} /></label>
         </div>
         <div className="fx-pay-sum">
           <span>الكلفة الكاملة <b>{money(cost)}</b> د.أ</span>

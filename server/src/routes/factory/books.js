@@ -226,7 +226,8 @@ router.post("/books/handover/:id/reject", needAny(["f_money"], ["f_home"]), asyn
 
 // ---------- الكهربا والمي والمولدات ----------
 router.get("/books/meters", view, async (req, res) => {
-  const ms = (await query("SELECT m.*, s.name AS site_name FROM f_meters m LEFT JOIN f_sites s ON s.id = m.site_id ORDER BY m.active DESC, m.kind, m.id")).rows;
+  const ms = (await query("SELECT m.*, s.name AS site_name, l.name AS line_name FROM f_meters m LEFT JOIN f_sites s ON s.id = m.site_id LEFT JOIN f_plines l ON l.id = m.line_id ORDER BY m.active DESC, m.kind, m.id")).rows;
+  const lines = (await query("SELECT id, name FROM f_plines WHERE active ORDER BY id")).rows;
   const es = (await query(
     `SELECT e.*, e.doc_date::text AS doc_date, u.full_name AS by_name FROM f_meter_entries e LEFT JOIN users u ON u.id = e.created_by
      ORDER BY e.doc_date DESC, e.id DESC LIMIT 1000`
@@ -244,20 +245,21 @@ router.get("/books/meters", view, async (req, res) => {
         last_price: mine.find((e) => e.unit_price != null)?.unit_price ?? null,
       };
     }),
+    lines,
     month_total: round2(es.filter((e) => e.doc_date.startsWith(month)).reduce((a, e) => a + e.amount, 0)),
     unpaid_total: round2(es.filter((e) => !e.paid).reduce((a, e) => a + e.amount, 0)),
   });
 });
 router.post("/books/meters", edit, async (req, res) => {
   const b = req.body || {};
-  const kind = ["elec", "water", "gen"].includes(b.kind) ? b.kind : "elec";
-  const name = str(b.name, 80) || { elec: "عداد كهربا", water: "عداد مي", gen: "مولّد" }[kind];
-  const r = await query("INSERT INTO f_meters (kind, name, number, site_id, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *", [kind, name, str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null]);
+  const kind = ["elec", "water", "gen", "trans"].includes(b.kind) ? b.kind : "elec";
+  const name = str(b.name, 80) || { elec: "عداد كهربا", water: "عداد مي", gen: "مولّد", trans: "محوّل كهربا" }[kind];
+  const r = await query("INSERT INTO f_meters (kind, name, number, site_id, notes, line_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [kind, name, str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null, Number(b.line_id) || null]);
   res.status(201).json(r.rows[0]);
 });
 router.put("/books/meters/:id", edit, async (req, res) => {
   const b = req.body || {};
-  const r = await query("UPDATE f_meters SET name = $1, number = $2, site_id = $3, notes = $4, active = $5 WHERE id = $6 RETURNING *", [str(b.name, 80) || "عداد", str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null, b.active !== false, req.params.id]);
+  const r = await query("UPDATE f_meters SET name = $1, number = $2, site_id = $3, notes = $4, active = $5, line_id = $7 WHERE id = $6 RETURNING *", [str(b.name, 80) || "عداد", str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null, b.active !== false, req.params.id, Number(b.line_id) || null]);
   res.json(r.rows[0] || {});
 });
 router.post("/books/meters/:id/entries", edit, async (req, res) => {
@@ -315,7 +317,7 @@ router.get("/books/summary", view, async (req, res) => {
     one(`SELECT COALESCE(SUM(cost),0) AS cost FROM f_material_moves WHERE kind = 'use' AND ${D("created_at")}`),
     one(`SELECT COALESCE(SUM(cost),0) AS cost FROM f_material_moves WHERE kind = 'waste' AND ${D("created_at")}`),
     one(`SELECT COALESCE(SUM(cost),0) AS cost FROM f_maint WHERE done_on BETWEEN $1 AND $2`),
-    one(`SELECT COALESCE(SUM(e.amount),0) AS total, COALESCE(SUM(CASE WHEN m.kind = 'elec' THEN e.amount END),0) AS elec, COALESCE(SUM(CASE WHEN m.kind = 'water' THEN e.amount END),0) AS water, COALESCE(SUM(CASE WHEN m.kind = 'gen' THEN e.amount END),0) AS gen FROM f_meter_entries e JOIN f_meters m ON m.id = e.meter_id WHERE e.doc_date BETWEEN $1 AND $2`),
+    one(`SELECT COALESCE(SUM(e.amount),0) AS total, COALESCE(SUM(CASE WHEN m.kind IN ('elec','trans') THEN e.amount END),0) AS elec, COALESCE(SUM(CASE WHEN m.kind = 'water' THEN e.amount END),0) AS water, COALESCE(SUM(CASE WHEN m.kind = 'gen' THEN e.amount END),0) AS gen FROM f_meter_entries e JOIN f_meters m ON m.id = e.meter_id WHERE e.doc_date BETWEEN $1 AND $2`),
   ]);
   const N = (x) => round2(Number(x || 0));
   const store = (await query("SELECT COALESCE(SUM(balance * price),0) AS v FROM f_materials WHERE active AND balance > 0")).rows[0].v;
