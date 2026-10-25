@@ -60,8 +60,19 @@ router.get("/store", view, async (req, res) => {
     month_cost: round2(month.rows.find((x) => x.line_id === l.id)?.cost || 0),
   }));
   const mine = ls.filter((l) => l.users.some((u) => u.id === req.user.id)).map((l) => l.id);
+  // كل واحد بيشوف اللي إله: موظف الخط مواد خطه + العامة، وقطع الصيانة بس للي إله صلاحية صيانة
+  const full = can(req.user, "f_store", "edit") || can(req.user, "f_home");
+  const seesParts = full || can(req.user, "f_machines");
+  const machineLine = new Map(machines.rows.map((m) => [m.id, m.line_id]));
+  const lineOf = (m) => m.line_id || machineLine.get(m.machine_id) || null;
+  const visible = list.filter((m) => {
+    if (m.kind === "part" && !seesParts) return false;
+    if (full || !mine.length) return true;
+    const li = lineOf(m);
+    return !li || mine.includes(li);
+  });
   res.json({
-    items: list,
+    items: visible,
     sites: sites.rows,
     lines: ls,
     my_lines: mine,
@@ -221,6 +232,7 @@ router.post("/store/take", view, async (req, res) => {
       if (Number(m.balance) < qty) throw new Error(`«${m.name}»: الموجود ${Number(m.balance)} ${m.unit} بس.`);
       if (m.kind === "material" && !lineId && !can(req.user, "f_store", "edit")) throw new Error("اختار الخط اللي سحبت إله.");
       if (m.kind === "material" && lineId && myLines.length && !myLines.includes(lineId) && !can(req.user, "f_store", "edit")) throw new Error("بتسحب لخطك بس.");
+      if (m.line_id && myLines.length && !myLines.includes(m.line_id) && !can(req.user, "f_store", "edit")) throw new Error(`«${m.name}» تبع خط ثاني — بتسحب من مواد خطك بس.`);
       await client.query("UPDATE f_materials SET balance = balance - $1 WHERE id = $2", [qty, m.id]);
       await client.query(
         `INSERT INTO f_material_moves (material_id, kind, qty, unit_cost, cost, line_id, machine_id, downtime_id, note, taken_by, created_by)
