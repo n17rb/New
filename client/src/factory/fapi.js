@@ -190,6 +190,11 @@ export const fapi = {
   confirmHandover: (id, signature) => post(`/books/handover/${id}/confirm`, { signature }),
   rejectHandover: (id) => post(`/books/handover/${id}/reject`),
   booksSummary: (p) => get(`/books/summary${qs(p)}`),
+  meters: () => get("/books/meters"),
+  addMeter: (b) => post("/books/meters", b),
+  editMeter: (id, b) => put(`/books/meters/${id}`, b),
+  meterEntry: (id, b) => post(`/books/meters/${id}/entries`, b),
+  meterPaid: (id) => post(`/books/meter-entries/${id}/paid`),
 
   // التأجيل
   postpones: () => get("/orders/postpones"),

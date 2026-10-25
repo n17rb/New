@@ -21,7 +21,7 @@ const balColor = (b) => (b > 0.005 ? "var(--fx-crit)" : b < -0.005 ? "var(--fx-o
 
 export default function Books() {
   const [params, setParams] = useSearchParams();
-  const tabs = [["partners", "الشركات"], ["cash", "الصندوق"], ["recycle", "إعادة التدوير"], ["handover", "التسليم"], ["summary", "الملخّص"]];
+  const tabs = [["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["recycle", "إعادة التدوير"], ["handover", "التسليم"], ["summary", "الملخّص"]];
   const tab = tabs.find((t) => t[0] === params.get("tab"))?.[0] || "partners";
   return (
     <div className="fx-page">
@@ -29,6 +29,7 @@ export default function Books() {
       <div className="fx-tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}</div>
       {tab === "partners" && <Partners />}
       {tab === "cash" && <Cash />}
+      {tab === "utils" && <Utilities />}
       {tab === "recycle" && <Recycle />}
       {tab === "handover" && <Handover />}
       {tab === "summary" && <Summary />}
@@ -565,6 +566,9 @@ function Summary() {
               <Row l="مصاريف الصندوق" v={data.spent.cashbook} tone="var(--fx-crit)" />
               <Row l="دفعنا للموردين" v={data.spent.suppliers} tone="var(--fx-crit)" />
               <Row l="صيانة السيارات" v={data.spent.maintenance} tone="var(--fx-crit)" />
+              <Row l="كهربا" v={data.spent.electricity} tone="var(--fx-crit)" />
+              <Row l="مي" v={data.spent.water} tone="var(--fx-crit)" />
+              <Row l="مولّدات" v={data.spent.generators} tone="var(--fx-crit)" />
               <Row l="مشتريات (فواتير موردين)" v={data.purchases} />
             </section>
             <section className="fx-card"><b>الإنتاج</b>
@@ -582,5 +586,122 @@ function Summary() {
         </>
       )}
     </div>
+  );
+}
+
+// ---------- الكهربا والمي والمولّدات ----------
+const MK = { elec: { icon: "⚡", label: "كهربا", unit: "كيلوواط" }, water: { icon: "💧", label: "مي", unit: "متر³" }, gen: { icon: "🔌", label: "مولّد", unit: "ساعة" } };
+function Utilities() {
+  const fx = useFx();
+  const edit = fx.can("f_money", "edit");
+  const { data, error, reload } = useLoad(() => fapi.meters(), []);
+  const [sheet, setSheet] = useState(null);
+  const [open, setOpen] = useState(null);
+  return (
+    <div className="fx-stack">
+      <Err msg={error} />
+      {!data && !error && <Loading />}
+      {data && (
+        <>
+          <div className="fx-grid2">
+            <div className="fx-card" style={{ textAlign: "center" }}><small className="fx-muted">هالشهر</small><b className="fx-num" style={{ display: "block", fontSize: 22 }}>{money(data.month_total)}</b></div>
+            <div className="fx-card" style={{ textAlign: "center" }}><small className="fx-muted">مش مدفوع</small><b className="fx-num" style={{ display: "block", fontSize: 22, color: data.unpaid_total > 0 ? "var(--fx-crit)" : "var(--fx-ok)" }}>{money(data.unpaid_total)}</b></div>
+          </div>
+          {edit && <button className="fx-btn block" onClick={() => setSheet({ kind: "meter", m: {} })}><FiPlus /> عداد جديد (كهربا، مي، مولّد)</button>}
+          {data.meters.length === 0 && <Empty title="ما في عدادات" text="ضيف عداد الكهربا برقمه، وعداد المي، والمولّدات." />}
+          {data.meters.map((m) => (
+            <section key={m.id} className="fx-card fx-stack" style={{ gap: 8, opacity: m.active ? 1 : 0.6 }}>
+              <div className="fx-row" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+                <span><b>{MK[m.kind].icon} {m.name}</b><br /><small className="fx-muted">{[m.number && `رقم ${m.number}`, m.site_name].filter(Boolean).join(" · ") || MK[m.kind].label}</small></span>
+                <span style={{ textAlign: "end" }}><small className="fx-muted">هالسنة</small><br /><b className="fx-num">{money(m.year)}</b></span>
+              </div>
+              <div className="fx-kv"><span>هالشهر</span><b>{money(m.month)}</b></div>
+              {m.last_reading != null && <div className="fx-kv"><span>آخر قراءة</span><b className="fx-num">{num(m.last_reading)}</b></div>}
+              {m.unpaid > 0 && <div className="fx-kv"><span>مش مدفوع</span><b style={{ color: "var(--fx-crit)" }}>{money(m.unpaid)}</b></div>}
+              <div className="fx-row" style={{ gap: 8 }}>
+                {edit && m.active && <button className="fx-btn sm pri" onClick={() => setSheet({ kind: "entry", m })}><FiPlus /> {m.kind === "elec" ? "فاتورة" : m.kind === "water" ? "قراءة" : "تعبئة/فاتورة"}</button>}
+                {m.entries.length > 0 && <button className="fx-btn sm" onClick={() => setOpen(open === m.id ? null : m.id)}>{open === m.id ? "سكّر" : `السجل (${m.entries.length})`}</button>}
+                {edit && <button className="fx-btn sm" onClick={() => setSheet({ kind: "meter", m })}>تعديل</button>}
+              </div>
+              {open === m.id && (
+                <div className="fx-list">
+                  {m.entries.map((e) => (
+                    <div key={e.id} className="fx-item">
+                      <span className="t">
+                        <b>{date(e.doc_date)} · {money(e.amount)} د.أ{e.bill_no ? ` · فاتورة ${e.bill_no}` : ""}</b>
+                        <span>{[e.reading != null && `قراءة ${num(e.reading)}`, e.consumption != null && `استهلاك ${num(e.consumption)} ${MK[m.kind].unit}`, e.unit_price != null && `× ${e.unit_price}`, e.liters != null && `${num(e.liters)} لتر ديزل`, e.by_name, e.note].filter(Boolean).join(" · ")}</span>
+                      </span>
+                      {e.photo_url && <a href={e.photo_url} target="_blank" rel="noreferrer"><img className="fx-photo" src={e.photo_url} alt="" /></a>}
+                      {e.paid ? <span className="fx-pill ok">مدفوعة</span> : edit && <Act className="fx-btn sm ok" onClick={async () => { await fapi.meterPaid(e.id); reload(); }}>دفعت</Act>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </>
+      )}
+      {sheet?.kind === "meter" && <MeterSheet m={sheet.m} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "entry" && <MeterEntrySheet m={sheet.m} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+    </div>
+  );
+}
+function MeterSheet({ m, onClose, onDone }) {
+  const fx = useFx();
+  const [f, setF] = useState({ kind: m.kind || "elec", name: m.name || "", number: m.number || "", notes: m.notes || "", active: m.active !== false });
+  const [err, setErr] = useState("");
+  return (
+    <Sheet title={m.id ? `تعديل ${m.name}` : "عداد جديد"} onClose={onClose}>
+      <div className="fx-stack">
+        {!m.id && <div className="fx-chips">{Object.entries(MK).map(([k, v]) => <button key={k} type="button" className={`fx-chip ${f.kind === k ? "on" : ""}`} onClick={() => setF({ ...f, kind: k })}>{v.icon} {v.label}</button>)}</div>}
+        <label className="fx-field">الاسم<input className="fx-input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={f.kind === "elec" ? "مثلًا: كهربا المصنع ١" : f.kind === "water" ? "مثلًا: عداد المي على التنك" : "مثلًا: المولّد الكبير"} /></label>
+        <label className="fx-field">{f.kind === "gen" ? "الرقم/الموديل" : "رقم العداد"}<input className="fx-input" dir="ltr" value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></label>
+        <label className="fx-field">ملاحظات<input className="fx-input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></label>
+        {m.id && <label className="fx-row" style={{ gap: 8 }}><input type="checkbox" checked={!f.active} onChange={(e) => setF({ ...f, active: !e.target.checked })} /> موقّف</label>}
+        <Err msg={err} />
+        <Act className="fx-btn pri block" onClick={async () => { setErr(""); try { m.id ? await fapi.editMeter(m.id, f) : await fapi.addMeter(f); fx.toast("انحفظ"); onDone(); } catch (e) { setErr(e.message); } }}>حفظ</Act>
+      </div>
+    </Sheet>
+  );
+}
+function MeterEntrySheet({ m, onClose, onDone }) {
+  const fx = useFx();
+  const water = m.kind === "water", gen = m.kind === "gen";
+  const [f, setF] = useState({ doc_date: today(), reading: "", unit_price: m.last_price != null ? String(m.last_price) : "", amount: "", liters: "", bill_no: "", paid: false, photo_url: "", note: "" });
+  const [err, setErr] = useState("");
+  const set = (k) => (e) => setF({ ...f, [k]: e?.target ? e.target.value : e });
+  const prev = m.last_reading;
+  const cons = f.reading !== "" && prev != null ? Math.round((Number(f.reading) - prev) * 100) / 100 : null;
+  const auto = cons != null && f.unit_price !== "" ? Math.round(cons * Number(f.unit_price) * 100) / 100 : null;
+  return (
+    <Sheet title={`${MK[m.kind].icon} ${m.name}`} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-field">{water ? "تاريخ القراءة" : "تاريخ الفاتورة"}<DateInput value={f.doc_date} onChange={set("doc_date")} ariaLabel="التاريخ" /></div>
+        {(water || !gen) && (
+          <label className="fx-field">قراءة العداد {water ? "الجديدة" : "(اختياري)"}{prev != null ? <small className="fx-muted"> — القديمة {num(prev)}</small> : null}
+            <input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" value={f.reading} onChange={set("reading")} />
+          </label>
+        )}
+        {cons != null && <div className="fx-note sky">الاستهلاك: <b>{num(cons)} {MK[m.kind].unit}</b>{cons < 0 ? " — القراءة أقل من القديمة!" : ""}</div>}
+        {water && (
+          <label className="fx-field">سعر المتر هالمرة (د.أ) <small className="fx-muted">بيتغيّر — اكتبه كل مرة</small>
+            <input className="fx-input fx-num" type="number" inputMode="decimal" value={f.unit_price} onChange={set("unit_price")} />
+          </label>
+        )}
+        {gen && <label className="fx-field">ديزل (لتر)<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.liters} onChange={set("liters")} /></label>}
+        <label className="fx-field">{water ? "المبلغ" : gen ? "الكلفة" : "قيمة الفاتورة"} (د.أ){auto != null ? <small className="fx-muted"> — محسوب {money(auto)}</small> : null}
+          <input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" value={f.amount} onChange={set("amount")} placeholder={auto != null ? money(auto) : "0"} />
+        </label>
+        {!water && <label className="fx-field">رقم الفاتورة<input className="fx-input" dir="ltr" value={f.bill_no} onChange={set("bill_no")} /></label>}
+        <label className="fx-row" style={{ gap: 8 }}><input type="checkbox" checked={f.paid} onChange={(e) => setF({ ...f, paid: e.target.checked })} /> مدفوعة</label>
+        <PhotoInput label={water ? "صورة العداد (اختياري)" : "صورة الفاتورة (اختياري)"} value={f.photo_url} onChange={set("photo_url")} kind="doc" />
+        <label className="fx-field">ملاحظة<input className="fx-input" value={f.note} onChange={set("note")} /></label>
+        <Err msg={err} />
+        <Act className="fx-btn pri block fx-huge" disabled={f.amount === "" && f.reading === "" && auto == null} onClick={async () => {
+          setErr("");
+          try { const r = await fapi.meterEntry(m.id, f); fx.toast(`انسجّل — ${money(r.amount)} د.أ`); onDone(); } catch (e) { setErr(e.message); }
+        }}>✓ سجّل</Act>
+      </div>
+    </Sheet>
   );
 }
