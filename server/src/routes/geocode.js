@@ -25,18 +25,9 @@ router.post("/resolve-link", async (req, res) => {
 });
 
 // ============================================================
-// خريطة جوجل الحقيقية (Map Tiles API) — نفس شكل خرائط جوجل، بلون فاتح مريح
+// خريطة جوجل الحقيقية (Map Tiles API) — نفس شكل خرائط جوجل المعتاد بالزبط (بدون تغيير ألوان)
 // المفتاح: GOOGLE_MAPS_KEY بـRender (فعّل «Map Tiles API» بنفس مشروع جوجل، وقيّد المفتاح على دومين التطبيق)
 // ============================================================
-const MAP_STYLE = [
-  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
-  { featureType: "poi", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#cfe6f7" }] },
-  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#f5f8fb" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#e4eef8" }] },
-];
 let mapSession = null;
 router.get("/map-session", async (req, res) => {
   const key = process.env.GOOGLE_MAPS_KEY;
@@ -46,7 +37,7 @@ router.get("/map-session", async (req, res) => {
     const r = await fetch(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(key)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mapType: "roadmap", language: "ar", region: "JO", scale: "scaleFactor2x", highDpi: true, styles: MAP_STYLE }),
+      body: JSON.stringify({ mapType: "roadmap", language: "ar", region: "JO", scale: "scaleFactor2x", highDpi: true }),
     });
     const j = await r.json();
     if (!j.session) {
