@@ -9,7 +9,7 @@ import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
 import { PaySheet } from "./Debts.jsx";
 import { smartFilter } from "../smartSearch.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -125,8 +125,13 @@ export default function Drive() {
             <span>{stops.length} زبون · {num(t.load)} كرتونة · {t.vehicle_name}</span>
           </div>
 
+          {/* أمين المستودع حمّل: السائق بيراجع العدد وبيوقّع */}
+          {t.status === "planned" && t.load_confirmed_at && t.load_confirmed_by && t.load_confirmed_by !== fx.user.id && !t.driver_ack_at && (
+            <LoadAck t={t} onDone={reload} />
+          )}
+
           {/* الخطوة الجاية: زر وحدة كبير */}
-          {t.status === "planned" && (
+          {t.status === "planned" && !(t.load_confirmed_at && t.load_confirmed_by && t.load_confirmed_by !== fx.user.id && !t.driver_ack_at) && (
             <div className="fx-drv-step">
               <span className="lbl">أول زبون</span>
               <b className="nm">{stops[0]?.customer_name}</b>
@@ -292,6 +297,8 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const [cliqPhoto, setCliqPhoto] = useState(null);
   const cliqN = cliqOn ? Math.min(cashN, Number(cliq) || 0) : 0;
   const cliqMissing = cliqN > 0 && !cliqPhoto;
+  const [sig, setSig] = useState(null);
+  const [sigOn, setSigOn] = useState(false);
 
   async function send() {
     setErr("");
@@ -305,7 +312,7 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
           ...Object.entries(freeB).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: 0, bonus: Number(q) })),
         ],
         exchanges: exchangeList(exch),
-        cash: Math.round((cashN - cliqN) * 100) / 100, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
+        cash: Math.round((cashN - cliqN) * 100) / 100, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined, signature: sig || undefined, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       } });
       if (q.queued) { fx.toast("📶 ما في شبكة — التسليم انحفظ على التلفون وبينبعت لحاله أول ما ترجع"); onDone({ queued: true }); return; }
       const r = q.data;
@@ -416,6 +423,7 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
         {cashN > 0 && (
           <CliqBox on={cliqOn} setOn={(v) => { setCliqOn(v); if (v && !cliq) setCliq(String(cashN)); }} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={cashN} />
         )}
+        {sigOn ? <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" /> : <button type="button" className="fx-btn block" onClick={() => setSigOn(true)}>✍️ خلّي الزبون يوقّع</button>}
         <PhotoInput label="صورة (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         <Err msg={err} />
         <Act className="fx-btn ok block fx-huge" disabled={(debt > 0.005 && !canCredit) || cliqMissing} onClick={send}>
@@ -423,6 +431,39 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
         </Act>
       </div>
     </Sheet>
+  );
+}
+
+// استلام الحمولة: العدد اللي حمّله أمين المستودع — «استلمت صح» بتوقيع، أو «في فرق»
+function LoadAck({ t, onDone }) {
+  const fx = useFx();
+  const [sig, setSig] = useState(null);
+  const [diff, setDiff] = useState(false);
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const per = new Map();
+  for (const m of t.loaded_per || []) per.set(m.product_id, { name: m.name, qty: (per.get(m.product_id)?.qty || 0) + m.qty });
+  const rows = [...per.values()].filter((x) => x.qty > 0);
+  const total = rows.reduce((a, x) => a + x.qty, 0);
+  return (
+    <section className="fx-card fx-stack" style={{ gap: 10, borderInlineStart: "4px solid var(--fx-sky)" }}>
+      <b>📦 السيارة تحمّلت — راجع العدد ووقّع</b>
+      <div>
+        {rows.map((x) => <div key={x.name} className="fx-kv"><span>{x.name}</span><b className="fx-num">{num(x.qty)}</b></div>)}
+        <div className="fx-kv total"><span>المجموع</span><b className="fx-num">{num(total)} كرتونة</b></div>
+      </div>
+      <SignaturePad onChange={setSig} label="توقيعك" hint="وقّع بإصبعك إنك استلمت" />
+      {diff && <label className="fx-field">شو الفرق؟<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا: ناقص ٥ كراتين كاسات" autoFocus /></label>}
+      <Err msg={err} />
+      {!diff ? (
+        <div className="fx-grid2">
+          <Act className="fx-btn ok fx-huge" disabled={!sig} onClick={async () => { setErr(""); try { await fapi.ackLoad(t.id, { signature: sig, ok: true }); fx.toast("✓ وقّعت — بتقدر تطلع"); onDone(); } catch (e) { setErr(e.message); } }}>✓ استلمت العدد صح</Act>
+          <button className="fx-btn" onClick={() => setDiff(true)}>في فرق</button>
+        </div>
+      ) : (
+        <Act className="fx-btn danger block" disabled={!sig || !note.trim()} onClick={async () => { setErr(""); try { await fapi.ackLoad(t.id, { signature: sig, ok: false, note }); fx.toast("وصل للإدارة وأمين المستودع"); onDone(); } catch (e) { setErr(e.message); } }}>بلّغ عن الفرق ووقّع</Act>
+      )}
+    </section>
   );
 }
 

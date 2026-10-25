@@ -3,7 +3,7 @@ import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km, chainNearest } from "../../utils/factoryGeo.js";
 import { smartFilter } from "../../utils/fuzzySearch.js";
-import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once } from "./lib.js";
+import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once, pushTo } from "./lib.js";
 import { cleanCustomer, nextSeq } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 import { factoryPoint } from "./lib.js";
@@ -93,6 +93,27 @@ export async function confirmLoad(tripId, userId, extra = []) {
   await query("UPDATE f_trips SET load_confirmed_at = now(), load_confirmed_by = $1, extra_cartons = $2 WHERE id = $3", [userId, extraTotal, tripId]);
 }
 
+// السائق بيوقّع على استلام الحمولة — أو بيبلّغ إنه في فرق
+router.post("/driver/trips/:id/ack-load", drive, async (req, res) => {
+  const t = await myTrip(req, req.params.id);
+  if (!t) return bad(res, "الرحلة مش إلك.", 403);
+  if (!t.load_confirmed_at) return bad(res, "لسا ما تحمّلت السيارة.");
+  if (t.driver_ack_at) return res.json({ ok: true });
+  const sig = String(req.body?.signature || "");
+  const ok = req.body?.ok !== false;
+  const note = String(req.body?.note || "").trim().slice(0, 500);
+  if (!/^data:image\//.test(sig)) return bad(res, "وقّع بإصبعك.");
+  if (!ok && !note) return bad(res, "اكتب شو الفرق (مثلًا: ناقص ٥ كراتين كاسات).");
+  await query("UPDATE f_trips SET driver_ack_at = now(), driver_ack_sig = $1, driver_ack_note = $2 WHERE id = $3", [sig.slice(0, 200000), ok ? null : note, t.id]);
+  if (!ok) {
+    await alert({ level: "crit", kind: "load_dispute", ref: t.id, title: `⚠️ ${t.driver_name || "السائق"}: الحمولة مش مطابقة — ${t.vehicle_name}`, body: `${note} — صحّح الحمولة من الجرد.` });
+    if (t.load_confirmed_by) pushTo(t.load_confirmed_by, { title: "⚠️ السائق بيقول في فرق بالحمولة", body: note, url: "/f/stock?tab=load" }).catch(() => {});
+  } else if (t.load_confirmed_by) {
+    pushTo(t.load_confirmed_by, { title: `✅ ${t.driver_name || "السائق"} وقّع استلام الحمولة`, body: t.vehicle_name, url: "/f/stock?tab=load" }).catch(() => {});
+  }
+  res.json({ ok: true });
+});
+
 router.post("/driver/trips/:id/confirm-load", drive, async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t) return bad(res, "الرحلة مش إلك.", 403);
@@ -136,6 +157,10 @@ router.post("/driver/trips/:id/start", drive, async (req, res) => {
   const t = await myTrip(req, req.params.id);
   if (!t) return bad(res, "الرحلة مش إلك.", 403);
   if (t.status !== "planned") return bad(res, "الرحلة بلشت من قبل.");
+  // أمين المستودع حمّل السيارة؟ السائق لازم يوقّع إنه استلم العدد قبل ما يطلع
+  if (t.load_confirmed_at && t.load_confirmed_by && t.load_confirmed_by !== req.user.id && !t.driver_ack_at && t.driver_id === req.user.id) {
+    return res.status(409).json({ error: "وقّع أول إنك استلمت الحمولة.", code: "LOAD_ACK" });
+  }
   // بدون صور عداد وديزل: إذا الحمولة ما تأكدت من المستودع، كبسة «ابدأ» بتأكدها
   await startTrip(t, req.user.id);
   // أول زبون: بنحسب وقت الوصول من مكان السائق وبنجهّزله رسالة
@@ -459,6 +484,13 @@ router.post("/driver/trips/:id/return", drive, once(async (req, res) => {
     await alert({ level: "warn", kind: "km_mismatch", ref: t.id, title: `الكيلومترات مش مطابقة — ${t.vehicle_name}`, body: `العداد ${odoKm} كم والتتبع ${Math.round(t.gps_km)} كم. يمكن السيارة مشيت والتلفون مسكّر.` });
   }
   await alert({ level: "info", kind: "returned", ref: t.id, title: `${t.vehicle_name} رجعت — ${t.driver_name || ""}`, body: `الكاش المطلوب ${t.cash_due.toFixed(2)} د.أ. بانتظار تسليم الكاش والمرتجع.` });
+  {
+    const ex = (await query("SELECT COALESCE(SUM(x.qty),0)::int AS n FROM f_order_exchanges x JOIN f_orders o ON o.id = x.order_id WHERE o.trip_id = $1 AND o.status = 'delivered'", [t.id])).rows[0].n;
+    if (ex > 0) {
+      const staff = (await query("SELECT id, role, permissions FROM users WHERE status = 'active'")).rows.filter((u) => u.role !== "super_admin" && can(u, "f_stock", "edit"));
+      for (const u of staff) pushTo(u.id, { title: `🔁 ${t.driver_name || "السائق"} راجع ومعه ${ex} تالف من الزباين`, body: "استلمه وعدّه وافرز الصالح للإنتاج.", url: "/f/stock?tab=load" }).catch(() => {});
+    }
+  }
   res.json({ ok: true, required_cash: t.cash_due });
 }));
 

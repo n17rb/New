@@ -1291,3 +1291,13 @@ CREATE TABLE IF NOT EXISTS f_meter_entries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_f_meter_entries ON f_meter_entries(meter_id, doc_date DESC, id DESC);
+
+-- استلام الحمولة: السائق بيوقّع إنه استلم العدد اللي حمّله أمين المستودع (أو بيقول في فرق)
+ALTER TABLE f_trips ADD COLUMN IF NOT EXISTS driver_ack_at TIMESTAMPTZ;
+ALTER TABLE f_trips ADD COLUMN IF NOT EXISTS driver_ack_sig TEXT;
+ALTER TABLE f_trips ADD COLUMN IF NOT EXISTS driver_ack_note TEXT;
+-- سلسلة التالف: أمين المستودع استلم كم فعليًا ← الإنتاج أكّد الاستلام ← الإنتاج صلّح كم
+ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS expected INTEGER;
+ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS received_qty INTEGER;
+ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS received_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE f_salvage ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ;

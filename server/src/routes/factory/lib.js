@@ -196,6 +196,8 @@ export async function messageText(kind, d) {
   switch (kind) {
     case "received":
       return `أهلاً ${d.customer}. وصلنا طلبك رقم ${d.order}: ${d.items}.${d.due ? ` موعد التوصيل: ${d.due}.` : ""}${link}${sign}`;
+    case "loaded":
+      return `أهلاً ${d.customer} 🌷\nطلبك رقم ${d.order} (${d.items}) تحمّل على السيارة، والسائق ${d.driver} جاي عليك${d.eta ? ` حوالي الساعة ${fmtTime(d.eta)}` : " اليوم"} 🚚${link}${sign}`;
     case "scheduled":
       return `طلبك رقم ${d.order} رح يوصل ${d.day || "اليوم"} حوالي الساعة ${fmtTime(d.eta)} مع السائق ${d.driver} (${d.vehicle}).${link}${sign}`;
     case "onway":
