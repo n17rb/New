@@ -126,14 +126,14 @@ export async function closeAlerts(kind, ref, userId = null) {
 }
 
 // ---------- كشف حساب الزبون ----------
-export async function postLedger(client, { customerId, kind, amount, orderId = null, tripId = null, method = null, chequeNo = null, chequeDate = null, note = null, userId = null }) {
+export async function postLedger(client, { customerId, kind, amount, orderId = null, tripId = null, method = null, chequeNo = null, chequeDate = null, note = null, userId = null, photoUrl = null }) {
   const q = client ? (t, p) => client.query(t, p) : query;
   const r = await q("UPDATE f_customers SET balance = balance + $1 WHERE id = $2 RETURNING balance", [round2(amount), customerId]);
   const after = r.rows[0]?.balance ?? 0;
   await q(
-    `INSERT INTO f_ledger (customer_id, kind, amount, balance_after, order_id, trip_id, method, cheque_no, cheque_date, note, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [customerId, kind, round2(amount), after, orderId, tripId, method, chequeNo, chequeDate || null, note, userId]
+    `INSERT INTO f_ledger (customer_id, kind, amount, balance_after, order_id, trip_id, method, cheque_no, cheque_date, note, created_by, photo_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [customerId, kind, round2(amount), after, orderId, tripId, method, chequeNo, chequeDate || null, note, userId, photoUrl]
   );
   return Number(after);
 }

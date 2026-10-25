@@ -257,7 +257,10 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   total = round2(total);
   const cash = round2(b.cash);
   if (cash < 0) return bad(res, "المبلغ غير صحيح.");
-  const debt = round2(total - cash);
+  // كليك: الزبون حوّل — ما بينحسب على كاش السائق، ولازم صورة الحوالة
+  const cliq = Math.max(0, round2(b.cliq) || 0);
+  if (cliq > 0 && !b.cliq_photo) return bad(res, "صوّر وصل الكليك من تلفون الزبون.");
+  const debt = round2(total - cash - cliq);
   const c = (await query("SELECT * FROM f_customers WHERE id = $1", [o.customer_id])).rows[0];
   const newBal = round2(Number(c.balance) + debt);
   let overLimit = false;
@@ -305,6 +308,10 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
     );
     balance = await postLedger(client, { customerId: c.id, kind: "invoice", amount: total, orderId: o.id, tripId: t.id, note: `فاتورة طلب #${o.id}`, userId: req.user.id });
     if (cash > 0) balance = await postLedger(client, { customerId: c.id, kind: "payment", amount: -cash, orderId: o.id, tripId: t.id, method: "cash", note: `كاش مع ${t.driver_name || "السائق"}`, userId: req.user.id });
+    if (cliq > 0) {
+      balance = await postLedger(client, { customerId: c.id, kind: "payment", amount: -cliq, orderId: o.id, tripId: t.id, method: "cliq", note: `كليك — صوّره ${t.driver_name || "السائق"}`, userId: req.user.id, photoUrl: b.cliq_photo });
+      await client.query("UPDATE f_orders SET cliq_paid = $1, cliq_photo = $2 WHERE id = $3", [cliq, b.cliq_photo, o.id]);
+    }
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -340,12 +347,13 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   } else if (b.lat && !c.lat) {
     await query("UPDATE f_customers SET lat = $1, lng = $2 WHERE id = $3", [Number(b.lat), Number(b.lng), c.id]);
   }
+  if (cliq > 0) await alert({ level: "info", kind: "cliq", ref: o.id, title: `📲 كليك ${cliq.toFixed(2)} د.أ من ${c.name}`, body: `صوّر الوصل ${t.driver_name || "السائق"} — تأكد إنها وصلت الحساب. الصورة: ${b.cliq_photo}` });
   if (debt > 0 && !overLimit) await alert({ level: "warn", kind: "new_debt", ref: c.id, title: `💳 ${c.name} دفع ${cash.toFixed(2)} من ${total.toFixed(2)}`, body: `صار عليه دين ${debt.toFixed(2)} د.أ — رصيده الكلي ${balance.toFixed(2)}. مع ${t.driver_name || "السائق"}.` });
   if (overLimit) await alert({ level: "crit", kind: "credit", ref: c.id, title: `دين فوق السقف — ${c.name}`, body: `صار عليه ${balance.toFixed(2)} د.أ بعد تسليم طلب #${o.id} مع ${t.driver_name || "السائق"}.` });
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
     customerId: c.id, orderId: o.id, kind: "delivered",
-    data: { order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name, bonus: a.bonus }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: cash, balance, invoice: token, track }, userId: req.user.id,
+    data: { cliq, order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name, bonus: a.bonus }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: round2(cash + cliq), balance, invoice: token, track }, userId: req.user.id,
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });
@@ -353,10 +361,10 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   const exTxt = exchanges.length ? ` · بدّل ${exchanges.reduce((a, x) => a + x.qty, 0)} تالف` : "";
   await pushManagers({
     title: sale ? `🛒 ${t.driver_name || "المندوب"} باع لـ ${c.name}` : `✅ ${t.driver_name || "السائق"} سلّم ${c.name}`,
-    body: `${cartons} كرتونة${exTxt} · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${sale ? "" : left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
+    body: `${cartons} كرتونة${exTxt} · فاتورة ${total.toFixed(2)} · كاش ${cash.toFixed(2)}${cliq > 0 ? ` · كليك ${cliq.toFixed(2)}` : ""}${debt > 0 ? ` · دين ${debt.toFixed(2)}` : ""}${sale ? "" : left ? ` · باقي ${left} وقفات` : " · خلّص كل الوقفات"}`,
     url: "/f/trips", tag: `fd-${o.id}`,
   });
-  res.json({ ok: true, total, cash, debt, balance, message_id: msg, remaining_stops: left, order_id: o.id, invoice_token: token, customer_name: c.name, phone: c.phone });
+  res.json({ ok: true, total, cash, cliq, debt, balance, message_id: msg, remaining_stops: left, order_id: o.id, invoice_token: token, customer_name: c.name, phone: c.phone });
 }
 
 router.post("/driver/orders/:id/fail", drive, once(async (req, res) => {

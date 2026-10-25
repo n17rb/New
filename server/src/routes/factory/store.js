@@ -182,7 +182,20 @@ router.post("/store/receive", editStore, async (req, res) => {
     client.release();
   }
   await query("UPDATE f_alerts SET closed_at = now() WHERE kind = 'material_low' AND ref_id = ANY($1::int[]) AND closed_at IS NULL", [clean.map((l) => l.id)]);
-  res.json({ ok: true, total: round2(total) });
+  // من شركة مسجّلة؟ الفاتورة بتنضاف على حسابها (صار علينا إلها)
+  let partner = null;
+  const pid = numOrNull(req.body?.partner_id);
+  if (pid && total > 0) {
+    const names = (await query("SELECT id, name, unit FROM f_materials WHERE id = ANY($1::int[])", [clean.map((l) => l.id)])).rows;
+    const { addEntry } = await import("./books.js");
+    const r = await addEntry(pid, {
+      kind: "purchase", amount: round2(total), ref_no: invoice, note: note || "بضاعة دخلت المستودع", file_url: req.body?.file_url || null,
+      items: clean.map((l) => { const m = names.find((x) => x.id === l.id); return { name: m?.name || "", qty: l.qty, unit: m?.unit || "", price: l.cost ?? 0 }; }),
+    }, req.user);
+    await query("UPDATE f_material_moves SET partner_id = $1 WHERE kind = 'receive' AND created_by = $2 AND created_at > now() - interval '1 minute' AND partner_id IS NULL", [pid, req.user.id]);
+    partner = { id: pid, balance: Number(r.partner.balance), name: r.partner.name, phone: r.partner.phone };
+  }
+  res.json({ ok: true, total: round2(total), partner });
 });
 
 // ---------- سحب من المستودع: الإنتاج لخطه، أو فني الصيانة لماكنة ----------

@@ -182,7 +182,7 @@ export function PhotoInput({ label, hint, value, onChange, kind = "f" }) {
 }
 
 // توقيع الزبون بإصبعه
-export function SignaturePad({ onChange }) {
+export function SignaturePad({ onChange, label = "توقيع الزبون", hint = "خلي الزبون يوقّع بإصبعه هون" }) {
   const ref = useRef(null);
   const drawing = useRef(false);
   const [signed, setSigned] = useState(false);
@@ -216,10 +216,10 @@ export function SignaturePad({ onChange }) {
   }, [onChange]);
   return (
     <div className="fx-field">
-      توقيع الزبون
+      {label}
       <canvas ref={ref} className="fx-sig" width={600} height={240} />
       <div className="fx-row" style={{ justifyContent: "space-between" }}>
-        <small className="fx-muted">{signed ? "تم التوقيع" : "خلي الزبون يوقّع بإصبعه هون"}</small>
+        <small className="fx-muted">{signed ? "تم التوقيع" : hint}</small>
         <button type="button" className="fx-link" onClick={() => { const cv = ref.current; cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); setSigned(false); onChange(null); }}>امسح</button>
       </div>
     </div>

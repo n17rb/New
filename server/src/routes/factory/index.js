@@ -17,6 +17,7 @@ import maint from "./maint.js";
 import store from "./store.js";
 import postpone from "./postpone.js";
 import line from "./line.js";
+import books from "./books.js";
 
 // ============================================================
 // موج للمصانع — كل مسارات المصنع تحت /api/factory
@@ -38,6 +39,7 @@ router.use(corrections);
 router.use(maint);
 router.use(store);
 router.use(line);
+router.use(books);
 
 export const factoryPublicRouter = publicRoutes;
 export { factoryWatch } from "./reports.js";
