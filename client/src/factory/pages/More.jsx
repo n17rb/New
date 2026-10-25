@@ -61,9 +61,9 @@ export default function More({ onLogout }) {
         </a>
       )}
       {plants.length > 0 && (
-        <div className="fx-grid2">
+        <div className="fx-plants" role="list">
           {plants.map((l) => (
-            <button key={l.id} className="fx-tile" style={{ padding: 16, opacity: l._new ? 0.75 : 1 }} onClick={() => openPlant(l)}>
+            <button key={l.id} role="listitem" className="fx-tile" style={{ padding: 16, opacity: l._new ? 0.75 : 1 }} onClick={() => openPlant(l)}>
               <span style={{ fontSize: 30 }}>{lineType(l.name) === "cups" ? "🥤" : lineType(l.name) === "bottles" ? "🍶" : "🏭"}</span>
               <span className="n" style={{ fontSize: 16, fontWeight: 800 }}>{plantName(l.name)}</span>
               <small>{l._new ? "اكبس لتجهيزه" : "مواد أولية · قطع صيانة · تعقيم"}</small>

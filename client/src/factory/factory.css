@@ -872,3 +872,8 @@ a.fx-pill { text-decoration: none; }
 .fx-trips-day[open] summary { margin-bottom: 8px; }
 .fx-date .said.bad { color: var(--fx-crit); font-weight: 700; }
 .fx-free-bonus { background: #effaf3; border-radius: 14px; padding: 8px; }
+
+/* المصانع بالمزيد: شريط بينسحب جنب (مصنعين بالشاشة والثالث بالسحب) */
+.fx-plants { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.fx-plants::-webkit-scrollbar { display: none; }
+.fx-plants > .fx-tile { flex: 0 0 calc(50% - 5px); scroll-snap-align: start; min-width: 0; }
