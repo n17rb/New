@@ -3,6 +3,7 @@ import { useState } from "react";
 import { FiCheckCircle, FiChevronLeft, FiChevronDown, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
+import { lineType, plantName, plantBg, plantIcon } from "../plants.js";
 import { useFx, useLoad, money, num, time, Err, Loading, Reload, Act } from "../ui.jsx";
 
 const STATE = {
@@ -77,12 +78,43 @@ export default function Home() {
             <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1.2, margin: "4px 0" }} className="fx-num">{money(h.sales.total)} <small style={{ fontSize: 15, opacity: 0.85 }}>د.أ</small></div>
             <small style={{ opacity: 0.9 }}>{num(h.sales.cartons)} كرتونة · {h.sales.orders} طلب</small>
           </button>
-          <div className="fx-grid2" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+          {/* إنتاج اليوم لكل مصنع */}
+          {h.production_by_line?.length > 0 && (
+            <section className="fx-card fx-stack" style={{ gap: 12 }}>
+              <div className="fx-row" style={{ justifyContent: "space-between" }}>
+                <b>إنتاج اليوم</b>
+                <span className="fx-num" style={{ fontWeight: 800, color: "var(--fx-navy)" }}>{num(h.production)} <small className="fx-muted" style={{ fontWeight: 500 }}>كرتونة</small></span>
+              </div>
+              {h.production_by_line.map((l) => {
+                const max = Math.max(1, ...h.production_by_line.map((x) => x.n));
+                const t = lineType(l.name);
+                return (
+                  <button key={l.id} className="fx-plain" style={{ display: "grid", gap: 6, textAlign: "start", width: "100%" }} onClick={() => nav(l.id ? `/f/plant/${l.id}` : "/f/stock")}>
+                    <span className="fx-row" style={{ gap: 10, flexWrap: "nowrap" }}>
+                      {l.photo_url
+                        ? <img src={l.photo_url} alt="" style={{ width: 38, height: 38, borderRadius: 11, objectFit: "cover", flex: "none" }} />
+                        : <span style={{ width: 38, height: 38, borderRadius: 11, display: "grid", placeItems: "center", background: l.id ? plantBg(t) : "var(--fx-surface-2)", fontSize: 19, flex: "none" }}>{l.id ? plantIcon(t) : "📦"}</span>}
+                      <span className="fx-grow" style={{ minWidth: 0 }}>
+                        <b style={{ fontSize: 14.5 }}>{l.id ? plantName(l.name) : l.name}</b>
+                        <small className="fx-muted" style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.products.length ? l.products.map((p) => `${num(p.n)} ${p.name}`).join(" · ") : "ما في إنتاج لسا"}</small>
+                      </span>
+                      <b className="fx-num" style={{ fontSize: 18, color: l.n ? "var(--fx-navy)" : "var(--fx-muted)" }}>{num(l.n)}</b>
+                    </span>
+                    <span style={{ height: 6, borderRadius: 6, background: "var(--fx-surface-2)", overflow: "hidden" }}>
+                      <span style={{ display: "block", width: `${(l.n / max) * 100}%`, height: "100%", background: l.id ? plantBg(t) : "#9fb3c8", borderRadius: 6 }} />
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          )}
+
+          <div className="fx-grid2" style={{ gridTemplateColumns: h.production_by_line?.length ? "1fr 1fr" : "1fr 1fr 1fr" }}>
             {[
-              ["إنتاج اليوم", num(h.production), "كرتونة", "/f/stock"],
+              !h.production_by_line?.length && ["إنتاج اليوم", num(h.production), "كرتونة", "/f/stock"],
               ["كاش مع السواقين", money(h.cash_with_drivers), "د.أ", "/f/jard"],
               ["ديون الزباين", money(h.debts.total), `${h.debts.customers} زبون`, "/f/debts"],
-            ].map(([l, v, sub, to]) => (
+            ].filter(Boolean).map(([l, v, sub, to]) => (
               <button key={l} className="fx-card" style={{ border: 0, font: "inherit", cursor: "pointer", textAlign: "center", padding: "14px 6px" }} onClick={() => nav(to)}>
                 <small className="fx-muted" style={{ fontSize: 11.5 }}>{l}</small>
                 <b className="fx-num" style={{ display: "block", fontSize: 18, margin: "4px 0 2px" }}>{v}</b>

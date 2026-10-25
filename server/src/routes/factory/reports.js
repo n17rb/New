@@ -36,6 +36,23 @@ router.get("/home", needAny(["f_home"]), async (req, res) => {
        WHERE m.kind = 'damage' AND date_trunc('month', m.created_at AT TIME ZONE 'Asia/Amman') = date_trunc('month', now() AT TIME ZONE 'Asia/Amman')`
     ),
   ]);
+  // الإنتاج اليوم لكل مصنع (ومعه المنتجات)
+  const byLine = (await query(
+    `SELECT l.id, l.name, l.photo_url, COALESCE(SUM(m.qty),0)::int AS n
+     FROM f_plines l LEFT JOIN f_stock_moves m ON m.line_id = l.id AND m.kind = 'production' AND (m.created_at AT TIME ZONE 'Asia/Amman')::date = $1
+     WHERE l.active GROUP BY l.id ORDER BY l.id`,
+    [today]
+  )).rows;
+  const byLineProd = (await query(
+    `SELECT m.line_id, p.name, SUM(m.qty)::int AS n FROM f_stock_moves m JOIN f_products p ON p.id = m.product_id
+     WHERE m.kind = 'production' AND (m.created_at AT TIME ZONE 'Asia/Amman')::date = $1 GROUP BY m.line_id, p.name ORDER BY n DESC`,
+    [today]
+  )).rows;
+  const lineTotal = byLine.reduce((a, l) => a + l.n, 0);
+  const production_by_line = [
+    ...byLine.map((l) => ({ ...l, products: byLineProd.filter((x) => x.line_id === l.id) })),
+    ...(prod.rows[0].n - lineTotal > 0 ? [{ id: 0, name: "بدون مصنع محدد", n: prod.rows[0].n - lineTotal, products: byLineProd.filter((x) => x.line_id == null) }] : []),
+  ];
   const cashWithDrivers = round2(trips.filter((t) => ["active", "returned"].includes(t.status) && !t.settled_at).reduce((s, t) => s + t.cash_due, 0));
   const vstate = vehicles.rows.map((v) => {
     const t = trips.find((x) => x.vehicle_id === v.id && ["active", "returned", "planned"].includes(x.status));
@@ -48,6 +65,7 @@ router.get("/home", needAny(["f_home"]), async (req, res) => {
   res.json({
     date: today,
     production: prod.rows[0].n,
+    production_by_line,
     sales: { total: round2(sales.rows[0].total), cash: round2(sales.rows[0].cash), orders: sales.rows[0].n, cartons: sales.rows[0].cartons },
     cash_with_drivers: cashWithDrivers,
     debts: { total: round2(debts.rows[0].total), customers: debts.rows[0].n },
