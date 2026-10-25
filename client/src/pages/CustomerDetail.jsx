@@ -448,8 +448,10 @@ function LocationSection({ customer, canManage, onChanged }) {
 
         if (!parsed) {
           try {
-            const resolved = await api.resolveMapsLink(pastedLink.trim());
-            parsed = tryParseCoordsFromLink(resolved.resolved_url);
+            const info = await api.placeInfo({ url: pastedLink.trim() });
+            if (info?.latitude != null) parsed = { lat: info.latitude, lng: info.longitude };
+            const clean = String(pastedLink).match(/https?:\/\/[^\s"'<>]+/)?.[0];
+            finalMapsUrl = clean || info?.maps_url || finalMapsUrl;
           } catch {
             // إذا فشل فك الرابط، نحفظ الرابط الأصلي فقط بدون إحداثيات دقيقة
           }

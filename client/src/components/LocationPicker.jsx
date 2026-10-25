@@ -55,9 +55,16 @@ export default function LocationPicker({ value, onChange }) {
     );
   }
 
+  const looksLikeLoc = (t) => /https?:\/\/|\d+\.\d+\s*[,،]\s*\d+\.\d+/.test(String(t || ""));
   function onPaste(text) {
     setLink(text);
-    if (/https?:\/\/|\d+\.\d+\s*,\s*\d+\.\d+/.test(text)) fill({ url: text.trim() });
+    if (looksLikeLoc(text)) fill({ url: text.trim() });
+  }
+  // كبسة وحدة: إذا في رابط منسوخ بنثبّته فورا، وإلا بتفتح خانة اللصق
+  async function pasteTap() {
+    let t = "";
+    try { t = (await navigator.clipboard?.readText?.()) || ""; } catch { /* المتصفح ما سمح */ }
+    if (looksLikeLoc(t)) { setMode("link"); onPaste(t); } else setMode("link");
   }
 
   const set = (k) => (e) => onChange({ ...v, [k]: e.target.value });
@@ -72,7 +79,7 @@ export default function LocationPicker({ value, onChange }) {
           <button type="button" className="loc-btn" disabled={busy} onClick={useMyLocation}>
             <FiMapPin /> {busy ? "جاري التحديد…" : "موقعي الحالي"}
           </button>
-          <button type="button" className="loc-btn" disabled={busy} onClick={() => setMode("link")}>
+          <button type="button" className="loc-btn" disabled={busy} onClick={pasteTap}>
             <FiLink /> لصق رابط
           </button>
         </div>
