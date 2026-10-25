@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiAlertTriangle, FiClipboard, FiPlus, FiPower, FiTruck } from "react-icons/fi";
 import { fapi } from "../fapi.js";
+import { openPrint } from "../printView.js";
 import { TakeSheet } from "./Store.jsx";
 import { plantName } from "../plants.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, Reload, ProductArt, num, time, dateTime, date } from "../ui.jsx";
@@ -291,11 +292,7 @@ table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:7p
 ${t.driver_ack_note ? `<p style="color:#b00"><b>ملاحظة السائق:</b> ${esc(t.driver_ack_note)}</p>` : ""}
 <div class="sig"><div>${esc(t.load_confirmed_by_name || "أمين المستودع")}<br>حمّل</div><div>${t.driver_ack_sig ? `<img src="${t.driver_ack_sig}" alt="">` : "<br><br>"}${esc(t.driver_name || "السائق")} — استلم</div></div>
 <button onclick="print()" style="margin-top:20px;padding:10px 18px">🖨️ اطبع / PDF</button></body></html>`;
-  const w = window.open("", "_blank");
-  if (!w) return fx.toast("اسمح بفتح النوافذ عشان تطبع");
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => { try { w.print(); } catch { /* */ } }, 400);
+  openPrint(html);
 }
 
 function LoadSheet({ t, onClose, onDone }) {
