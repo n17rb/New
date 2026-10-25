@@ -175,6 +175,39 @@ export async function cleanCustomer(b) {
   };
 }
 
+// زبون مكرر؟ نفس رقم التلفون + نفس الموقع (أقل من ١٠٠ متر) = نفس الزبون.
+// نفس الرقم بموقع ثاني = فرع ثاني لنفس المحل، مسموح.
+const SAME_PLACE_KM = 0.1;
+function distKm(a, b) {
+  const R = 6371, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+export async function findSameCustomer(c, q = query, exceptId = 0) {
+  const digits = String(c.phone || "").replace(/\D/g, "").slice(-9);
+  if (digits.length < 7) return { same: null, branches: [] };
+  const rows = (await q(
+    "SELECT id, name, seq_no, phone, city, lat, lng FROM f_customers WHERE active AND id <> $1 AND RIGHT(regexp_replace(COALESCE(phone,''), '\\D', '', 'g'), 9) = $2",
+    [exceptId, digits]
+  )).rows;
+  if (!rows.length) return { same: null, branches: [] };
+  const hasLoc = Number.isFinite(c.lat) && c.lat && Number.isFinite(c.lng);
+  for (const r of rows) {
+    // واحد منهم بدون موقع؟ ما بنقدر نفرّق — منعتبره نفس الزبون (إلا لما ينحدد الموقع)
+    if (!hasLoc || r.lat == null || r.lng == null) return { same: r, branches: rows, noLoc: !hasLoc ? "new" : "old" };
+    if (distKm([c.lat, c.lng], [Number(r.lat), Number(r.lng)]) <= SAME_PLACE_KM) return { same: r, branches: rows };
+  }
+  return { same: null, branches: rows }; // فرع جديد
+}
+export function dupMessage(d) {
+  const r = d.same;
+  const who = `«${r.name}»${r.seq_no ? ` (#${r.seq_no})` : ""}${r.city ? ` — ${r.city}` : ""}`;
+  if (d.noLoc === "new") return `هالرقم مسجّل للزبون ${who}. إذا هاد فرع ثاني للمحل، حدّد موقع الفرع الجديد وكمّل.`;
+  if (d.noLoc === "old") return `هالرقم مسجّل للزبون ${who} بدون موقع. إذا هاد فرع ثاني، حدّد موقع الزبون القديم أول.`;
+  return `هالزبون مسجّل من قبل: ${who} — نفس الرقم ونفس الموقع.`;
+}
+
 async function savePrices(client, customerId, prices) {
   if (!Array.isArray(prices)) return;
   await client.query("DELETE FROM f_customer_prices WHERE customer_id = $1", [customerId]);
@@ -200,6 +233,11 @@ router.post("/customers", edit, async (req, res) => {
   try {
     await client.query("BEGIN");
     await client.query("LOCK TABLE f_customers IN SHARE ROW EXCLUSIVE MODE");
+    const dup = await findSameCustomer(c, (t, p) => client.query(t, p));
+    if (dup.same) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: dupMessage(dup), code: "DUP_CUSTOMER", customer: { id: dup.same.id, name: dup.same.name, seq_no: dup.same.seq_no } });
+    }
     if (c.seq_no) {
       const taken = (await client.query("SELECT name FROM f_customers WHERE seq_no = $1", [c.seq_no])).rows[0];
       if (taken) { await client.query("ROLLBACK"); return bad(res, `الرقم ${c.seq_no} مستخدم للزبون «${taken.name}». اختار رقم ثاني أو خلّيه فاضي.`); }
