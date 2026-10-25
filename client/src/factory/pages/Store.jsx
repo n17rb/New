@@ -53,7 +53,8 @@ export default function Store() {
   const view = views.find((t) => t[0] === params.get("view"))?.[0] || (["moves", "setup"].includes(params.get("tab")) ? params.get("tab") : "items");
   const onlyParts = !fx.can("f_store") && !fx.can("f_production") && fx.can("f_machines");
   const kind = params.get("tab") === "part" || (onlyParts && params.get("tab") !== "material") ? "part" : "material";
-  const pLines = (data?.lines || []).filter((l) => l.active);
+  // موظف الخط بيشوف خطه بس
+  const pLines = (data?.lines || []).filter((l) => l.active && (C.store || fx.can("f_home") || !data?.my_lines?.length || data.my_lines.includes(l.id)));
   const machineLine = new Map((data?.machines || []).map((m) => [m.id, m.line_id]));
   // الخط المختار: موظف الخط بيفتح على خطه، وغيره على أول خط
   const line = lineF !== undefined ? lineF : data?.my_lines?.length ? data.my_lines[0] : pLines[0]?.id ?? "all";
@@ -111,7 +112,7 @@ export default function Store() {
           {!pLines.length && C.setup && <div className="fx-note">ضيف خطوطك (خط القناني، خط الكاسات) من «المصانع والخطوط» عشان كل خط يكون إله مواده وقطعه لحال.</div>}
 
           {/* ٢) مواد ولا قطع */}
-          {!fixedLine && <div className="fx-pay-modes">
+          {!fixedLine && (C.take_part || C.store || fx.can("f_machines") || fx.can("f_home")) && <div className="fx-pay-modes">
             <button type="button" className={kind === "material" ? "on" : ""} onClick={() => setTab("material")}>📦 المواد الأولية</button>
             <button type="button" className={kind === "part" ? "on" : ""} onClick={() => setTab("part")}>🔩 قطع الغيار</button>
           </div>}
@@ -558,6 +559,8 @@ function Moves({ data }) {
 function Setup({ data, reload }) {
   const fx = useFx();
   const [sheet, setSheet] = useState(null);
+  const [showStopped, setShowStopped] = useState(false);
+  const stopped = data.lines.filter((l) => !l.active).length;
   const { data: staff } = useLoad(() => fapi.storeStaff(), []);
   return (
     <div className="fx-stack">
@@ -576,7 +579,7 @@ function Setup({ data, reload }) {
       <div className="fx-sec"><h2>خطوط الإنتاج</h2><button className="fx-btn sm" onClick={() => setSheet({ kind: "line", l: {} })}><FiPlus /> خط</button></div>
       {data.lines.length === 0 && <div className="fx-note">مثلًا «خط الكاسات» و«خط المطرات» — وكل خط بتحدد موظفينه (الموظف بيقدر يكون على خطين).</div>}
       <div className="fx-list">
-        {data.lines.map((l) => (
+        {data.lines.filter((l) => l.active || showStopped).map((l) => (
           <button key={l.id} className="fx-item" onClick={() => setSheet({ kind: "line", l })}>
             <span className="fx-avatar">⚙️</span>
             <span className="t"><b>{l.name}{l.site_name ? ` · ${l.site_name}` : ""}</b><span>{l.users.length ? l.users.map((u) => u.full_name).join("، ") : "ما في موظفين"}{l.month_cost ? ` · سحب هالشهر ${money(l.month_cost)}` : ""}{!l.active ? " · موقّف" : ""}</span></span>
@@ -584,6 +587,7 @@ function Setup({ data, reload }) {
           </button>
         ))}
       </div>
+      {stopped > 0 && <button className="fx-link" style={{ justifySelf: "start" }} onClick={() => setShowStopped(!showStopped)}>{showStopped ? "خبّي المحذوفة" : `خطوط محذوفة (${stopped}) — لترجيع واحد`}</button>}
 
       {data.machines.length > 0 && (data.sites.length > 0 || data.lines.length > 0) && (
         <>

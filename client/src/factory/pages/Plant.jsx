@@ -63,8 +63,8 @@ export default function Plant() {
         <div className="fx-list">
           <Tile icon="📦" title="المواد الأولية" to={`/f/store?line=${lid}&tab=material`}
             sub={`${mats.length} مادة${mats.some((m) => m.low) ? ` · ${mats.filter((m) => m.low).length} قرّبت تخلص` : ""}`} warn={mats.some((m) => m.low)} />
-          <Tile icon="🔩" title="قطع الصيانة" to={`/f/store?line=${lid}&tab=part`}
-            sub={`${parts.length} قطعة${parts.some((m) => m.low) ? ` · ${parts.filter((m) => m.low).length} قرّبت تخلص` : ""}`} warn={parts.some((m) => m.low)} />
+          {(fx.can("f_machines") || fx.can("f_store") || fx.can("f_home")) && <Tile icon="🔩" title="قطع الصيانة" to={`/f/store?line=${lid}&tab=part`}
+            sub={`${parts.length} قطعة${parts.some((m) => m.low) ? ` · ${parts.filter((m) => m.low).length} قرّبت تخلص` : ""}`} warn={parts.some((m) => m.low)} />}
           <Tile icon="🧪" title="التعقيم والفلاتر" to={`/f/line?line=${lid}`}
             sub={[due == null ? "ما في فحص اليوم" : due <= 0 ? "الفحص مستحق هلأ" : `الفحص الجاي بعد ${due < 60 ? `${due} دقيقة` : `${Math.round(due / 60)} ساعة`}`, l.last_check_at && `آخر فحص ${time(l.last_check_at)}`, fDue ? `${fDue} فلتر بدّه غيار` : null].filter(Boolean).join(" · ")}
             warn={(due != null && due <= 0) || due == null || fDue > 0} />
