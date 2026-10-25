@@ -171,6 +171,26 @@ export const fapi = {
   lineSettings: (id, b) => put(`/line/${id}/settings`, b),
   workHours: (userId, b) => put(`/line/hours/${userId}`, b),
 
+  // الدفاتر: الشركات، إعادة التدوير، الصندوق، التسليم، الملخّص
+  partners: () => get("/books/partners"),
+  partner: (id) => get(`/books/partners/${id}`),
+  addPartner: (b) => post("/books/partners", b),
+  editPartner: (id, b) => put(`/books/partners/${id}`, b),
+  partnerEntry: (id, b) => post(`/books/partners/${id}/entries`, b),
+  partnerMessage: (id) => get(`/books/partners/${id}/message`),
+  entryFile: (id, file_url) => post(`/books/entries/${id}/file`, { file_url }),
+  recycle: () => get("/books/recycle"),
+  addRecycle: (b) => post("/books/recycle", b),
+  recycleReceive: (id, amount) => post(`/books/recycle/${id}/receive`, { amount }),
+  cashbook: (p) => get(`/books/cash${qs(p)}`),
+  addCash: (b) => post("/books/cash", b),
+  delCash: (id) => del(`/books/cash/${id}`),
+  handovers: () => get("/books/handover"),
+  addHandover: (b) => post("/books/handover", b),
+  confirmHandover: (id, signature) => post(`/books/handover/${id}/confirm`, { signature }),
+  rejectHandover: (id) => post(`/books/handover/${id}/reject`),
+  booksSummary: (p) => get(`/books/summary${qs(p)}`),
+
   // التأجيل
   postpones: () => get("/orders/postpones"),
   confirmPostpone: (id, due_date) => post(`/orders/${id}/postpone/confirm`, { due_date }),

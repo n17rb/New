@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiSearch, FiPlus, FiDownload, FiUpload, FiClipboard, FiChevronLeft, FiEdit2, FiX } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, Reload, DateInput, money, num, date, dateTime, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, Reload, DateInput, waLink, money, num, date, dateTime, today } from "../ui.jsx";
 import { smartFilter } from "../smartSearch.js";
 
 // ============================================================
@@ -341,13 +341,33 @@ function ReceiveSheet({ data, kind, pre, onClose, onDone }) {
   const items = data.items.filter((m) => m.active && (pre ? m.kind === pre.kind : m.kind === kind));
   const [lines, setLines] = useState(() => (pre ? [{ id: pre.id, qty: "", cost: String(pre.price || "") }] : []));
   const [supplier, setSupplier] = useState(pre?.supplier || "");
+  const { data: ps } = useLoad(() => fapi.partners().catch(() => null), []);
+  const [partner, setPartner] = useState(null);
+  const [msg, setMsg] = useState(null);
   const [inv, setInv] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
   const total = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0);
+  if (msg) {
+    return (
+      <Sheet title="ابعت للشركة إنك استلمت" onClose={onDone}>
+        <div className="fx-stack">
+          <div className="fx-card" style={{ whiteSpace: "pre-wrap" }}>{msg.text}</div>
+          <a className="fx-btn ok block fx-huge" href={waLink(msg.phone, msg.text)} target="_blank" rel="noreferrer" onClick={onDone}>ابعت على واتساب</a>
+          <button className="fx-btn block" onClick={onDone}>بعدين</button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <Sheet title="دخل بضاعة للمستودع" onClose={onClose}>
       <div className="fx-stack">
+        {ps?.partners?.some((p) => p.active && p.kind !== "buyer") && (
+          <div className="fx-field">من أي شركة؟ <small className="fx-muted">(الفاتورة بتنضاف على حسابها)</small><div className="fx-chips">
+            <button type="button" className={`fx-chip ${!partner ? "on" : ""}`} onClick={() => setPartner(null)}>مش مسجّلة</button>
+            {ps.partners.filter((p) => p.active && p.kind !== "buyer").map((p) => <button key={p.id} type="button" className={`fx-chip ${partner === p.id ? "on" : ""}`} onClick={() => { setPartner(p.id); setSupplier(p.name); }}>{p.name}</button>)}
+          </div></div>
+        )}
         <div className="fx-grid2">
           <label className="fx-field">المورد<input className="fx-input" value={supplier} onChange={(e) => setSupplier(e.target.value)} /></label>
           <label className="fx-field">رقم الفاتورة<input className="fx-input" value={inv} onChange={(e) => setInv(e.target.value)} /></label>
@@ -359,9 +379,12 @@ function ReceiveSheet({ data, kind, pre, onClose, onDone }) {
         <Act className="fx-btn ok block fx-huge" disabled={!lines.some((l) => Number(l.qty) > 0)} onClick={async () => {
           setErr("");
           try {
-            await fapi.storeReceive({ supplier, invoice_no: inv, note, items: lines.filter((l) => Number(l.qty) > 0).map((l) => ({ material_id: l.id, qty: Number(l.qty), unit_cost: l.cost })) });
+            const r = await fapi.storeReceive({ partner_id: partner, supplier, invoice_no: inv, note, items: lines.filter((l) => Number(l.qty) > 0).map((l) => ({ material_id: l.id, qty: Number(l.qty), unit_cost: l.cost })) });
             fx.toast("انضافت للمستودع ✓");
-            onDone();
+            if (r.partner?.phone) {
+              const b = r.partner.balance;
+              setMsg({ phone: r.partner.phone, text: `السادة ${r.partner.name} المحترمين،\nاستلمنا البضاعة${inv ? ` (فاتورة رقم ${inv})` : ""} بقيمة ${money(r.total)} د.أ.\nالرصيد بعدها: ${b > 0.005 ? `إلكم عنّا ${money(b)} د.أ` : b < -0.005 ? `عليكم إلنا ${money(-b)} د.أ` : "الحساب مسكّر"}.\n— ${fx.shop?.brand?.name || ""}` });
+            } else onDone();
           } catch (e) { setErr(e.message); }
         }}>✓ دخلت المستودع</Act>
       </div>

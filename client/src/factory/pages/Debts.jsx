@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { FiPrinter, FiSearch, FiMessageCircle, FiCheckSquare, FiSquare } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import RegionFilter, { matchRegion } from "../RegionFilter.jsx";
-import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, SendMessages, money, date, DateInput } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, SendMessages, PhotoInput, money, date, DateInput } from "../ui.jsx";
 import { smartFilter } from "../smartSearch.js";
 
 // ============================================================
@@ -126,7 +126,7 @@ export function DebtsView({ page = false }) {
 }
 
 // الزبون دفع من دينه: كامل أو جزء، كاش أو شيك أو تحويل — وبتطلع رسالة شكر فيها رصيده الجديد
-const METHODS = [["cash", "كاش"], ["cheque", "شيك"], ["transfer", "تحويل"]];
+const METHODS = [["cash", "كاش"], ["cliq", "كليك"], ["cheque", "شيك"], ["transfer", "تحويل"]];
 export function PaySheet({ c, onClose, onDone, byDriver = false }) {
   const fx = useFx();
   const bal = Number(c.balance) || 0;
@@ -136,6 +136,7 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
   const [chq, setChq] = useState("");
   const [chqDate, setChqDate] = useState("");
   const [note, setNote] = useState("");
+  const [photo, setPhoto] = useState(null);
   const [err, setErr] = useState("");
   const amt = full ? bal : Number(amount) || 0;
   const after = Math.round((bal - amt) * 100) / 100;
@@ -153,8 +154,19 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
           </label>
         )}
         {byDriver
-          ? <div className="fx-note sky">المبلغ بينضاف على الكاش اللي معك، وبتسلّمه مع حساب رحلتك.</div>
+          ? (
+            <>
+              <div className="fx-pay-modes">
+                <button type="button" className={method !== "cliq" ? "on" : ""} onClick={() => setMethod("cash")}>💵 كاش</button>
+                <button type="button" className={method === "cliq" ? "on" : ""} onClick={() => setMethod("cliq")}>📲 كليك</button>
+              </div>
+              {method === "cliq"
+                ? <PhotoInput label="صوّر وصل الكليك من تلفون الزبون" hint="لازم — بتوصل للمحاسب" value={photo} onChange={setPhoto} kind="cliq" />
+                : <div className="fx-note sky">المبلغ بينضاف على الكاش اللي معك، وبتسلّمه مع حساب رحلتك.</div>}
+            </>
+          )
           : <div className="fx-chips">{METHODS.map(([k, l]) => <button key={k} type="button" className={`fx-chip ${method === k ? "on" : ""}`} onClick={() => setMethod(k)}>{l}</button>)}</div>}
+        {!byDriver && method === "cliq" && <PhotoInput label="صورة وصل الكليك" value={photo} onChange={setPhoto} kind="cliq" />}
         {method === "cheque" && (
           <div className="fx-grid2">
             <label className="fx-field">رقم الشيك<input className="fx-input" value={chq} onChange={(e) => setChq(e.target.value)} /></label>
@@ -167,10 +179,10 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
           {after > 0.005 ? <span className="debt">بيضل عليه <b>{money(after)}</b></span> : after < -0.005 ? <span className="ok">بيصير إله <b>{money(-after)}</b></span> : <span className="ok">سدّ كل الدين ✓</span>}
         </div>
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={!(amt > 0) || (method === "cheque" && !chq)} onClick={async () => {
+        <Act className="fx-btn ok block fx-huge" disabled={!(amt > 0) || (method === "cheque" && !chq) || (method === "cliq" && !photo)} onClick={async () => {
           setErr("");
           try {
-            const r = await fapi.payment(c.id, { amount: amt, method: byDriver ? "cash" : method, cheque_no: chq || undefined, cheque_date: chqDate || undefined, note, by_driver: byDriver || undefined });
+            const r = await fapi.payment(c.id, { amount: amt, method: byDriver && method !== "cliq" ? "cash" : method, photo_url: method === "cliq" ? photo : undefined, cheque_no: chq || undefined, cheque_date: chqDate || undefined, note, by_driver: byDriver || undefined });
             fx.toast(r.balance > 0.009 ? `انسجّلت — بيضل عليه ${money(r.balance)}` : "انسجّلت — سدّ كل الدين ✓");
             onDone(r);
           } catch (e) { setErr(e.message); }

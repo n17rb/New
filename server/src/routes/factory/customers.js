@@ -3,7 +3,7 @@ import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
 import { smartFilter } from "../../utils/fuzzySearch.js";
-import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers } from "./lib.js";
+import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers, alert } from "./lib.js";
 
 // ============================================================
 // المصنع: الزباين، أسعارهم الخاصة، كشف الحساب، الدفعات، والرسائل
@@ -298,14 +298,17 @@ router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customer
     if (!t) return bad(res, "ما في رحلة شغالة إلك — بلّش رحلتك (أو اشتغل مندوب) عشان الدفعة تنحسب مع كاشك.");
     tripId = t.id;
   }
-  const method = tripId ? "cash" : ["cash", "cheque", "transfer"].includes(req.body?.method) ? req.body.method : "cash";
+  const method = tripId ? (req.body?.method === "cliq" ? "cliq" : "cash") : ["cash", "cheque", "transfer", "cliq"].includes(req.body?.method) ? req.body.method : "cash";
+  if (method === "cliq" && !req.body?.photo_url) return bad(res, "صوّر وصل الكليك.");
   if (method === "cheque" && !req.body?.cheque_no) return bad(res, "اكتب رقم الشيك.");
   const c = (await query("SELECT id, name FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
   if (!c) return bad(res, "الزبون غير موجود.", 404);
   const balance = await postLedger(null, {
     customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null, tripId,
-    chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300) || (tripId ? `قبضها ${req.user.full_name}` : null), userId: req.user.id,
+    chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300) || (tripId ? (method === "cliq" ? `كليك — صوّره ${req.user.full_name}` : `قبضها ${req.user.full_name}`) : null), userId: req.user.id,
+    photoUrl: req.body?.photo_url || null,
   });
+  if (method === "cliq") await alert({ level: "info", kind: "cliq", ref: c.id, title: `📲 كليك ${amount.toFixed(2)} د.أ من ${c.name}`, body: `${req.user.full_name} صوّر الوصل — تأكد إنها وصلت الحساب. الصورة: ${req.body.photo_url}` });
   const message_id = await queueMessage({ customerId: c.id, kind: "payment", data: { amount, balance }, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CUSTOMER_PAYMENT", recordType: "f_customer", recordId: c.id, newValue: { amount, method } });
   await pushManagers({ title: `💵 ${c.name} دفع ${amount.toFixed(2)} د.أ`, body: `${balance > 0.009 ? `باقي عليه ${balance.toFixed(2)}` : "سدّ كل الدين ✓"} · قبضها ${req.user.full_name}.`, url: "/f/debts", tag: `pay-${c.id}`, except: req.user.id });

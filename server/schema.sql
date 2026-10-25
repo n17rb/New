@@ -1179,3 +1179,85 @@ DO $$ BEGIN
   ALTER TABLE f_material_moves ADD CONSTRAINT f_material_moves_kind_check CHECK (kind IN ('receive','use','adjust','count','waste'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS run_hours NUMERIC(5,2);
+
+-- ============================================================
+-- الحسابات العامة: كليك، الموردين والشركات (مين بدّه منّا ومين علينا)، إعادة التدوير،
+-- الصندوق (دخل وصرف عام)، والتسليم بين المحاسب والإدارة بتوقيع
+-- ============================================================
+ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS cliq_paid NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS cliq_photo TEXT;
+
+CREATE TABLE IF NOT EXISTS f_partners (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  kind VARCHAR(10) NOT NULL DEFAULT 'supplier',
+  phone VARCHAR(30),
+  contact VARCHAR(80),
+  tax_no VARCHAR(40),
+  address VARCHAR(200),
+  notes TEXT,
+  balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- الرصيد من جهتنا: موجب = إحنا مدينين إلهم، سالب = هم مدينين إلنا
+CREATE TABLE IF NOT EXISTS f_partner_ledger (
+  id SERIAL PRIMARY KEY,
+  partner_id INTEGER NOT NULL REFERENCES f_partners(id) ON DELETE CASCADE,
+  kind VARCHAR(12) NOT NULL CHECK (kind IN ('purchase','sale','paid','received','adjust')),
+  amount NUMERIC(14,2) NOT NULL,
+  balance_after NUMERIC(14,2) NOT NULL,
+  doc_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  ref_no VARCHAR(40),
+  official_no INTEGER,
+  items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  method VARCHAR(15),
+  note TEXT,
+  file_url TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_partner_ledger ON f_partner_ledger(partner_id, id DESC);
+CREATE SEQUENCE IF NOT EXISTS f_official_no_seq START 1001;
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS partner_id INTEGER REFERENCES f_partners(id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS f_recycle (
+  id SERIAL PRIMARY KEY,
+  material VARCHAR(30) NOT NULL,
+  kind VARCHAR(6) NOT NULL CHECK (kind IN ('in','sale')),
+  kg NUMERIC(12,2) NOT NULL,
+  price_ton NUMERIC(12,2),
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  received NUMERIC(12,2) NOT NULL DEFAULT 0,
+  partner_id INTEGER REFERENCES f_partners(id) ON DELETE SET NULL,
+  note TEXT,
+  photo_url TEXT,
+  doc_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS f_cashbook (
+  id SERIAL PRIMARY KEY,
+  kind VARCHAR(4) NOT NULL CHECK (kind IN ('in','out')),
+  category VARCHAR(60) NOT NULL,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  doc_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  note TEXT,
+  file_url TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS f_handover (
+  id SERIAL PRIMARY KEY,
+  from_user INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  to_user INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  note TEXT,
+  status VARCHAR(10) NOT NULL DEFAULT 'pending',
+  signature TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  confirmed_at TIMESTAMPTZ
+);
