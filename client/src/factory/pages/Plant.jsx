@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { FiChevronLeft } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Err, Loading, Empty, Reload, time } from "../ui.jsx";
+import { useFx, useLoad, Err, Loading, Empty, Reload, Sheet, Act, time } from "../ui.jsx";
 import { lineType, plantName, plantBg, plantIcon } from "../plants.js";
 import { useRef, useState } from "react";
 
@@ -26,6 +26,7 @@ export default function Plant() {
   const canPhoto = fx.can("f_store", "edit") || fx.can("f_fleet", "edit");
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState(false);
   const Tile = ({ icon, title, sub, warn, to }) => (
     <button className="fx-item" style={{ padding: 18 }} onClick={() => nav(to)}>
       <span className="fx-avatar" style={{ fontSize: 26, width: 52, height: 52 }}>{icon}</span>
@@ -41,6 +42,7 @@ export default function Plant() {
           <span className="shade" />
           <span className="cap">{plantName(l.name)}</span>
           {canPhoto && <button className="chg" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? "عم بنرفع..." : l.photo_url ? "📷 غيّر الصورة" : "📷 حط صورة"}</button>}
+          {canPhoto && <button className="chg" style={{ top: 50 }} onClick={() => setEdit(true)}>✎ الاسم أو الحذف</button>}
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={async (e) => {
             const f = e.target.files?.[0]; e.target.value = "";
             if (!f) return;
@@ -68,7 +70,33 @@ export default function Plant() {
             warn={(due != null && due <= 0) || due == null || fDue > 0} />
         </div>
       )}
+      {edit && l && <PlantEdit l={l} onClose={() => setEdit(false)} onDone={(stopped) => { setEdit(false); if (stopped) nav("/f/more"); else reload(); }} />}
       {fx.can("f_store", "edit") && l && <small className="fx-muted">الخط وموظفينه بتعدّلهم من «المواد وقطع الغيار» ← «المصانع والخطوط».</small>}
     </div>
+  );
+}
+
+// تعديل اسم المصنع، أو إيقافه (بيختفي من كل مكان وتاريخه بيضل)
+function PlantEdit({ l, onClose, onDone }) {
+  const fx = useFx();
+  const [name, setName] = useState(l.name);
+  const [err, setErr] = useState("");
+  const userIds = (l.members || []).map((m) => m.id);
+  return (
+    <Sheet title="المصنع" onClose={onClose}>
+      <div className="fx-stack">
+        <label className="fx-field">الاسم<input className="fx-input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <small className="fx-muted">خلّي بالاسم «كاسات» أو «مطرات» عشان يطلع بأيقونته ولونه.</small>
+        <Err msg={err} />
+        <Act className="fx-btn pri block" disabled={!name.trim()} onClick={async () => {
+          setErr("");
+          try { await fapi.editPline(l.id, { name: name.trim(), site_id: l.site_id, user_ids: userIds, active: true }); fx.toast("انحفظ"); onDone(false); } catch (e) { setErr(e.message); }
+        }}>حفظ</Act>
+        <Act className="fx-btn danger block" onClick={async () => {
+          if (!confirm(`توقّف «${l.name}»؟ بيختفي من المزيد والرئيسية، وإنتاجه وفحوصاته القديمة بتضل محفوظة.`)) return;
+          try { await fapi.editPline(l.id, { name: l.name, site_id: l.site_id, user_ids: userIds, active: false }); fx.toast("انوقّف"); onDone(true); } catch (e) { setErr(e.message); }
+        }}>🗑 احذف المصنع</Act>
+      </div>
+    </Sheet>
   );
 }
