@@ -194,6 +194,7 @@ router.post("/store/take", view, async (req, res) => {
   const note = str(req.body?.note, 300) || null;
   const takenBy = numOrNull(req.body?.taken_by) || req.user.id;
   if (!lines.length) return bad(res, "اختار شو بدك تسحب.");
+  const myLines = (await query("SELECT line_id FROM f_pline_users WHERE user_id = $1", [req.user.id])).rows.map((r) => r.line_id);
   const client = await pool.connect();
   const done = [];
   try {
@@ -206,6 +207,7 @@ router.post("/store/take", view, async (req, res) => {
       if (!canTake(req.user, m.kind)) throw new Error(`ما عندك صلاحية تسحب «${m.name}».`);
       if (Number(m.balance) < qty) throw new Error(`«${m.name}»: الموجود ${Number(m.balance)} ${m.unit} بس.`);
       if (m.kind === "material" && !lineId && !can(req.user, "f_store", "edit")) throw new Error("اختار الخط اللي سحبت إله.");
+      if (m.kind === "material" && lineId && myLines.length && !myLines.includes(lineId) && !can(req.user, "f_store", "edit")) throw new Error("بتسحب لخطك بس.");
       await client.query("UPDATE f_materials SET balance = balance - $1 WHERE id = $2", [qty, m.id]);
       await client.query(
         `INSERT INTO f_material_moves (material_id, kind, qty, unit_cost, cost, line_id, machine_id, downtime_id, note, taken_by, created_by)
@@ -383,6 +385,18 @@ export const STARTERS = {
       ["طبليات خشب", "حبة", "تغليف", ""],
       ["حبر طابعة التاريخ", "لتر", "طباعة", ""],
       ["مذيب الطابعة (سولفنت)", "لتر", "طباعة", ""],
+    ],
+  },
+  chem: {
+    label: "تعقيم وكيماويات",
+    items: [
+      ["فورملين تعقيم", "لتر", "تعقيم", "لتعقيم الخزانات والخطوط — حسب التركيز"],
+      ["أسيد (حمض) تنظيف", "لتر", "تعقيم", "لتنظيف الأغشية والترسبات"],
+      ["قطرات فحص الكلور", "علبة", "فحوصات", "كواشف فحص الكلور (أبيض/أصفر)"],
+      ["قطرات فحص الحموضة (pH)", "علبة", "فحوصات", ""],
+      ["قطرات فحص السوفتنر (العسرة)", "علبة", "فحوصات", "أحمر/أزرق — قبل وبعد الجهاز"],
+      ["كلور سائل", "لتر", "تعقيم", ""],
+      ["محلول معايرة جهاز TDS/pH", "علبة", "فحوصات", ""],
     ],
   },
   water: {

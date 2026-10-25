@@ -1098,7 +1098,7 @@ ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS shelf VARCHAR(40);
 ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE f_material_moves DROP CONSTRAINT IF EXISTS f_material_moves_kind_check;
 DO $$ BEGIN
-  ALTER TABLE f_material_moves ADD CONSTRAINT f_material_moves_kind_check CHECK (kind IN ('receive','use','adjust','count'));
+  ALTER TABLE f_material_moves ADD CONSTRAINT f_material_moves_kind_check CHECK (kind IN ('receive','use','adjust','count','waste'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
 ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS machine_id INTEGER REFERENCES f_machines(id) ON DELETE SET NULL;
@@ -1125,3 +1125,57 @@ ALTER TABLE f_orders ADD COLUMN IF NOT EXISTS postpone_state VARCHAR(10);
 
 -- كل مادة ممكن تكون تبع خط معيّن (مستودع خط المطرات، خط الكاسات…) أو عامة
 ALTER TABLE f_materials ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- خط الإنتاج: فحوصات الجودة اليومية، الفلاتر ومواعيد غيارها، تالف الخط، ساعات دوام الموظفين
+-- ============================================================
+ALTER TABLE f_plines ADD COLUMN IF NOT EXISTS check_every_min INTEGER NOT NULL DEFAULT 120;
+ALTER TABLE f_plines ADD COLUMN IF NOT EXISTS limits JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE f_plines ADD COLUMN IF NOT EXISTS check_reminded_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS f_work_hours (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  start_time VARCHAR(5) NOT NULL DEFAULT '07:00',
+  end_time VARCHAR(5) NOT NULL DEFAULT '15:00',
+  days VARCHAR(7) NOT NULL DEFAULT '0123456'
+);
+CREATE TABLE IF NOT EXISTS f_qchecks (
+  id SERIAL PRIMARY KEY,
+  line_id INTEGER NOT NULL REFERENCES f_plines(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ozone NUMERIC(8,3),
+  tds NUMERIC(8,2),
+  ph NUMERIC(5,2),
+  soft_before VARCHAR(10),
+  soft_after VARCHAR(10),
+  chlorine VARCHAR(10),
+  note TEXT,
+  issues TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_f_qchecks_line ON f_qchecks(line_id, checked_at DESC);
+CREATE TABLE IF NOT EXISTS f_filters (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL,
+  site_id INTEGER REFERENCES f_sites(id) ON DELETE SET NULL,
+  every_days INTEGER NOT NULL DEFAULT 14,
+  material_id INTEGER REFERENCES f_materials(id) ON DELETE SET NULL,
+  qty_per_change NUMERIC(10,2) NOT NULL DEFAULT 1,
+  last_changed DATE,
+  reminded_on DATE,
+  active BOOLEAN NOT NULL DEFAULT true
+);
+CREATE TABLE IF NOT EXISTS f_filter_changes (
+  id SERIAL PRIMARY KEY,
+  filter_id INTEGER NOT NULL REFERENCES f_filters(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  qty NUMERIC(10,2) NOT NULL DEFAULT 0,
+  note TEXT
+);
+-- تالف الخط (كراتين، مطرات، قصدير، بلاستيك، أغطية، ليبل…) — سجل هدر، المواد أصلًا انسحبت للخط
+ALTER TABLE f_material_moves DROP CONSTRAINT IF EXISTS f_material_moves_kind_check;
+DO $$ BEGIN
+  ALTER TABLE f_material_moves ADD CONSTRAINT f_material_moves_kind_check CHECK (kind IN ('receive','use','adjust','count','waste'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+ALTER TABLE f_material_moves ADD COLUMN IF NOT EXISTS run_hours NUMERIC(5,2);
