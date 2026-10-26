@@ -1,56 +1,124 @@
 import { useEffect, useState } from "react";
-import { FiChevronRight, FiChevronLeft, FiChevronDown, FiPrinter, FiCheck, FiX } from "react-icons/fi";
+import { FiChevronRight, FiChevronLeft, FiChevronDown, FiPrinter, FiCheck, FiX, FiArrowRight, FiEdit2, FiFileText, FiBox, FiDollarSign, FiCreditCard, FiAlertCircle } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, money, num, time, date, today } from "../ui.jsx";
 import { InvoiceSheet } from "./StopSheet.jsx";
 
 // ============================================================
-// الجرد: لكل سائق بشاشة وحدة —
-// شو معه كاش، شو لازم يرجّع، كل الفواتير تحت بعض، والمصاريف بصورها
+// الجرد — بسيط ومريح:
+// فوق: ملخص اليوم بثلاث أرقام، وتحته كرت صغير لكل سائق.
+// بتكبس على السائق ← حسابه لحاله: رقمين كبار، زر التسوية، والتفاصيل بتبويبات (وحدة وحدة)
 // ============================================================
 const shift = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+// حالة السائق بكلمة ورقم
+function stateOf(d) {
+  const S = d.settle || { trips: [], due: 0, active: 0 };
+  if (S.trips.length > 0) return { key: "due", label: "بستنى تسوية", amount: S.due, cls: "due" };
+  if (S.active) return { key: "work", label: "بالشغل", amount: d.totals.cash, cls: "work" };
+  return { key: "done", label: "تسكّر", amount: 0, cls: "done" };
+}
 
 export default function Jard() {
   const fx = useFx();
   const mine = fx.can("f_drive", "edit") && !fx.can("f_money") && !fx.can("f_home") && !fx.can("f_stock") && !fx.can("f_dispatch");
   const [day, setDay] = useState(today());
-  const [who, setWho] = useState(0);
+  const [open, setOpen] = useState(null);
   const { data, error, reload } = useLoad(() => (mine ? fapi.myJard({ date: day }) : fapi.jard({ date: day })), [day, mine]);
   const [inv, setInv] = useState(null);
   const drivers = data?.drivers || [];
-  const shown = who ? drivers.filter((d) => d.driver_id === who) : drivers;
   const isToday = day === today();
+  const one = mine || drivers.length === 1 ? drivers[0] : drivers.find((d) => (d.driver_id || 0) === open);
+  useEffect(() => { setOpen(null); }, [day]);
+  useEffect(() => { if (open != null) window.scrollTo({ top: 0 }); }, [open]);
+
+  const sum = drivers.reduce((a, d) => {
+    const st = stateOf(d);
+    if (st.key === "due") a.due += st.amount;
+    if (st.key === "work") a.work += 1;
+    a.back += Number(d.totals.cartons_back) || 0;
+    return a;
+  }, { due: 0, work: 0, back: 0 });
+
+  const dayBar = (
+    <div className="jd-day fx-noprint">
+      <button className="fx-plain" onClick={() => setDay(shift(day, -1))} aria-label="اليوم اللي قبل"><FiChevronRight /></button>
+      <span><b>{isToday ? "اليوم" : day === shift(today(), -1) ? "مبارح" : "يوم"}</b><small>{date(day)}</small></span>
+      <button className="fx-plain" disabled={isToday} onClick={() => setDay(shift(day, 1))} aria-label="اليوم اللي بعد"><FiChevronLeft /></button>
+    </div>
+  );
+
+  // حساب سائق واحد
+  if (data && one) {
+    return (
+      <div className="fx-page jd">
+        <div className="jd-top">
+          {!mine && drivers.length > 1
+            ? <button className="jd-back fx-noprint" onClick={() => setOpen(null)}><FiArrowRight /> كل السائقين</button>
+            : <h1 className="fx-h1" style={{ margin: 0 }}>{mine ? "جردي" : "الجرد"}</h1>}
+          <button className="jd-print fx-noprint" onClick={() => window.print()} aria-label="اطبع"><FiPrinter /></button>
+        </div>
+        {(mine || drivers.length === 1) && dayBar}
+        <DriverJard d={one} mine={mine} canReview={data.can_review} canSettle={data.can_settle} reload={reload} onInvoice={setInv} />
+        {inv && <InvoiceSheet o={inv} title={`فاتورة · ${inv.customer_name}`} onClose={() => setInv(null)} />}
+      </div>
+    );
+  }
 
   return (
-    <div className="fx-page fx-jard">
-      <div className="fx-row" style={{ justifyContent: "space-between" }}>
+    <div className="fx-page jd">
+      <div className="jd-top">
         <h1 className="fx-h1" style={{ margin: 0 }}>{mine ? "جردي" : "الجرد"}</h1>
-        <button className="fx-btn sm fx-noprint" onClick={() => window.print()}><FiPrinter /> اطبع</button>
+        <button className="jd-print fx-noprint" onClick={() => window.print()} aria-label="اطبع"><FiPrinter /></button>
       </div>
-
-      <div className="fx-jard-day fx-noprint">
-        <button className="fx-plain" onClick={() => setDay(shift(day, -1))} aria-label="اليوم اللي قبل"><FiChevronRight /></button>
-        <b>{isToday ? "اليوم" : day === shift(today(), -1) ? "مبارح" : ""} {date(day)}</b>
-        <button className="fx-plain" disabled={isToday} onClick={() => setDay(shift(day, 1))} aria-label="اليوم اللي بعد"><FiChevronLeft /></button>
-      </div>
-
-      {!mine && drivers.length > 1 && (
-        <div className="fx-chips fx-noprint">
-          <button className={`fx-chip ${who === 0 ? "on" : ""}`} onClick={() => setWho(0)}>الكل ({drivers.length})</button>
-          {drivers.map((d) => <button key={d.driver_id || 0} className={`fx-chip ${who === d.driver_id ? "on" : ""}`} onClick={() => setWho(d.driver_id)}>{d.driver_name}</button>)}
-        </div>
-      )}
+      {dayBar}
 
       <Err msg={error} />
       {!data && !error && <Loading />}
       {data && drivers.length === 0 && <Empty title="ما في شغل بهاليوم" text="لما سائق يطلع برحلة أو يشتغل مندوب بيطلع جرده هون." />}
 
-      {!mine && !who && isToday && data?.idle_drivers?.length > 0 && (
-        <div className="fx-note fx-noprint">ما عندهم رحلة اليوم: {data.idle_drivers.map((x) => x.name).join("، ")} — لتحمّل لواحد منهم اعمله رحلة من «الرحلات»، أو خلّيه يبلّش «جولة بيع» من رحلتي.</div>
+      {drivers.length > 0 && (
+        <div className="jd-sum">
+          <div><small>مطلوب تسليم</small><b>{money(sum.due)}</b></div>
+          <div><small>بالشغل</small><b>{num(sum.work)}</b></div>
+          <div><small>كراتين راجعة</small><b>{num(sum.back)}</b></div>
+        </div>
       )}
 
-      {shown.map((d) => <DriverJard key={d.driver_id || 0} d={d} mine={mine} canReview={data.can_review} canSettle={data.can_settle} reload={reload} onInvoice={setInv} />)}
+      <div className="jd-list fx-noprint">
+        {drivers.map((d) => {
+          const st = stateOf(d);
+          const veh = [...new Set(d.trips.map((t) => t.vehicle_name))].join("، ");
+          const pend = d.trips.flatMap((t) => t.expenses).filter((e) => e.status === "pending").length;
+          return (
+            <button key={d.driver_id || 0} className={`jd-card ${st.cls}`} onClick={() => setOpen(d.driver_id || 0)}>
+              <span className="av">{(d.driver_name || "؟").trim()[0]}</span>
+              <span className="t">
+                <b>{d.driver_name}</b>
+                <small>{veh}{pend ? ` · ${pend} مصروف بستنى` : ""}</small>
+              </span>
+              <span className="n">
+                <small>{st.label}</small>
+                <b>{st.key === "done" ? <FiCheck /> : money(st.amount)}</b>
+              </span>
+              <FiChevronLeft className="go" aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
 
+      {!mine && isToday && data?.idle_drivers?.length > 0 && (
+        <details className="jd-idle fx-noprint">
+          <summary>{data.idle_drivers.length} بدون رحلة اليوم</summary>
+          <p>{data.idle_drivers.map((x) => x.name).join("، ")}</p>
+          <small>لتحمّل لواحد منهم اعمله رحلة من «الرحلات»، أو خلّيه يبلّش «جولة بيع» من رحلتي.</small>
+        </details>
+      )}
+
+      {/* للطباعة: كل السائقين بالتفصيل */}
+      <div className="jd-printall">
+        {drivers.map((d) => <DriverJard key={d.driver_id || 0} d={d} mine={mine} canReview={false} canSettle={false} reload={reload} onInvoice={() => {}} />)}
+      </div>
       {inv && <InvoiceSheet o={inv} title={`فاتورة · ${inv.customer_name}`} onClose={() => setInv(null)} />}
     </div>
   );
@@ -59,8 +127,7 @@ export default function Jard() {
 function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
   const T = d.totals;
   const S = d.settle || { trips: [], due: 0, older: 0, active: 0 };
-  const [showInv, setShowInv] = useState(false);
-  const [showDet, setShowDet] = useState(false);
+  const [tab, setTab] = useState("money");
   const [settling, setSettling] = useState(false);
   const [editLoad, setEditLoad] = useState(false);
   const fx = useFx();
@@ -72,19 +139,33 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
   const backDone = d.goods.reduce((a, g) => a + g.returned, 0);
   const missing = d.goods.reduce((a, g) => a + Math.max(0, g.back - g.returned), 0);
   const custodyNew = d.trips.reduce((a, t) => a + Math.max(0, Number(t.money.diff) || 0), 0);
+  const exps = d.trips.flatMap((t) => t.expenses);
+  const pend = exps.filter((e) => e.status === "pending").length;
+  const invs = d.trips.flatMap((t) => t.invoices);
+  const failed = d.trips.flatMap((t) => t.failed);
+  const openO = d.trips.flatMap((t) => t.open);
+  const collections = d.trips.flatMap((t) => t.collections || []);
+  const tabs = [
+    ["money", "المصاري", FiDollarSign],
+    d.goods.length ? ["goods", "البضاعة", FiBox] : null,
+    invs.length || failed.length || openO.length ? ["inv", `الفواتير`, FiFileText, invs.length] : null,
+    exps.length ? ["exp", "المصاريف", FiCreditCard, pend ? `${pend}!` : exps.length] : null,
+  ].filter(Boolean);
+  const cur = tabs.some((t) => t[0] === tab) ? tab : "money";
+  const pane = (k) => `jd-pane ${cur === k ? "" : "off"}`;
+
   return (
-    <section className="fx-jard-drv">
-      <header className="fx-jard-h">
+    <section className="jd-drv">
+      <header className="jd-h">
         <span className="av">{(d.driver_name || "؟").trim()[0]}</span>
         <span className="t">
           <b>{mine ? "حسابي" : d.driver_name}</b>
           <small>{vehicles} · {d.trips.length === 1 ? (d.trips[0].kind === "sales" ? "مندوب" : "رحلة") : `${d.trips.length} رحلات`}</small>
         </span>
-        <span className={`fx-pill ${T.settled ? "ok" : "warn"}`}>{T.settled ? "تسكّر ✓" : "لسا مفتوح"}</span>
+        <span className={`fx-pill ${T.settled ? "ok" : "warn"}`}>{T.settled ? "تسكّر" : "مفتوح"}</span>
       </header>
 
-      {/* الأهم: شو عليه هلأ — بعد التسوية بيصير صفر، والتفاصيل بتضل تحت للجرد */}
-      <div className="fx-jard-big">
+      <div className="jd-big">
         {toSettle ? (
           <div className="tile cash">
             <small>{mine ? "عليك تسلّم" : "عليه يسلّم"}</small>
@@ -93,22 +174,22 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
           </div>
         ) : S.active ? (
           <div className="tile wait">
-            <small>لسا بالشغل</small>
-            <b>{money(T.cash)}</b>
             <small>كاش {mine ? "معك" : "معه"} لهلأ</small>
+            <b>{money(T.cash)}</b>
+            <small>لسا بالشغل</small>
           </div>
         ) : (
           <div className="tile ok">
             <small>{mine ? "عليك هلأ" : "عليه هلأ"}</small>
             <b>0.00</b>
-            <small>{custodyNew > 0 ? `نقص ${money(custodyNew)} انسجّل عهدة` : `سلّم ${money(T.handed)} ✓`}</small>
+            <small>{custodyNew > 0 ? `نقص ${money(custodyNew)} انسجّل عهدة` : `سلّم ${money(T.handed)}`}</small>
           </div>
         )}
         {allBack && returned ? (
           <div className={`tile ${missing ? "cash" : "ok"}`}>
-            <small>{missing ? "ناقص من المرتجع" : mine ? "عليك كراتين" : "عليه كراتين"}</small>
-            <b>{num(missing)}</b>
-            <small>{`رجّع ${num(backDone)} كرتونة ✓`}</small>
+            <small>{missing ? "ناقص من المرتجع" : "الكراتين"}</small>
+            <b>{missing ? num(missing) : <FiCheck />}</b>
+            <small>رجّع {num(backDone)} كرتونة</small>
           </div>
         ) : (
           <div className="tile box">
@@ -120,124 +201,132 @@ function DriverJard({ d, mine, canReview, canSettle, reload, onInvoice }) {
       </div>
 
       {!mine && canSettle && toSettle && (
-        <button className="fx-btn ok block fx-big" onClick={() => setSettling(true)}>💵 استلمت من {d.driver_name.split(" ")[0]} — تسوية</button>
+        <button className="fx-btn ok block fx-big fx-noprint" onClick={() => setSettling(true)}><FiCheck /> استلمت من {d.driver_name.split(" ")[0]} — سكّر الحساب</button>
       )}
-      {!mine && !toSettle && S.active > 0 && <div className="fx-note">لسا شغال. لما يكبس «رجعت للمصنع» بيطلعلك زر التسوية هون.</div>}
+      {!mine && !toSettle && S.active > 0 && <div className="jd-hint fx-noprint">لما يكبس «رجعت للمصنع» بيطلعلك زر التسوية هون.</div>}
       {editLoad && <LoadEditSheet d={d} reload={reload} onClose={() => setEditLoad(false)} />}
       {settling && <SettleSheet d={d} canReview={canReview} reload={reload} onClose={() => setSettling(false)} />}
 
-      {/* بعد ما يتسكّر الحساب: التفاصيل بتتطوى (وبتضل بالطباعة) */}
-      {(T.settled && !S.active && !toSettle) && (
-        <button className={`fx-jard-invbtn fx-noprint ${showDet ? "on" : ""}`} onClick={() => setShowDet(!showDet)} aria-expanded={showDet}>
-          <span>📋 تفاصيل اليوم <small className="fx-muted">(المصاري، البضاعة، المصاريف)</small></span>
-          <FiChevronDown className="chev" />
-        </button>
+      {tabs.length > 1 && (
+        <div className="jd-tabs fx-noprint" role="tablist">
+          {tabs.map(([k, l, Ic, n]) => (
+            <button key={k} role="tab" aria-selected={cur === k} className={cur === k ? "on" : ""} onClick={() => setTab(k)}>
+              <Ic aria-hidden="true" /><span>{l}</span>{n ? <i className={String(n).endsWith("!") ? "warn" : ""}>{String(n).replace("!", "")}</i> : null}
+            </button>
+          ))}
+        </div>
       )}
-      <div className={`fx-jard-invs ${(T.settled && !S.active && !toSettle) && !showDet ? "closed" : ""}`}>
+
       {/* المصاري */}
-      <div className="fx-card fx-jard-money">
-        <h3>المصاري</h3>
-        <div className="fx-kv"><span>فواتير ({T.invoices_count})</span><b>{money(T.invoices)}</b></div>
-        <div className="fx-kv"><span>كاش انقبض من الزباين</span><b>{money(T.cash)}</b></div>
-        {T.debt > 0 && <div className="fx-kv warn"><span>دين جديد على الزباين</span><b>{money(T.debt)}</b></div>}
-        {T.debt_collected > 0 && <div className="fx-kv good"><span>منها ديون قديمة قبضها</span><b>{money(T.debt_collected)}</b></div>}
-        {d.trips.flatMap((t) => t.collections || []).map((g) => (
-          <div key={g.id} className="fx-kv" style={{ fontSize: 13 }}><span>💵 {g.customer_name} · {time(g.at)}</span><b>{money(g.amount)}</b></div>
-        ))}
-        {T.expenses > 0 && <div className="fx-kv"><span>− مصاريف</span><b>{money(T.expenses)}</b></div>}
-        <div className="fx-kv total"><span>المطلوب يتسلّم</span><b>{money(T.due)} د.أ</b></div>
-        {T.handed > 0 && <div className="fx-kv"><span>انستلم فعلًا</span><b>{money(T.handed)}</b></div>}
-        {d.custody !== 0 && <div className={`fx-kv ${d.custody > 0 ? "bad" : ""}`}><span>{d.custody > 0 ? "عهدة عليه من قبل" : "إله من قبل"}</span><b>{money(Math.abs(d.custody))}</b></div>}
+      <div className={pane("money")}>
+        <div className="jd-card-in">
+          <h3>المصاري</h3>
+          <Row l={`فواتير (${T.invoices_count})`} v={money(T.invoices)} />
+          <Row l="كاش من الزباين" v={money(T.cash)} />
+          {T.debt > 0 && <Row l="دين جديد على الزباين" v={money(T.debt)} c="warn" />}
+          {T.debt_collected > 0 && <Row l="ديون قديمة قبضها" v={money(T.debt_collected)} c="good" />}
+          {collections.length > 0 && (
+            <div className="jd-sub">
+              {collections.map((g) => <Row key={g.id} l={`${g.customer_name} · ${time(g.at)}`} v={money(g.amount)} />)}
+            </div>
+          )}
+          {T.expenses > 0 && <Row l="ناقص مصاريف" v={`− ${money(T.expenses)}`} />}
+          <div className="jd-total"><span>المطلوب يتسلّم</span><b>{money(T.due)} <small>د.أ</small></b></div>
+          {T.handed > 0 && <Row l="انستلم فعلًا" v={money(T.handed)} c="good" />}
+          {d.custody !== 0 && <Row l={d.custody > 0 ? "عهدة عليه من قبل" : "إله من قبل"} v={money(Math.abs(d.custody))} c={d.custody > 0 ? "bad" : ""} />}
+        </div>
       </div>
 
       {/* البضاعة */}
       {d.goods.length > 0 && (
-        <div className="fx-card">
-          <div className="fx-row" style={{ justifyContent: "space-between" }}>
-            <h3 style={{ margin: 0 }}>البضاعة</h3>
-            {canLoad && <button className="fx-btn sm fx-noprint" onClick={() => setEditLoad(true)}>✏️ عدّل الحمولة</button>}
-          </div>
-          <small className="fx-muted">يرجع = طلع − سلّم − بونص − بدل تالف − تالف</small>
-          <div className="fx-jard-goods">
+        <div className={pane("goods")}>
+          <div className="jd-card-in">
+            <div className="jd-h3"><h3>البضاعة</h3>{canLoad && <button className="jd-mini fx-noprint" onClick={() => setEditLoad(true)}><FiEdit2 /> عدّل الحمولة</button>}</div>
             {d.goods.map((g) => (
-              <div key={g.product_id} className="g">
-                <div className="top">
+              <div key={g.product_id} className="jd-good">
+                <div className="r1">
                   <b>{g.name}</b>
-                  <span className="back">يرجع <b>{num(g.back)}</b>{returned ? <small> · رجع {num(g.returned)}{g.returned < g.back ? <em> (ناقص {num(g.back - g.returned)})</em> : ""}</small> : null}</span>
+                  <span className="back"><small>يرجع</small> <b>{num(g.back)}</b></span>
                 </div>
-                <div className="nums">
-                  <span>طلع <b>{num(g.loaded)}</b></span>
-                  <span>سلّم <b>{num(g.delivered)}</b></span>
-                  {g.bonus > 0 && <span className="ok">بونص <b>{num(g.bonus)}</b></span>}
-                  {g.exchanged > 0 && <span className="ex">بدل تالف <b>{num(g.exchanged)}</b></span>}
-                  {g.damaged > 0 && <span className="bad">تلف بالسيارة <b>{num(g.damaged)}</b></span>}
+                <div className="r2">
+                  <span>طلع {num(g.loaded)}</span>
+                  <span>سلّم {num(g.delivered)}</span>
+                  {g.bonus > 0 && <span className="ok">بونص {num(g.bonus)}</span>}
+                  {g.exchanged > 0 && <span className="ex">بدل تالف {num(g.exchanged)}</span>}
+                  {g.damaged > 0 && <span className="bad">تلف {num(g.damaged)}</span>}
                 </div>
-                {g.over > 0 && <small className="over">⚠️ سلّم {num(g.over)} أكثر من اللي انسجّل إنه طلع — في تحميل ما انسجّل، تأكد مع المستودع.</small>}
+                {returned && <small className={g.returned < g.back ? "miss" : "fine"}>رجع {num(g.returned)}{g.returned < g.back ? ` · ناقص ${num(g.back - g.returned)}` : " ✓"}</small>}
+                {g.over > 0 && <small className="miss"><FiAlertCircle /> سلّم {num(g.over)} أكثر من المسجّل — تأكد مع المستودع</small>}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* المصاريف بصورها */}
-      {d.trips.some((t) => t.expenses.length) && (
-        <div className="fx-card">
-          <h3 style={{ marginTop: 0 }}>المصاريف</h3>
-          <div className="fx-stack" style={{ gap: 10 }}>
-            {d.trips.flatMap((t) => t.expenses).map((e) => <ExpenseRow key={e.id} e={e} canReview={canReview && !mine} reload={reload} />)}
+      {/* الفواتير */}
+      {(invs.length > 0 || failed.length > 0 || openO.length > 0) && (
+        <div className={pane("inv")}>
+          <div className="jd-invs">
+            {invs.map((o) => <InvoiceCard key={o.id} o={o} onInvoice={onInvoice} />)}
+            {(failed.length > 0 || openO.length > 0) && (
+              <div className="jd-card-in">
+                <h3>ما انسلّم</h3>
+                {failed.map((o) => <Row key={o.id} l={`${o.customer_name} — ${o.reason || "ما تم"}`} v={`${num(o.cartons)} كرتونة`} c="bad" />)}
+                {openO.map((o) => <Row key={o.id} l={`${o.customer_name} — لسا`} v={`${num(o.cartons)} كرتونة`} />)}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      </div>
-
-      {/* الفواتير تحت بعض */}
-      {T.invoices_count > 0 && (
-        <button className={`fx-jard-invbtn fx-noprint ${showInv ? "on" : ""}`} onClick={() => setShowInv(!showInv)} aria-expanded={showInv}>
-          <span>🧾 الفواتير اللي سلّمها <b>({T.invoices_count})</b></span>
-          <span className="amt">{money(T.invoices)}</span>
-          <FiChevronDown className="chev" />
-        </button>
-      )}
-      <div className={`fx-jard-invs ${showInv ? "" : "closed"}`}>
-        {d.trips.flatMap((t) => t.invoices).map((o) => (
-          <article key={o.id} className="fx-jard-inv">
-            <div className="hd">
-              <span className="t"><b>{o.customer_name}{o.edited_at ? <small className="fx-edited"> ✏️ معدّلة</small> : null}</b><small>#{o.id} · {time(o.delivered_at)}{o.city ? ` · ${o.city}` : ""}{o.sale ? " · بيع مندوب" : ""}</small></span>
-              <button className="fx-btn sm fx-noprint" onClick={() => onInvoice({ id: o.id, invoice_token: o.invoice_token, customer_name: o.customer_name, phone: o.phone })}>الفاتورة</button>
+      {/* المصاريف */}
+      {exps.length > 0 && (
+        <div className={pane("exp")}>
+          <div className="jd-card-in">
+            <h3>المصاريف</h3>
+            <div className="fx-stack" style={{ gap: 12 }}>
+              {exps.map((e) => <ExpenseRow key={e.id} e={e} canReview={canReview && !mine} reload={reload} />)}
             </div>
-            <div className="lines">
-              {o.items.filter((i) => i.qty > 0).map((i, k) => (
-                <div key={k} className="ln"><span>{num(i.qty)} × {i.name}{i.qty !== i.ordered ? <small> (الطلب {num(i.ordered)})</small> : null}</span><b>{money(i.qty * i.price)}</b></div>
-              ))}
-              {o.items.filter((i) => i.bonus > 0).map((i, k) => (
-                <div key={`b${k}`} className="ln ok"><span>+ {num(i.bonus)} {i.name} بونص</span><b>ببلاش</b></div>
-              ))}
-              {o.exchanges.map((x, k) => (
-                <div key={`x${k}`} className="ln ex"><span>🔁 بدّلنا {num(x.qty)} {x.name} تالف بجديد</span><b>ببلاش</b></div>
-              ))}
-              {o.items.filter((i) => i.damaged > 0).map((i, k) => (
-                <div key={`d${k}`} className="ln bad"><span>تالف رجع معه {num(i.damaged)} {i.name}</span><b>—</b></div>
-              ))}
-            </div>
-            <div className="ft">
-              <span>المجموع <b>{money(o.total)}</b></span>
-              <span>كاش <b>{money(o.cash)}</b></span>
-              {o.debt > 0 ? <span className="debt">دين <b>{money(o.debt)}</b></span> : <span className="paid">مدفوعة ✓</span>}
-            </div>
-          </article>
-        ))}
-
-        {showInv && T.invoices_count > 2 && <button className="fx-link fx-noprint" style={{ justifySelf: "center" }} onClick={() => setShowInv(false)}>▴ سكّر الفواتير</button>}
-      </div>
-
-      {d.trips.some((t) => t.failed.length || t.open.length) && (
-        <div className="fx-card">
-          {d.trips.flatMap((t) => t.failed).map((o) => <div key={o.id} className="fx-kv bad"><span>✗ {o.customer_name} — {o.reason || "ما تم"}</span><b>{num(o.cartons)} كرتونة</b></div>)}
-          {d.trips.flatMap((t) => t.open).map((o) => <div key={o.id} className="fx-kv"><span>⏳ {o.customer_name} — لسا ما انسلّم</span><b>{num(o.cartons)} كرتونة</b></div>)}
+          </div>
         </div>
       )}
     </section>
+  );
+}
+
+function Row({ l, v, c = "" }) {
+  return <div className={`jd-row ${c}`}><span>{l}</span><b>{v}</b></div>;
+}
+
+// فاتورة مطوية: اسم الزبون والمبلغ، وبتفتح على التفاصيل
+function InvoiceCard({ o, onInvoice }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <article className={`jd-inv ${open ? "open" : ""}`}>
+      <button className="hd" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="t">
+          <b>{o.customer_name}{o.edited_at ? <small className="fx-edited"> · معدّلة</small> : null}</b>
+          <small>{time(o.delivered_at)}{o.city ? ` · ${o.city}` : ""}{o.sale ? " · بيع مندوب" : ""}</small>
+        </span>
+        <span className="amt">
+          <b>{money(o.total)}</b>
+          {o.debt > 0 ? <small className="debt">دين {money(o.debt)}</small> : <small className="paid">مدفوعة</small>}
+        </span>
+        <FiChevronDown className="chev fx-noprint" aria-hidden="true" />
+      </button>
+      <div className="body">
+        {o.items.filter((i) => i.qty > 0).map((i, k) => (
+          <div key={k} className="ln"><span>{num(i.qty)} × {i.name}{i.qty !== i.ordered ? <small> (الطلب {num(i.ordered)})</small> : null}</span><b>{money(i.qty * i.price)}</b></div>
+        ))}
+        {o.items.filter((i) => i.bonus > 0).map((i, k) => <div key={`b${k}`} className="ln ok"><span>+ {num(i.bonus)} {i.name} بونص</span><b>ببلاش</b></div>)}
+        {o.exchanges.map((x, k) => <div key={`x${k}`} className="ln ex"><span>بدّلنا {num(x.qty)} {x.name} تالف</span><b>ببلاش</b></div>)}
+        {o.items.filter((i) => i.damaged > 0).map((i, k) => <div key={`d${k}`} className="ln bad"><span>تالف رجع {num(i.damaged)} {i.name}</span><b>—</b></div>)}
+        <div className="ft">
+          <span>كاش <b>{money(o.cash)}</b></span>
+          <button className="jd-mini fx-noprint" onClick={() => onInvoice({ id: o.id, invoice_token: o.invoice_token, customer_name: o.customer_name, phone: o.phone })}><FiFileText /> الفاتورة</button>
+        </div>
+      </div>
+    </article>
   );
 }
 
