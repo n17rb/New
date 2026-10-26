@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
-import { FiCheckCircle, FiChevronLeft, FiChevronDown, FiTruck } from "react-icons/fi";
+import { lazy, Suspense, useEffect, useState } from "react";
+const LiveMap = lazy(() => import("./Live.jsx").then((m) => ({ default: m.LiveMap })));
+import { FiCheckCircle, FiChevronLeft, FiChevronDown, FiTruck, FiMaximize2 } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
 import { lineType, plantName, plantBg, plantIcon } from "../plants.js";
@@ -145,39 +146,61 @@ export default function Home() {
             );
           })()}
 
-          {/* السيارات: سطر واحد، واكبس عليه بتنفتح */}
-          {(() => {
-            const cnt = (st) => h.vehicles.filter((v) => v.state === st).length;
-            const sum = [cnt("move") && `${cnt("move")} بالطريق`, cnt("late") && `${cnt("late")} متأخرة`, cnt("planned") && `${cnt("planned")} جاهزة`, cnt("back") && `${cnt("back")} رجعت`].filter(Boolean).join(" · ") || `${h.vehicles.length} سيارة`;
-            return (
-              <div className="fx-card" style={{ padding: 0, overflow: "hidden" }}>
-                <button className="fx-item" style={{ width: "100%", border: 0, background: "transparent" }} onClick={() => setCarsOpen(!carsOpen)}>
-                  <span className="fx-avatar"><FiTruck /></span>
-                  <span className="t"><b>السيارات</b><span style={cnt("late") ? { color: "var(--fx-crit)", fontWeight: 700 } : undefined}>{sum}</span></span>
-                  <FiChevronDown style={{ color: "var(--fx-muted)", transform: carsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-                </button>
-                {carsOpen && (
-                  <div className="fx-list" style={{ borderTop: "1px solid var(--fx-line, #eef2f6)", borderRadius: 0 }}>
-                    {h.vehicles.length === 0 && <div className="fx-item"><span className="fx-muted">ما في سيارات — ضيفها من الإعدادات.</span></div>}
-                    {h.vehicles.map((v) => {
-                      const [label, dot] = STATE[v.state] || ["", ""];
-                      return (
-                        <button key={v.id} className="fx-item" onClick={() => nav("/f/trips")}>
-                          <span className="t">
-                            <b>{v.name}{v.driver_name ? ` · ${v.driver_name}` : ""}</b>
-                            <span>{v.trip_id ? `${v.done}/${v.stops} وقفات · ${num(v.load)} كرتونة` : v.governorate || ""}</span>
-                          </span>
-                          <span className="end"><span className="fx-row" style={{ gap: 6 }}><i className={`fx-dot ${dot}`} />{label}</span></span>
-                        </button>
-                      );
-                    })}
-                    <button className="fx-item" onClick={() => nav("/f/live")}><span className="t"><b style={{ color: "var(--fx-navy)" }}>🗺 شوفهم على الخريطة</b></span><FiChevronLeft /></button>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {/* السيارات: الخريطة دايمًا مفتوحة، وتحتها سهم بيفتح قائمة السيارات */}
+          <CarsBlock vehicles={h.vehicles} open={carsOpen} setOpen={setCarsOpen} />
         </>
+      )}
+    </div>
+  );
+}
+
+// خريطة السيارات على الرئيسية: بتتحدّث كل 30 ثانية
+function CarsBlock({ vehicles, open, setOpen }) {
+  const nav = useNavigate();
+  const [live, setLive] = useState(null);
+  const [sel, setSel] = useState(null);
+  useEffect(() => {
+    let on = true;
+    const load = () => fapi.live().then((d) => on && setLive(d)).catch(() => on && setLive((x) => x || false));
+    load();
+    const t = setInterval(load, 30000);
+    return () => { on = false; clearInterval(t); };
+  }, []);
+  const cnt = (st) => vehicles.filter((v) => v.state === st).length;
+  const sum = [cnt("move") && `${cnt("move")} بالطريق`, cnt("late") && `${cnt("late")} متأخرة`, cnt("planned") && `${cnt("planned")} جاهزة`, cnt("back") && `${cnt("back")} رجعت`].filter(Boolean).join(" · ") || `${vehicles.length} سيارة`;
+  return (
+    <div className="hm-cars">
+      <div className="hm-cars-h">
+        <span className="t"><b>وين السيارات</b><small style={cnt("late") ? { color: "var(--fx-crit)", fontWeight: 700 } : undefined}>{sum}</small></span>
+        <button className="hm-cars-full" onClick={() => nav("/f/live")} aria-label="افتح الخريطة كبيرة"><FiMaximize2 /></button>
+      </div>
+      {live !== false && (
+        <div className="hm-cars-map">
+          {live
+            ? <Suspense fallback={<div className="hm-cars-wait">الخريطة عم تحمّل...</div>}><LiveMap data={live} selected={sel} onSelect={setSel} height="280px" compact /></Suspense>
+            : <div className="hm-cars-wait">الخريطة عم تحمّل...</div>}
+        </div>
+      )}
+      <button className={`hm-cars-arrow ${open ? "on" : ""}`} onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span>{open ? "سكّر السيارات" : `السيارات (${vehicles.length})`}</span>
+        <FiChevronDown />
+      </button>
+      {open && (
+        <div className="hm-cars-list">
+          {vehicles.length === 0 && <div className="fx-muted" style={{ padding: 12, textAlign: "center" }}>ما في سيارات — ضيفها من الإعدادات.</div>}
+          {vehicles.map((v) => {
+            const [label, dot] = STATE[v.state] || ["", ""];
+            return (
+              <button key={v.id} className="hm-car" onClick={() => { const lv = live?.vehicles?.find((x) => x.id === v.id); if (lv?.lat != null) { setSel(v.id); window.scrollTo({ top: document.querySelector(".hm-cars-map")?.offsetTop - 80 || 0, behavior: "smooth" }); } else nav("/f/trips"); }}>
+                <span className="t">
+                  <b>{v.name}{v.driver_name ? ` · ${v.driver_name}` : ""}</b>
+                  <small>{v.trip_id ? `${v.done}/${v.stops} وقفات · ${num(v.load)} كرتونة` : v.governorate || "بدون رحلة"}</small>
+                </span>
+                <span className="st"><i className={`fx-dot ${dot}`} />{label}</span>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
