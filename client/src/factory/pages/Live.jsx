@@ -40,13 +40,13 @@ export const LIVE_COLORS = COLORS;
 export const LIVE_LABEL = LABEL;
 
 // الخريطة نفسها: بتنستعمل بشاشة الرحلات وشاشة «وين السيارات»
-export function LiveMap({ data, selected, onSelect, height = "52vh" }) {
+export function LiveMap({ data, selected, onSelect, height = "52vh", compact = false }) {
   const withPos = (data?.vehicles || []).filter((v) => v.lat != null);
   const center = data?.factory || [31.95, 35.93];
   const chosen = withPos.find((v) => v.id === selected);
   return (
     <div className="fx-live-map" style={{ height }}>
-      <MapContainer center={center} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
+      <MapContainer center={center} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom={!compact} dragging={!(compact && L.Browser?.mobile)}>
         <MapTiles />
         <Marker position={center} icon={factoryIcon}><Tooltip direction="top">المصنع</Tooltip></Marker>
         {withPos.map((v) => (
