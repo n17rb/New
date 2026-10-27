@@ -2510,3 +2510,27 @@ button.stop-row:active { background: var(--surface-2); }
 .sopt-t b { font-size: 0.95rem; }
 .sopt-t small { font-size: 0.74rem; color: var(--text-secondary); line-height: 1.4; }
 .sopts > .sopt:last-child:nth-child(odd) { grid-column: span 2; min-height: 0; flex-direction: row; align-items: center; }
+
+/* ---------- الرئيسية: بسيطة بدون أيقونات كثير ---------- */
+.home-search {
+  display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text-secondary);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 13px 14px; margin-bottom: 12px; font-size: 0.92rem;
+}
+.home-search svg { color: var(--text-secondary); }
+.home-alert {
+  display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--warning);
+  background: var(--warning-soft); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; font-size: 0.88rem; font-weight: 700;
+}
+.home-alert-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.home-list { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; margin-bottom: 12px; }
+.home-row {
+  display: flex; align-items: center; gap: 10px; padding: 15px 16px; text-decoration: none; color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.home-row:last-child { border-bottom: none; }
+.home-row:active { background: var(--surface-2); }
+.home-row-t { flex: 1; font-weight: 700; font-size: 0.95rem; }
+.home-row-v { font-size: 0.86rem; color: var(--text-secondary); font-weight: 600; }
+.home-row-v em { font-style: normal; color: var(--urgent); }
+.home-row-v.red { color: var(--urgent); }
+.home-row-c { color: var(--mist); flex-shrink: 0; }

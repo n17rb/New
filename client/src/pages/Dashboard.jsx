@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet, FiPackage } from "react-icons/fi";
-import { qtyWord } from "../components/Forecast.jsx";
+import { FiSearch, FiChevronLeft } from "react-icons/fi";
 import { api, peek } from "../api.js";
 import { usePerms } from "../auth.jsx";
 
@@ -69,82 +68,60 @@ export default function Dashboard({ user }) {
 
       {error && <div className="error-box">{error}</div>}
 
+      <Link to="/customers" className="home-search">
+        <FiSearch aria-hidden="true" />
+        <span>دوّر على زبون…</span>
+      </Link>
+
       {data?.needs_quantity > 0 && (
-        <button className="alert-row" onClick={() => navigate("/orders")}>
-          <FiAlertCircle size={20} aria-hidden="true" />
+        <Link to="/orders" className="home-alert">
+          <span className="home-alert-dot" aria-hidden="true" />
           <span style={{ flex: 1 }}>
             {data.needs_quantity === 1 ? "طلب تلقائي واحد" : `${data.needs_quantity} طلبات تلقائية`} لسا ما انحددت كميتها
           </span>
           <FiChevronLeft aria-hidden="true" />
-        </button>
+        </Link>
       )}
 
-      <div className="home-tiles">
-        <Link to="/customers" className="home-tile">
-          <span className="home-tile-ic blue"><FiSearch aria-hidden="true" /></span>
-          <span className="home-tile-t">دوّر على زبون</span>
-          <span className="home-tile-s">بالاسم أو التلفون أو الرقم</span>
+      {/* قائمة بسيطة بدون أيقونات — بس الإشي اللي بيهمك اليوم */}
+      <div className="home-list">
+        <Link to="/notifications?tab=schedule" className="home-row">
+          <span className="home-row-t">مواعيد اليوم</span>
+          <span className="home-row-v">{data ? (data.appointments_today ? `${data.appointments_today} زبون` : "ما في") : "–"}</span>
+          <FiChevronLeft className="home-row-c" aria-hidden="true" />
         </Link>
-        {can("orders") && (
-          <Link to="/orders" className="home-tile">
-            <span className="home-tile-ic violet"><FiPackage aria-hidden="true" /></span>
-            <span className="home-tile-t">الطلبات</span>
-            <span className="home-tile-s">{data ? (data.new_orders ? `${data.new_orders} بستنى توزيع` : "كله موزّع") : " "}</span>
+        {data && data.forecast_today != null && (
+          <Link to={data.forecast_today === 0 && data.forecast_late > 0 ? "/forecast?tab=late" : "/forecast"} className="home-row">
+            <span className="home-row-t">مفروض يطلبوا اليوم</span>
+            <span className="home-row-v">
+              {data.forecast_today > 0 ? `${data.forecast_today} زبون` : "ما في"}
+              {data.forecast_late > 0 && <em> · {data.forecast_late} متأخر</em>}
+            </span>
+            <FiChevronLeft className="home-row-c" aria-hidden="true" />
           </Link>
         )}
         {canTrips && (
-          <Link to="/trip" className="home-tile">
-            <span className="home-tile-ic green"><FiTruck aria-hidden="true" /></span>
-            <span className="home-tile-t">الرحلات</span>
-            <span className="home-tile-s">{data ? (data.active_trips ? `${data.active_trips} شغّالة هلّق` : "ما في رحلة شغّالة") : " "}</span>
-          </Link>
-        )}
-        <Link to="/notifications?tab=schedule" className="home-tile">
-          <span className="home-tile-ic amber"><FiCalendar aria-hidden="true" /></span>
-          <span className="home-tile-t">مواعيد اليوم</span>
-          <span className="home-tile-s">{data ? (data.appointments_today ? `${data.appointments_today} زبون` : "ما في مواعيد") : " "}</span>
-        </Link>
-      </div>
-
-      {(data?.forecast_today != null || data?.debts_total > 0 || (myBalance !== null && myBalance !== 0)) && (
-      <div className="list-group">
-        {data && data.forecast_today != null && (
-          <Link to={data.forecast_today === 0 && data.forecast_late > 0 ? "/forecast?tab=late" : "/forecast"} className="list-row">
-            <span className="list-icon"><FiDroplet aria-hidden="true" /></span>
-            <span className="list-text">
-              <span className="list-title">توقعات اليوم</span>
-              <div className="list-sub">
-                {data.forecast_today > 0
-                  ? `${data.forecast_today === 1 ? "زبون" : `${data.forecast_today} زباين`} مفروض يطلبوا (حوالي ${qtyWord(data.forecast_bottles)})`
-                  : "ما في حدا متوقع اليوم"}
-                {data.forecast_late > 0 && <span style={{ color: "var(--urgent)", fontWeight: 600 }}> · {data.forecast_late} متأخر</span>}
-              </div>
-            </span>
-            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          <Link to="/trip" className="home-row">
+            <span className="home-row-t">الرحلات</span>
+            <span className="home-row-v">{data ? (data.active_trips ? `${data.active_trips} شغّالة` : "ما في رحلة") : "–"}</span>
+            <FiChevronLeft className="home-row-c" aria-hidden="true" />
           </Link>
         )}
         {data?.debts_total > 0 && (
-          <Link to="/debts" className="list-row">
-            <span className="list-icon" style={{ background: "var(--urgent-soft)", color: "var(--urgent)" }}><FiAlertCircle aria-hidden="true" /></span>
-            <span className="list-text">
-              <span className="list-title">ديون الزباين</span>
-              <div className="list-sub tabular-num">{Number(data.debts_total).toFixed(2)} JD على {data.debtors_count} زبون</div>
-            </span>
-            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          <Link to="/debts" className="home-row">
+            <span className="home-row-t">ديون الزباين</span>
+            <span className="home-row-v red tabular-num">{Number(data.debts_total).toFixed(2)} JD</span>
+            <FiChevronLeft className="home-row-c" aria-hidden="true" />
           </Link>
         )}
         {myBalance !== null && myBalance !== 0 && (
-          <Link to="/my-balance" className="list-row">
-            <span className="list-icon"><FiCreditCard aria-hidden="true" /></span>
-            <span className="list-text">
-              <span className="list-title">رصيدي</span>
-              <div className="list-sub tabular-num">{myBalance.toFixed(2)} JD مستحق للمحل</div>
-            </span>
-            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          <Link to="/my-balance" className="home-row">
+            <span className="home-row-t">رصيدي للمحل</span>
+            <span className="home-row-v tabular-num">{myBalance.toFixed(2)} JD</span>
+            <FiChevronLeft className="home-row-c" aria-hidden="true" />
           </Link>
         )}
       </div>
-      )}
     </div>
   );
 }
