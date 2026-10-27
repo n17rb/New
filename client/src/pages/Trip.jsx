@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle } from "react-icons/fi";
 import { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
@@ -1240,29 +1240,24 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
         تم التسليم
       </button>
 
-      {!showFailMenu && (
-        <button className="btn-danger-text icon-row" style={{ justifyContent: "center" }} disabled={busy} onClick={() => setShowFailMenu(true)}>
-          <FiAlertTriangle /> تعذر التسليم
-        </button>
+      {/* تحت «تم التسليم»: تأجيل · تعذّر · إلغاء */}
+      {!showFailMenu && !showPostponeForm && (
+        <div className="stop-sub-actions">
+          <button disabled={busy} onClick={() => setShowPostponeForm(true)}><FiClock aria-hidden="true" /> تأجيل</button>
+          <button disabled={busy} onClick={() => setShowFailMenu(true)}><FiAlertTriangle aria-hidden="true" /> تعذّر</button>
+          {canCancel && <button className="danger" disabled={busy} onClick={() => setConfirmCancel(true)}><FiXCircle aria-hidden="true" /> إلغاء</button>}
+        </div>
       )}
 
       {showFailMenu && !showPostponeForm && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <button className="btn-secondary" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, "خارج المنزل"))}>
-            خارج المنزل
-          </button>
-          <button className="btn-secondary" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, "لا يرد"))}>
-            لا يرد
-          </button>
-          <button className="btn-secondary" disabled={busy} onClick={() => setShowPostponeForm(true)}>
-            ⏰ تأجيل
-          </button>
-          {canCancel && (
-            <button className="btn-secondary" style={{ color: "var(--urgent)" }} disabled={busy} onClick={() => setConfirmCancel(true)}>
-              ❌ إلغاء الطلب
-            </button>
-          )}
-          <button className="btn-secondary" onClick={() => setShowFailMenu(false)}>رجوع</button>
+        <div className="card" style={{ background: "var(--bg)" }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>ليش تعذّر تسليم {stop.customer_name}؟</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {["خارج المنزل", "لا يرد", "العنوان غلط"].map((r) => (
+              <button key={r} className="btn-secondary" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, r))}>{r}</button>
+            ))}
+            <button className="btn-secondary" onClick={() => setShowFailMenu(false)}>رجوع</button>
+          </div>
         </div>
       )}
 
