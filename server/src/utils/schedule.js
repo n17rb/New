@@ -43,3 +43,29 @@ export function scheduleLabel({ scheduled_date, requested_time }) {
     : String(scheduled_date).slice(0, 10);
   return `${dayLabel(d, today)} (بأي وقت)`;
 }
+
+// ---------- تنظيف مواعيد الطلبات (للإنشاء والتأجيل) ----------
+export function jordanToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+export function jordanDateOf(d) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+// بيرجّع {scheduled_date, requested_time} نظيفين أو بيرمي خطأ مفهوم
+export function cleanSchedule({ scheduled_date, requested_time }) {
+  let time = null;
+  if (requested_time) {
+    time = new Date(requested_time);
+    if (Number.isNaN(time.getTime())) throw new Error("الموعد غير صحيح.");
+    if (time.getTime() < Date.now() - 10 * 60 * 1000) throw new Error("الموعد اللي اخترته صار ماضي.");
+    if (time.getTime() > Date.now() + 90 * 86400000) throw new Error("الموعد بعيد كثير (أكثر من ٣ شهور).");
+  }
+  let date = scheduled_date || null;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("التاريخ غير صحيح.");
+  if (time) date = jordanDateOf(time);
+  if (date && date < jordanToday()) throw new Error("التاريخ اللي اخترته صار ماضي.");
+  // «اليوم بأي وقت» = طلب عادي
+  if (date === jordanToday() && !time) date = null;
+  return { scheduled_date: date, requested_time: time ? time.toISOString() : null };
+}
+

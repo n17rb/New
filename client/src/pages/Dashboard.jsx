@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet } from "react-icons/fi";
+import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet, FiPackage, FiDollarSign } from "react-icons/fi";
 import { qtyWord } from "../components/Forecast.jsx";
 import { api, peek } from "../api.js";
 import { usePerms } from "../auth.jsx";
@@ -33,12 +33,37 @@ export default function Dashboard({ user }) {
   // «أبو محمد» و«أم علي» بينادوا بالكنية كاملة
   const parts = (user.full_name || "").trim().split(/\s+/);
   const firstName = ["أبو", "ابو", "أم", "ام"].includes(parts[0]) && parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
+  const canTrips = can("trips") || can("delivery", "edit");
+  const n = (v) => (data ? v ?? 0 : "–");
 
   return (
     <div className="page">
-      <div className="greeting">
-        <h1>{greetingWord()} {firstName}</h1>
-        <p>{todayLabel()}</p>
+      <div className="home-hero">
+        <div className="home-hello">
+          <div className="home-greet">{greetingWord()} {firstName} 👋</div>
+          <div className="home-date">{todayLabel()}</div>
+        </div>
+
+        <div className="home-stats" aria-busy={!data}>
+          <button className="home-stat" onClick={() => navigate("/orders")}>
+            <b className="tabular-num">{n(data?.new_orders)}</b>
+            <span>طلبات جديدة</span>
+          </button>
+          <button className="home-stat" onClick={() => navigate("/trip")}>
+            <b className="tabular-num">{n(data?.in_route)}</b>
+            <span>بالطريق</span>
+          </button>
+          <button className="home-stat" onClick={() => navigate(can("reports") ? "/reports" : "/orders")}>
+            <b className="tabular-num">{n(data?.delivered_today)}</b>
+            <span>تسلّمت اليوم</span>
+          </button>
+        </div>
+
+        {data?.delivered_value_today != null && (
+          <div className="home-value">
+            <FiDollarSign aria-hidden="true" /> مبيعات اليوم <b className="tabular-num">{Number(data.delivered_value_today).toFixed(2)} JD</b>
+          </div>
+        )}
       </div>
 
       {error && <div className="error-box">{error}</div>}
@@ -53,41 +78,35 @@ export default function Dashboard({ user }) {
         </button>
       )}
 
-      <div className="today-strip" aria-busy={!data}>
-        <button className="today-cell" onClick={() => navigate("/orders")}>
-          <div className="today-num tabular-num">{data ? data.new_orders : "–"}</div>
-          <div className="today-label">طلبات جديدة</div>
-        </button>
-        <button className="today-cell" onClick={() => navigate("/trip")}>
-          <div className="today-num tabular-num">{data ? data.in_route : "–"}</div>
-          <div className="today-label">بالطريق</div>
-        </button>
-        <button className="today-cell" onClick={() => navigate(can("reports") ? "/reports" : "/orders")}>
-          <div className="today-num tabular-num">{data ? data.delivered_today : "–"}</div>
-          <div className="today-label">تسلّمت اليوم</div>
-        </button>
+      <div className="home-tiles">
+        <Link to="/customers" className="home-tile">
+          <span className="home-tile-ic blue"><FiSearch aria-hidden="true" /></span>
+          <span className="home-tile-t">دوّر على زبون</span>
+          <span className="home-tile-s">بالاسم أو التلفون أو الرقم</span>
+        </Link>
+        {can("orders") && (
+          <Link to="/orders" className="home-tile">
+            <span className="home-tile-ic violet"><FiPackage aria-hidden="true" /></span>
+            <span className="home-tile-t">الطلبات</span>
+            <span className="home-tile-s">{data ? (data.new_orders ? `${data.new_orders} بستنى توزيع` : "كله موزّع") : " "}</span>
+          </Link>
+        )}
+        {canTrips && (
+          <Link to="/trip" className="home-tile">
+            <span className="home-tile-ic green"><FiTruck aria-hidden="true" /></span>
+            <span className="home-tile-t">الرحلات</span>
+            <span className="home-tile-s">{data ? (data.active_trips ? `${data.active_trips} شغّالة هلّق` : "ما في رحلة شغّالة") : " "}</span>
+          </Link>
+        )}
+        <Link to="/notifications?tab=schedule" className="home-tile">
+          <span className="home-tile-ic amber"><FiCalendar aria-hidden="true" /></span>
+          <span className="home-tile-t">مواعيد اليوم</span>
+          <span className="home-tile-s">{data ? (data.appointments_today ? `${data.appointments_today} زبون` : "ما في مواعيد") : " "}</span>
+        </Link>
       </div>
 
-      {data?.delivered_value_today != null && (
-        <p className="text-secondary" style={{ margin: "-2px 4px 14px" }}>
-          قيمة اللي تسلّم اليوم: <strong className="tabular-num" style={{ color: "var(--text)" }}>{Number(data.delivered_value_today).toFixed(2)} JD</strong>
-        </p>
-      )}
-
+      {(data?.forecast_today != null || data?.debts_total > 0 || (myBalance !== null && myBalance !== 0)) && (
       <div className="list-group">
-        <Link to="/customers" className="list-row">
-          <span className="list-icon"><FiSearch aria-hidden="true" /></span>
-          <span className="list-text"><span className="list-title">دوّر على عميل</span><div className="list-sub">بالاسم أو أول أرقام التلفون أو الرقم التسلسلي</div></span>
-          <FiChevronLeft className="list-chevron" aria-hidden="true" />
-        </Link>
-        <Link to="/notifications?tab=schedule" className="list-row">
-          <span className="list-icon"><FiCalendar aria-hidden="true" /></span>
-          <span className="list-text">
-            <span className="list-title">مواعيد اليوم</span>
-            <div className="list-sub">{data ? (data.appointments_today ? `${data.appointments_today} زبون موعده اليوم` : "ما في مواعيد اليوم") : " "}</div>
-          </span>
-          <FiChevronLeft className="list-chevron" aria-hidden="true" />
-        </Link>
         {data && data.forecast_today != null && (
           <Link to={data.forecast_today === 0 && data.forecast_late > 0 ? "/forecast?tab=late" : "/forecast"} className="list-row">
             <span className="list-icon"><FiDroplet aria-hidden="true" /></span>
@@ -103,21 +122,11 @@ export default function Dashboard({ user }) {
             <FiChevronLeft className="list-chevron" aria-hidden="true" />
           </Link>
         )}
-        {(can("trips") || can("delivery", "edit")) && (
-          <Link to="/trip" className="list-row">
-            <span className="list-icon"><FiTruck aria-hidden="true" /></span>
-            <span className="list-text">
-              <span className="list-title">الرحلات</span>
-              <div className="list-sub">{data ? (data.active_trips ? `${data.active_trips} رحلة شغّالة هلّق` : "ما في رحلات شغّالة") : " "}</div>
-            </span>
-            <FiChevronLeft className="list-chevron" aria-hidden="true" />
-          </Link>
-        )}
         {data?.debts_total > 0 && (
           <Link to="/debts" className="list-row">
             <span className="list-icon" style={{ background: "var(--urgent-soft)", color: "var(--urgent)" }}><FiAlertCircle aria-hidden="true" /></span>
             <span className="list-text">
-              <span className="list-title">ديون العملاء</span>
+              <span className="list-title">ديون الزباين</span>
               <div className="list-sub tabular-num">{Number(data.debts_total).toFixed(2)} JD على {data.debtors_count} زبون</div>
             </span>
             <FiChevronLeft className="list-chevron" aria-hidden="true" />
@@ -134,6 +143,7 @@ export default function Dashboard({ user }) {
           </Link>
         )}
       </div>
+      )}
     </div>
   );
 }

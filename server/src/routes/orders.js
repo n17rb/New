@@ -2,7 +2,8 @@ import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
-import { tryAutoAddToActiveTrip } from "./trips.js";
+import { tryAutoAddToActiveTrip, rescheduleOrder } from "./trips.js";
+import { cleanSchedule } from "../utils/schedule.js";
 import { notifyNewOrder } from "../utils/notify.js";
 import { invalidateForecastCache } from "../utils/forecast.js";
 
@@ -104,7 +105,10 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   const orderResult = await query(
-    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.bottle_type
+    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.phone_normalized AS customer_phone_normalized,
+            c.bottle_type, c.coupon_balance, c.debt_balance,
+            (SELECT t.driver_name FROM (SELECT u.full_name AS driver_name FROM trip_stops ts JOIN trips t2 ON t2.id = ts.trip_id
+               LEFT JOIN users u ON u.id = t2.driver_id WHERE ts.order_id = o.id ORDER BY ts.id DESC LIMIT 1) t) AS driver_name
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.id = $1`,
     [req.params.id]
@@ -115,30 +119,8 @@ router.get("/:id", async (req, res) => {
   res.json({ ...orderResult.rows[0], items: itemsResult.rows });
 });
 
-// ---------- مواعيد الطلبات ----------
-function jordanToday() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-}
-function jordanDateOf(d) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-}
-// بيرجّع {scheduled_date, requested_time} نظيفين أو بيرمي خطأ مفهوم
-export function cleanSchedule({ scheduled_date, requested_time }) {
-  let time = null;
-  if (requested_time) {
-    time = new Date(requested_time);
-    if (Number.isNaN(time.getTime())) throw new Error("الموعد غير صحيح.");
-    if (time.getTime() < Date.now() - 10 * 60 * 1000) throw new Error("الموعد اللي اخترته صار ماضي.");
-    if (time.getTime() > Date.now() + 90 * 86400000) throw new Error("الموعد بعيد كثير (أكثر من ٣ شهور).");
-  }
-  let date = scheduled_date || null;
-  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("التاريخ غير صحيح.");
-  if (time) date = jordanDateOf(time);
-  if (date && date < jordanToday()) throw new Error("التاريخ اللي اخترته صار ماضي.");
-  // «اليوم بأي وقت» = طلب عادي
-  if (date === jordanToday() && !time) date = null;
-  return { scheduled_date: date, requested_time: time ? time.toISOString() : null };
-}
+// مواعيد الطلبات: cleanSchedule بـ utils/schedule.js
+export { cleanSchedule };
 
 router.post("/", async (req, res) => {
   const { customer_id, items, priority, notes } = req.body;
@@ -398,10 +380,10 @@ router.post("/:id/cancel", async (req, res) => {
   }
   const { reason } = req.body;
   const result = await query(
-    "UPDATE orders SET status = 'CANCELLED', cancelled_reason = $1, updated_at = now() WHERE id = $2 RETURNING *",
+    "UPDATE orders SET status = 'CANCELLED', cancelled_reason = $1, updated_at = now() WHERE id = $2 AND status <> 'DELIVERED' RETURNING *",
     [reason || null, req.params.id]
   );
-  if (!result.rows[0]) return res.status(404).json({ error: "الطلب غير موجود." });
+  if (!result.rows[0]) return res.status(400).json({ error: "الطلب مش موجود أو تسلّم — ما بينلغى." });
 
   await logActivity({
     userId: req.user.id,
@@ -433,27 +415,31 @@ router.post("/:id/fail", async (req, res) => {
   res.json(result.rows[0]);
 });
 
+// تأجيل الطلب ليوم/ساعة: بيرجع «جديد» بموعده الجديد، وبيطلع من أي رحلة شغّالة لو ما تسلّم.
+// بيوم الموعد بيطلع لحاله بقائمة الطلبات الجاهزة للتوزيع.
 router.post("/:id/postpone", async (req, res) => {
-  const { postponed_to, reason } = req.body;
-  if (!postponed_to) return res.status(400).json({ error: "الرجاء تحديد الوقت الجديد." });
-
-  const result = await query(
-    `UPDATE orders SET status = 'POSTPONED', postponed_to = $1,
-       notes = COALESCE(notes || ' | ', '') || $2, updated_at = now()
-     WHERE id = $3 RETURNING *`,
-    [postponed_to, reason ? `سبب التأجيل: ${reason}` : "تم التأجيل", req.params.id]
-  );
-  if (!result.rows[0]) return res.status(404).json({ error: "الطلب غير موجود." });
+  const { reason } = req.body || {};
+  let schedule;
+  try {
+    schedule = cleanSchedule({
+      scheduled_date: req.body?.scheduled_date || null,
+      requested_time: req.body?.requested_time || req.body?.postponed_to || null,
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const order = await rescheduleOrder(req.params.id, { ...schedule, note: reason ? `تأجيل: ${reason}` : "تم التأجيل" });
+  if (!order) return res.status(400).json({ error: "ما بينفع تأجّل هذا الطلب." });
 
   await logActivity({
     userId: req.user.id,
     action: "POSTPONE_ORDER",
     recordType: "order",
     recordId: req.params.id,
-    newValue: { postponed_to, reason },
+    newValue: { ...schedule, reason },
   });
 
-  res.json(result.rows[0]);
+  res.json(order);
 });
 
 router.post("/:id/reactivate", async (req, res) => {

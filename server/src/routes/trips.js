@@ -6,6 +6,7 @@ import { optimizeRoute, getShopLocation } from "../utils/routing.js";
 import { planDistribution } from "../utils/dispatch.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction } from "../permissions.js";
+import { cleanSchedule } from "../utils/schedule.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -141,13 +142,14 @@ async function buildTripDetailResponse(trip, requestingUser) {
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance, c.bottle_type,
             c.debt_balance, c.bottles_out, o.subtotal,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
-            l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url
+            l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url, r.name AS region_name
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
      JOIN customers c ON c.id = o.customer_id
      LEFT JOIN LATERAL (
        SELECT * FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
      ) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
      WHERE ts.trip_id = $1
      ORDER BY ts.sequence_number ASC`,
     [trip.id]
@@ -1027,6 +1029,22 @@ router.post("/stops/:stopId/postpone", async (req, res) => {
   if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
 
   const { note, new_time } = req.body;
+
+  // تأجيل ليوم ثاني: الطلب بيطلع من الرحلة وبيرجع بيومه
+  if (req.body.other_day) {
+    let schedule;
+    try {
+      schedule = cleanSchedule({ scheduled_date: req.body.scheduled_date || null, requested_time: new_time || null });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (!schedule.scheduled_date) return res.status(400).json({ error: "اختار اليوم." });
+    const order = await rescheduleOrder(stop.order_id, { ...schedule, note: note ? `تأجيل: ${note}` : "تأجّل من الرحلة" });
+    if (!order) return res.status(400).json({ error: "ما بينفع تأجّل هذا الطلب." });
+    await logActivity({ userId: req.user.id, action: "POSTPONE_ORDER", recordType: "order", recordId: stop.order_id, newValue: { ...schedule, note } });
+    return res.json({ message: "تأجّل الطلب وطلع من الرحلة." });
+  }
+
   const maxSeqResult = await query("SELECT COALESCE(MAX(sequence_number), 0) AS max_seq FROM trip_stops WHERE trip_id = $1", [stop.trip_id]);
   const newSeq = maxSeqResult.rows[0].max_seq + 1;
 
@@ -1063,8 +1081,10 @@ router.post("/stops/:stopId/cancel", async (req, res) => {
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
 
+  if (stop.delivered_at) return res.status(400).json({ error: "هذا الطلب تسلّم — ما بينلغى. استعمل «تراجع عن آخر تسليم» لو بالغلط." });
+
   await query(
-    "UPDATE orders SET status = 'CANCELLED', cancelled_reason = $1, updated_at = now() WHERE id = $2",
+    "UPDATE orders SET status = 'CANCELLED', cancelled_reason = $1, updated_at = now() WHERE id = $2 AND status <> 'DELIVERED'",
     [reason || null, stop.order_id]
   );
 
@@ -1177,6 +1197,31 @@ router.post("/:id/add-order", async (req, res) => {
 
   res.json({ message: "تمت إضافة الطلب وإعادة ترتيب الرحلة بأحسن طريق." });
 });
+
+// تأجيل طلب لموعد جديد: بيرجع «جديد» بالموعد، وبينشال من أي رحلة شغّالة لو ما تسلّم.
+// schedule = {scheduled_date, requested_time} نظيفين (من cleanSchedule)
+export async function rescheduleOrder(orderId, { scheduled_date, requested_time, note }) {
+  const r = await query(
+    `UPDATE orders SET status = 'NEW', scheduled_date = $1::date, requested_time = $2::timestamptz,
+       postponed_to = COALESCE($2::timestamptz, ($1::date)::timestamp AT TIME ZONE 'Asia/Amman'),
+       schedule_reminded_at = NULL, schedule_morning_at = NULL,
+       notes = COALESCE(notes || ' | ', '') || $3, updated_at = now()
+     WHERE id = $4 AND status NOT IN ('DELIVERED', 'CANCELLED') RETURNING *`,
+    [scheduled_date || null, requested_time || null, note || "تم التأجيل", orderId]
+  );
+  const order = r.rows[0];
+  if (!order) return null;
+  const removed = await query(
+    `DELETE FROM trip_stops ts USING trips t
+     WHERE ts.trip_id = t.id AND ts.order_id = $1 AND ts.delivered_at IS NULL AND t.status <> 'COMPLETED'
+     RETURNING ts.trip_id`,
+    [orderId]
+  );
+  for (const tripId of new Set(removed.rows.map((x) => x.trip_id))) {
+    await reoptimizeTrip(tripId, { withGeometry: false }).catch(() => {});
+  }
+  return order;
+}
 
 export async function tryAutoAddToActiveTrip(orderId, actorId = null) {
   const activeResult = await query(`SELECT * FROM trips WHERE status = 'STARTED'`);

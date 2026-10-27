@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiChevronLeft } from "react-icons/fi";
+import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
+import SchedulePicker from "../components/SchedulePicker.jsx";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
@@ -143,18 +145,28 @@ function UnifiedTripView({ user, isPrivileged }) {
       )}
 
       {isPrivileged && otherTrips.length > 0 && (
-        <div className="card">
-          <h2 className="title-md">رحلات الكباتن</h2>
-          {otherTrips.map((t) => (
-            <div key={t.id} className="customer-row" style={{ padding: "10px 0", cursor: "pointer" }} onClick={() => setSelectedOtherId(t.id)}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{t.driver_name || "سائق غير معروف"}</div>
-                <div className="text-secondary tabular-num">{t.delivered_count} / {t.total_count} تم التسليم</div>
-              </div>
-              <span className="badge">{t.status === "STARTED" ? "جارية" : "جاهزة"}</span>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="section-title">رحلات الكباتن</div>
+          <div className="ord-list">
+            {otherTrips.map((t) => {
+              const pct = t.total_count ? Math.round((t.delivered_count / t.total_count) * 100) : 0;
+              return (
+                <button key={t.id} className="ord-card tone-amber" onClick={() => setSelectedOtherId(t.id)}>
+                  <span className="ord-avatar" aria-hidden="true">🚚</span>
+                  <span className="ord-main">
+                    <span className="ord-name">{t.driver_name || "كابتن"}</span>
+                    <span className="trip-bar mini" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
+                    <span className="ord-meta tabular-num">{t.delivered_count} من {t.total_count} تسلّم</span>
+                  </span>
+                  <span className="ord-side">
+                    <span className={`st-pill ${t.status === "STARTED" ? "green" : "blue"}`}>{t.status === "STARTED" ? "شغّالة" : "جاهزة"}</span>
+                    <FiChevronLeft className="list-chevron" aria-hidden="true" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
@@ -183,7 +195,7 @@ function OtherTripDetail({ tripId, isSuperAdmin, onBack }) {
 
   return (
     <div>
-      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع</button>
+      <button className="od-back" onClick={onBack}>→ رجوع للرحلات</button>
       {error && <div className="error-box">{error}</div>}
       <ActiveTripView
         trip={trip}
@@ -432,6 +444,15 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   );
 }
 
+function stopState(s) {
+  if (s.order_status === "DELIVERED" || s.delivered_at) return "done";
+  if (s.order_status === "FAILED") return "failed";
+  if (s.order_status === "CANCELLED") return "cancelled";
+  if (s.is_time_locked) return "later";
+  return "pending";
+}
+const STOP_STATE_LABEL = { done: "تسلّم", failed: "تعذّر", cancelled: "ملغي", later: "بموعد", pending: "" };
+
 function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onChanged, onCompleted }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -441,6 +462,10 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   const [optimistic, setOptimistic] = useState({});
   // آخر تسليم: بيطلع زر «ابعتله إيصال على واتساب»
   const [receipt, setReceipt] = useState(null);
+  // الزبون اللي اختاره الكابتن من القائمة (بدل التالي بالترتيب)
+  const [selectedStopId, setSelectedStopId] = useState(null);
+  const [showMap, setShowMap] = useState(true);
+  const cardRef = useRef(null);
 
   useEffect(() => {
     // لما توصل البيانات الحقيقية من السيرفر، ما عاد في داعي للحالة المؤقتة
@@ -464,6 +489,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
     setError("");
     setOptimistic((prev) => ({ ...prev, [stop.id]: true }));
     setReceipt(null);
+    setSelectedStopId(null);
     api.deliverStop(stop.id, itemPayments, extra)
       .then((result) => {
         if (result && !result.already_delivered) setReceipt({ stop, result });
@@ -495,30 +521,41 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
     }
   }
 
-  const currentStop = stops.find((s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED" && !s.is_time_locked);
-  const nextLockedStop = [...stops].filter((s) => s.is_time_locked).sort((a, b) => new Date(a.requested_time) - new Date(b.requested_time))[0];
-  const deliveredCount = stops.filter((s) => s.order_status === "DELIVERED").length;
+  const nextStop = stops.find((s) => stopState(s) === "pending");
+  const selectedStop = stops.find((s) => s.id === selectedStopId && ["pending", "later"].includes(stopState(s)));
+  const activeStop = selectedStop || nextStop;
+  const nextLockedStop = [...stops].filter((s) => stopState(s) === "later").sort((a, b) => new Date(a.requested_time) - new Date(b.requested_time))[0];
+  const deliveredCount = stops.filter((s) => stopState(s) === "done").length;
+  const closedCount = stops.filter((s) => ["done", "failed", "cancelled"].includes(stopState(s))).length;
   const totalCount = stops.length;
-  const remainingCount = totalCount - deliveredCount - stops.filter((s) => s.order_status === "FAILED").length;
-
-  const remainingKm = trip.total_remaining_distance_km != null ? trip.total_remaining_distance_km.toFixed(1) : null;
-
-  let estimatedFinishLabel = null;
-  if (trip.status === "STARTED" && trip.estimated_minutes_remaining != null) {
-    estimatedFinishLabel = `${formatMinutes(trip.estimated_minutes_remaining)} (حوالي الساعة ${formatClockTime(trip.estimated_minutes_remaining)})`;
-  }
+  const remainingCount = totalCount - closedCount;
+  const cashTotal = stops.reduce((a, x) => a + (stopState(x) === "done" ? Number(x.cash_collected || 0) : 0), 0);
+  const couponTotal = stops.reduce((a, x) => a + (stopState(x) === "done" ? Number(x.coupons_collected || 0) : 0), 0);
+  const pct = totalCount ? Math.round((closedCount / totalCount) * 100) : 0;
+  const remainingKm = trip.total_remaining_distance_km != null ? Number(trip.total_remaining_distance_km).toFixed(1) : null;
+  const finishAt = trip.status === "STARTED" && trip.estimated_minutes_remaining != null && remainingCount > 0
+    ? formatClockTime(trip.estimated_minutes_remaining) : null;
+  const viewer = isSuperAdmin || isManagerViewOnly;
 
   async function withBusy(fn) {
     setBusy(true);
     setError("");
     try {
       await fn();
+      setSelectedStopId(null);
       onChanged();
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function pickStop(s) {
+    const st = stopState(s);
+    if (st !== "pending" && st !== "later") return;
+    setSelectedStopId(s.id === nextStop?.id ? null : s.id);
+    setTimeout(() => cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   }
 
   async function handleComplete() {
@@ -538,166 +575,71 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
     }
   }
 
+  const activeIndex = activeStop ? stops.findIndex((s) => s.id === activeStop.id) + 1 : null;
+
   return (
     <div>
       {error && <div className="error-box">{error}</div>}
 
-      <div className="card">
-        <div className="text-secondary">
-          رحلة جارية
-          {trip.driver_name && ` · السائق: ${trip.driver_name}`}
+      {/* ملخص الرحلة */}
+      <div className="trip-hero">
+        <div className="trip-hero-top">
+          <span className="trip-live"><span className="trip-live-dot" aria-hidden="true" /> رحلة شغّالة</span>
+          {trip.driver_name && <span className="trip-driver">{trip.driver_name}</span>}
         </div>
-        <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
-          {deliveredCount} / {totalCount} تم التسليم
+        <div className="trip-progress-row">
+          <div className="trip-count tabular-num"><b>{deliveredCount}</b><span> من {totalCount} تسلّم</span></div>
+          {remainingCount > 0 && <div className="trip-left">باقي {remainingCount}</div>}
         </div>
-        {deliveredCount > 0 && (
-          <div className="trip-money">
-            <span>💵 كاش معك <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.cash_collected || 0) : 0), 0).toFixed(2)} JD</b></span>
-            <span>🎫 كوبونات <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.coupons_collected || 0) : 0), 0)}</b></span>
-          </div>
-        )}
-        {trip.total_distance_km > 0 && (
-          <div className="text-secondary">
-            المسافة الكلية: {Number(trip.total_distance_km).toFixed(1)} كم
-            {trip.distance_before_km > trip.total_distance_km && (
-              <> · وفّرنا {(Number(trip.distance_before_km) - Number(trip.total_distance_km)).toFixed(1)} كم بالتحسين ✅</>
-            )}
-          </div>
-        )}
-        {trip.started_at && (
-          <div className="text-secondary">🕐 وقت البدء: {formatClockTime(trip.started_at)}</div>
-        )}
-        {remainingKm && (
-          <div className="text-secondary">المسافة المتبقية التقريبية: {remainingKm} كم</div>
-        )}
-        {estimatedFinishLabel && (
-          <div className="text-secondary" style={{ marginTop: 4 }}>⏱️ الوقت المتوقع لإنهاء الرحلة: {estimatedFinishLabel}</div>
-        )}
-        {isManagerViewOnly && (
-          <div className="text-secondary" style={{ marginTop: 6, fontStyle: "italic" }}>وضع العرض فقط — التحكم بالرحلة للسائق</div>
-        )}
+        <div className="trip-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></div>
+        <div className="trip-facts">
+          <span className="trip-fact cash">💵 <b className="tabular-num">{cashTotal.toFixed(2)}</b> كاش</span>
+          <span className="trip-fact coupon">🎫 <b className="tabular-num">{couponTotal}</b> كوبون</span>
+          {remainingKm && remainingCount > 0 && <span className="trip-fact">📍 <b className="tabular-num">{remainingKm}</b> كم باقي</span>}
+          {finishAt && <span className="trip-fact">⏱ بتخلص {finishAt}</span>}
+          {trip.started_at && <span className="trip-fact muted">بدأت {formatClockTime(trip.started_at)}</span>}
+        </div>
+        {isManagerViewOnly && <div className="trip-viewonly">وضع العرض — التحكم بالرحلة للكابتن</div>}
       </div>
 
-      <TripLoadCard trip={trip} canOperate={canOperate} onChanged={onChanged} />
-
-      {(isSuperAdmin || isManagerViewOnly) && !trip.current_latitude && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          🚚 لسا ما وصلنا أول تحديث موقع من السائق — تأكد إنه فاتح صفحة "الرحلة" بجهازه وموافق على إذن الموقع بالمتصفح.
-        </div>
+      {viewer && !trip.current_latitude && (
+        <div className="od-note">🚚 لسا ما وصل موقع الكابتن — تأكد إنه فاتح صفحة «الرحلة» وموافق على إذن الموقع.</div>
       )}
-
-      {(isSuperAdmin || isManagerViewOnly) && trip.current_latitude && trip.location_updated_at && (
-        <div className="text-secondary" style={{ marginBottom: 12, fontSize: "0.8rem" }}>
-          📍 آخر تحديث موقع: {formatClockTime(trip.location_updated_at)}
+      {viewer && trip.current_latitude && trip.location_updated_at && (
+        <div className="text-secondary" style={{ margin: "0 4px 10px", fontSize: "0.8rem" }}>
+          📍 آخر موقع: {formatClockTime(trip.location_updated_at)}
           {(Date.now() - new Date(trip.location_updated_at).getTime()) > 3 * 60 * 1000 && (
-            <span style={{ color: "var(--urgent)" }}> — تحديث قديم، تأكد السائق فاتح التطبيق</span>
+            <span style={{ color: "var(--urgent)" }}> — قديم، تأكد الكابتن فاتح التطبيق</span>
           )}
         </div>
       )}
-
-      <RoutePreviewMap
-        shopLocation={trip.shop_location}
-        stops={stops}
-        driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
-        showDriverMarker={isSuperAdmin || isManagerViewOnly}
-        routeGeometry={trip.route_geometry}
-      />
-
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <h2 className="title-md" style={{ margin: 0 }}>كل توقفات الرحلة بالترتيب</h2>
-          {trip.status === "STARTED" && (canOperate || isSuperAdmin || isManagerViewOnly) && (
-            <button
-              className="btn-secondary"
-              style={{ width: "auto", padding: "6px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
-              disabled={reordering}
-              onClick={handleReorder}
-            >
-              <FiRefreshCw /> {reordering ? "جاري الترتيب..." : "رتّب من جديد"}
-            </button>
-          )}
-        </div>
-        {reorderMessage && <div className="success-box" style={{ marginBottom: 8 }}>{reorderMessage}</div>}
-        {stops.map((s, i) => (
-          <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-            <div className="icon-row">
-              <span style={{
-                width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "0.75rem", fontWeight: 700, color: "#fff",
-                background: s.order_status === "DELIVERED" ? "var(--success)" : s.order_status === "FAILED" ? "var(--urgent)" : s.order_status === "CANCELLED" ? "var(--text-secondary)" : "var(--primary)",
-              }}>
-                {i + 1}
-              </span>
-              <span>{s.customer_name}</span>
-              <BottleTypeBadge type={s.bottle_type} />
-              {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
-              {s.is_time_locked && <span style={{ color: "var(--warning)", fontSize: "0.75rem" }}> ⏰ لموعد {formatClockTime(s.requested_time)}</span>}
-            </div>
-            <div style={{ textAlign: "left" }}>
-              {s.order_status === "DELIVERED" && s.cash_collected != null && s.phone_normalized && (
-                <a
-                  href={receiptLink(s.phone_normalized, receiptFromStop(s))}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`إيصال ${s.customer_name} على واتساب`}
-                  title="ابعت الإيصال على واتساب"
-                  style={{ color: "var(--whatsapp)", marginLeft: 6, verticalAlign: "middle" }}
-                >
-                  <FaWhatsapp size={16} />
-                </a>
-              )}
-              <span className="badge">{s.order_status === "DELIVERED" ? "تم" : s.order_status === "FAILED" ? "تعذر" : s.order_status === "CANCELLED" ? "ملغي" : "قيد الانتظار"}</span>
-              {s.order_status === "DELIVERED" && (Number(s.cash_collected || 0) > 0 || Number(s.coupons_collected || 0) > 0) && (
-                <div className="tabular-num" style={{ fontSize: "0.7rem", marginTop: 2, fontWeight: 700 }}>
-                  {Number(s.coupons_collected || 0) > 0 && <span style={{ color: "var(--navy)" }}>🎫 {s.coupons_collected} </span>}
-                  {Number(s.cash_collected || 0) > 0 && <span style={{ color: "var(--success)" }}>💵 {Number(s.cash_collected).toFixed(2)}</span>}
-                </div>
-              )}
-              {s.estimated_eta_minutes != null && (
-                <div className="text-secondary tabular-num" style={{ fontSize: "0.7rem", marginTop: 2 }}>
-                  متوقع: {formatClockTime(s.estimated_eta_minutes)}
-                  {s.remaining_distance_km != null && ` · ${s.remaining_distance_km} كم`}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {trip.shop_location && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0 2px" }}>
-            <div className="icon-row">
-              <span style={{
-                width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "0.8rem", background: "#B8862E", color: "#fff",
-              }}>🏪</span>
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${trip.shop_location.lat},${trip.shop_location.lon}&travelmode=driving`}
-                target="_blank"
-                rel="noreferrer"
-                style={{ fontWeight: 600, color: "inherit" }}
-              >
-                الرجوع للمحل
-              </a>
-            </div>
-            {trip.return_leg_km != null && (
-              <span className="text-secondary tabular-num" style={{ fontSize: "0.75rem" }}>{Number(trip.return_leg_km).toFixed(1)} كم من آخر زبون</span>
-            )}
-          </div>
-        )}
-      </div>
 
       {canOperate && receipt && <ReceiptBanner receipt={receipt} onClose={() => setReceipt(null)} />}
 
-      {canOperate && trip.status === "STARTED" && currentStop && (
-        <StopCard key={currentStop.id} stop={currentStop} busy={busy} withBusy={withBusy} deliverFast={deliverFast} />
-      )}
+      {/* الزبون الحالي (أو اللي اخترته من القائمة) */}
+      <div ref={cardRef} style={{ scrollMarginTop: 96 }}>
+        {trip.status === "STARTED" && activeStop && (canOperate || viewer) && (
+          <StopCard
+            key={activeStop.id}
+            stop={activeStop}
+            index={activeIndex}
+            picked={!!selectedStop && selectedStop.id !== nextStop?.id}
+            onBackToNext={() => setSelectedStopId(null)}
+            readOnly={!canOperate}
+            busy={busy}
+            withBusy={withBusy}
+            deliverFast={deliverFast}
+          />
+        )}
+      </div>
 
-      {canOperate && trip.status === "STARTED" && !currentStop && nextLockedStop && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          ⏰ باقي {stops.filter((s) => s.is_time_locked).length} طلب مؤجل لموعد محدد — أقرب موعد: {formatClockTime(nextLockedStop.requested_time)} (زبون {nextLockedStop.customer_name}). رح يظهر تلقائيًا لما يجي وقته.
+      {canOperate && trip.status === "STARTED" && !activeStop && nextLockedStop && (
+        <div className="od-note amber">
+          ⏰ باقي {stops.filter((s) => stopState(s) === "later").length} طلب بموعد — أقربهم {nextLockedStop.customer_name} الساعة {formatClockTime(nextLockedStop.requested_time)}. بيطلع لحاله لما يقرب وقته، أو اكبس عليه من القائمة.
         </div>
       )}
 
-      {canOperate && trip.status === "STARTED" && !currentStop && !nextLockedStop && (
+      {canOperate && trip.status === "STARTED" && !activeStop && !nextLockedStop && (
         <div className="card back-to-shop">
           <div style={{ fontWeight: 800, fontSize: "1.05rem" }}>✅ خلّصت كل الطلبات</div>
           <p className="text-secondary" style={{ margin: "4px 0 12px" }}>
@@ -720,10 +662,110 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         </div>
       )}
 
+      {/* كل الزباين بالترتيب — اكبس على أي واحد بيفتحلك تفاصيله */}
+      <div className="stops-card">
+        <div className="stops-head">
+          <div>
+            <div className="stops-title">الزباين بالترتيب</div>
+            <div className="stops-hint">اكبس على أي زبون بيفتحلك تفاصيله</div>
+          </div>
+          {trip.status === "STARTED" && (canOperate || viewer) && (
+            <button className="stops-reorder" disabled={reordering} onClick={handleReorder}>
+              <FiRefreshCw aria-hidden="true" /> {reordering ? "لحظة..." : "رتّب"}
+            </button>
+          )}
+        </div>
+        {reorderMessage && <div className="success-box" style={{ margin: "0 0 8px" }}>{reorderMessage}</div>}
+
+        <ol className="stops">
+          {stops.map((s, i) => {
+            const st = stopState(s);
+            const isActive = activeStop && s.id === activeStop.id;
+            const clickable = st === "pending" || st === "later";
+            const Tag = clickable ? "button" : "div";
+            return (
+              <li key={s.id}>
+                <Tag className={`stop-row st-${st}${isActive ? " active" : ""}`} {...(clickable ? { onClick: () => pickStop(s), type: "button" } : {})}>
+                  <span className="stop-num tabular-num">{st === "done" ? "✓" : i + 1}</span>
+                  <span className="stop-body">
+                    <span className="stop-name">
+                      {s.customer_name}
+                      {s.priority === "urgent" && <span className="ord-flag">🚨</span>}
+                    </span>
+                    <span className="stop-meta">
+                      {(s.items || []).map((it) => `${it.quantity} ${it.product_name_snapshot}`).join("، ") || "بدون كمية"}
+                      {s.region_name && ` · ${s.region_name}`}
+                      {!s.latitude && " · بدون موقع"}
+                    </span>
+                  </span>
+                  <span className="stop-side">
+                    {isActive && <span className="stop-now">هلّق</span>}
+                    {!isActive && st === "pending" && s.estimated_eta_minutes != null && (
+                      <span className="stop-eta tabular-num">{formatClockTime(s.estimated_eta_minutes)}</span>
+                    )}
+                    {st === "later" && <span className="stop-tag amber">⏰ {formatClockTime(s.requested_time)}</span>}
+                    {st === "done" && (
+                      <span className="stop-paid tabular-num">
+                        {Number(s.coupons_collected || 0) > 0 && <span className="c">🎫{s.coupons_collected}</span>}
+                        {Number(s.cash_collected || 0) > 0 && <span className="m">{Number(s.cash_collected).toFixed(2)}</span>}
+                        {s.cash_collected != null && s.phone_normalized && (
+                          <a
+                            href={receiptLink(s.phone_normalized, receiptFromStop(s))}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`إيصال ${s.customer_name} على واتساب`}
+                            className="stop-wa"
+                          >
+                            <FaWhatsapp size={15} />
+                          </a>
+                        )}
+                      </span>
+                    )}
+                    {(st === "failed" || st === "cancelled") && <span className={`stop-tag ${st === "failed" ? "red" : "gray"}`}>{STOP_STATE_LABEL[st]}</span>}
+                  </span>
+                </Tag>
+              </li>
+            );
+          })}
+          {trip.shop_location && (
+            <li>
+              <a
+                className="stop-row st-shop"
+                href={`https://www.google.com/maps/dir/?api=1&destination=${trip.shop_location.lat},${trip.shop_location.lon}&travelmode=driving`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span className="stop-num">🏪</span>
+                <span className="stop-body"><span className="stop-name">الرجوع للمحل</span></span>
+                {trip.return_leg_km != null && <span className="stop-eta tabular-num">{Number(trip.return_leg_km).toFixed(1)} كم</span>}
+              </a>
+            </li>
+          )}
+        </ol>
+      </div>
+
+      <div className="trip-map-wrap">
+        <button className="trip-map-toggle" onClick={() => setShowMap(!showMap)} aria-expanded={showMap}>
+          <FiMapPin aria-hidden="true" /> الخريطة {trip.total_distance_km > 0 && <span className="text-secondary tabular-num">· {Number(trip.total_distance_km).toFixed(1)} كم</span>}
+          <span style={{ marginRight: "auto" }} className="text-secondary">{showMap ? "إخفاء" : "إظهار"}</span>
+        </button>
+        {showMap && (
+          <RoutePreviewMap
+            shopLocation={trip.shop_location}
+            stops={stops}
+            driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
+            showDriverMarker={viewer}
+            routeGeometry={trip.route_geometry}
+          />
+        )}
+      </div>
+
+      <TripLoadCard trip={trip} canOperate={canOperate} onChanged={onChanged} />
+
       {canOperate && trip.last_delivered_stop_id && (
         <button
           className="btn-secondary"
-          style={{ marginTop: 10 }}
+          style={{ marginTop: 4 }}
           disabled={busy}
           onClick={() => withBusy(() => api.undoDeliver(trip.last_delivered_stop_id))}
         >
@@ -1012,12 +1054,16 @@ function QuickQuantityForm({ stop, onSaved, onCancel }) {
   );
 }
 
-function StopCard({ stop, busy, withBusy, deliverFast }) {
-  const [showFailMenu, setShowFailMenu] = useState(false);
-  const [showPostponeForm, setShowPostponeForm] = useState(false);
+const STOP_FAIL_REASONS = ["لا يرد", "خارج المنزل", "العنوان غلط"];
+const STOP_POSTPONE_REASONS = ["الزبون طلب", "مش موجود هلّق"];
+
+function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy, deliverFast }) {
+  const { canAction } = usePerms();
+  const [sheet, setSheet] = useState(null); // fail | postpone | cancel
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showPayChoice, setShowPayChoice] = useState(false);
-  const [postponeTime, setPostponeTime] = useState("");
+  const [otherDay, setOtherDay] = useState(false);
+  const [dayDraft, setDayDraft] = useState(null);
   const [postponeNote, setPostponeNote] = useState("");
 
   const mapLink = (stop.latitude && stop.longitude)
@@ -1026,12 +1072,12 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
   const whatsappLink = `https://wa.me/${stop.phone_normalized}`;
 
   // لو الزبون معه كوبونات بيستخدمها: بتفتح شاشة الدفع.
-  // غير هيك: تسليم بضغطة وحدة وقبض المبلغ كامل كاش.
   const needsPaymentChoice = stop.coupon_balance > 0 && (stop.items || []).some((it) => it.coupon_eligible);
   const missingQuantity = !stop.items || stop.items.length === 0;
   const [showQuantityForm, setShowQuantityForm] = useState(false);
   const amountDue = missingQuantity ? 0 : computeAmountDue(stop);
   const debt = Number(stop.debt_balance || 0);
+  const canCancel = canAction("cancel_order");
 
   function handleDeliverClick() {
     // دايمًا بنسأل: حاسب كاش ولا كوبون؟ عشان جرد السيارة يطلع مضبوط
@@ -1047,14 +1093,16 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
     renderMessage("on_my_way", { "الاسم": stop.customer_name, "الوقت": etaText })
   )}`;
 
-  function handlePostponeSubmit() {
-    withBusy(() => api.postponeStop(stop.id, { note: postponeNote, new_time: postponeTime })).then(() => {
-      setShowPostponeForm(false);
-      setShowFailMenu(false);
-      setPostponeTime("");
-      setPostponeNote("");
-    });
+  function postpone(body) {
+    withBusy(() => api.postponeStop(stop.id, { note: postponeNote, ...body })).then(() => setSheet(null));
   }
+  function openPostpone() {
+    setOtherDay(false);
+    setDayDraft(null);
+    setPostponeNote("");
+    setSheet("postpone");
+  }
+  const inHours = (h) => new Date(Date.now() + h * 3600 * 1000).toISOString();
 
   if (showPayChoice && !showPaymentForm) {
     return (
@@ -1072,29 +1120,51 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
     return <DeliveryPaymentForm stop={stop} deliverFast={deliverFast} onCancel={() => setShowPaymentForm(false)} />;
   }
 
+  const address = [
+    stop.region_name && ["المنطقة", stop.region_name],
+    stop.street && ["الشارع", stop.street],
+    (stop.building_number || stop.building_name) && ["العمارة", [stop.building_number, stop.building_name].filter(Boolean).join(" · ")],
+    stop.floor && ["الطابق", stop.floor],
+    stop.apartment && ["الشقة", stop.apartment],
+    stop.side && ["الجهة", stop.side],
+  ].filter(Boolean);
+
   return (
-    <div className="card">
-      {stop.building_photo_url && (
-        <img src={stop.building_photo_url} alt="صورة العمارة" style={{ width: "100%", borderRadius: 8, marginBottom: 12 }} />
-      )}
-
-      <h2 className="title-md">
-        {stop.customer_name}
-        {stop.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
-      </h2>
-      <p className="tabular-num text-secondary" style={{ marginTop: 0 }}>#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
-
-      {(debt > 0 || (stop.coupon_balance || 0) > 0) && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {debt > 0 && <span className="badge" style={{ background: "var(--urgent-soft)", color: "var(--urgent)" }}>عليه دين {debt.toFixed(2)} JD</span>}
-          {(stop.coupon_balance || 0) > 0 && <span className="badge" style={{ background: "var(--primary-soft)", color: "var(--navy)" }}>🎫 معه {stop.coupon_balance} كوبون</span>}
+    <div className={`stop-card${picked ? " picked" : ""}`}>
+      {picked && (
+        <div className="stop-card-picked">
+          <span>اخترته من القائمة</span>
+          <button className="link-btn" onClick={onBackToNext}>رجوع للتالي بالترتيب</button>
         </div>
       )}
 
-      <BottleTypeBadge type={stop.bottle_type} large />
+      {stop.building_photo_url && (
+        <img src={stop.building_photo_url} alt="صورة العمارة" className="stop-card-photo" />
+      )}
 
-      {missingQuantity && !showQuantityForm && (
-        <div className="card" style={{ border: "2px solid #E8A020", background: "rgba(232, 160, 32, 0.08)" }}>
+      <div className="stop-card-head">
+        {index && <span className="stop-card-num tabular-num">{index}</span>}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <h2 className="stop-card-name">
+            {stop.customer_name}
+            {stop.priority === "urgent" && <span className="od-urgent">🚨 مستعجل</span>}
+          </h2>
+          <div className="stop-card-sub tabular-num">
+            #{stop.order_number} · <b>{Number(stop.final_total).toFixed(2)} JD</b> <BottleTypeBadge type={stop.bottle_type} />
+          </div>
+        </div>
+      </div>
+
+      {(debt > 0 || (stop.coupon_balance || 0) > 0 || stop.is_time_locked) && (
+        <div className="od-tags">
+          {stop.is_time_locked && <span className="od-tag amber">⏰ موعده {formatClockTime(stop.requested_time)}</span>}
+          {debt > 0 && <span className="od-tag red">عليه دين {debt.toFixed(2)} JD</span>}
+          {(stop.coupon_balance || 0) > 0 && <span className="od-tag blue">🎫 معه {stop.coupon_balance} كوبون</span>}
+        </div>
+      )}
+
+      {missingQuantity && !showQuantityForm && !readOnly && (
+        <div className="od-note amber">
           <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 طلب تلقائي — لسا ما انحدد عدد القوارير</div>
           <button className="btn-primary" onClick={() => setShowQuantityForm(true)}>حدد الكمية</button>
         </div>
@@ -1107,27 +1177,23 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
         />
       )}
 
-      {stop.items && stop.items.length > 0 && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          <div className="text-secondary" style={{ marginBottom: 4 }}>محتوى الطلب:</div>
+      {!missingQuantity && (
+        <div className="stop-items">
           {stop.items.map((it, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{it.product_name_snapshot}</span>
-              <span className="tabular-num" style={{ fontWeight: 700 }}>× {it.quantity}</span>
-            </div>
+            <span key={i} className="stop-item"><b className="tabular-num">{it.quantity}</b> {it.product_name_snapshot}</span>
           ))}
         </div>
       )}
 
-      <p className="text-secondary" style={{ lineHeight: 1.8 }}>
-        {stop.street && <>الشارع: {stop.street}<br /></>}
-        {stop.building_number && <>عمارة: {stop.building_number} {stop.building_name && `(${stop.building_name})`}<br /></>}
-        {stop.floor && <>الطابق: {stop.floor}<br /></>}
-        {stop.apartment && <>شقة: {stop.apartment}<br /></>}
-        {stop.side && <>الجهة: {stop.side}<br /></>}
-        {stop.access_notes && <>ملاحظة: {stop.access_notes}<br /></>}
-        {stop.order_notes && <>📝 {stop.order_notes}</>}
-      </p>
+      {address.length > 0 && (
+        <div className="stop-addr">
+          {address.map(([k, v]) => (
+            <div key={k} className="stop-addr-row"><span>{k}</span><b>{v}</b></div>
+          ))}
+        </div>
+      )}
+      {stop.access_notes && <div className="od-note">🔔 {stop.access_notes}</div>}
+      {stop.order_notes && <div className="od-note">📝 {stop.order_notes}</div>}
 
       <div className="quick-actions" style={{ marginTop: 0, marginBottom: 14 }}>
         {mapLink ? (
@@ -1143,58 +1209,96 @@ function StopCard({ stop, busy, withBusy, deliverFast }) {
         <a className="quick-action whatsapp" href={whatsappLink} target="_blank" rel="noreferrer">
           <FaWhatsapp aria-hidden="true" /><span>واتساب</span>
         </a>
-        <a className="quick-action whatsapp" href={onMyWayLink} target="_blank" rel="noreferrer">
-          <FaWhatsapp aria-hidden="true" /><span>أنا جاي</span>
-        </a>
+        {!readOnly && (
+          <a className="quick-action whatsapp" href={onMyWayLink} target="_blank" rel="noreferrer">
+            <FaWhatsapp aria-hidden="true" /><span>أنا جاي</span>
+          </a>
+        )}
       </div>
 
-      <button
-        className="btn-primary icon-row"
-        style={{ justifyContent: "center", marginBottom: 6, background: "var(--success)", opacity: missingQuantity ? 0.5 : 1 }}
-        disabled={busy || missingQuantity}
-        onClick={handleDeliverClick}
-      >
-        <FiCheckCircle />
-        تم التسليم
-      </button>
-
-      {!showFailMenu && (
-        <button className="btn-danger-text icon-row" style={{ justifyContent: "center" }} disabled={busy} onClick={() => setShowFailMenu(true)}>
-          <FiAlertTriangle /> تعذر التسليم
-        </button>
+      {!readOnly && (
+        <>
+          <button
+            className="btn-primary icon-row stop-deliver"
+            disabled={busy || missingQuantity}
+            onClick={handleDeliverClick}
+          >
+            <FiCheckCircle aria-hidden="true" /> تم التسليم
+          </button>
+          <div className="stop-sub-actions">
+            <button disabled={busy} onClick={openPostpone}><FiClock aria-hidden="true" /> تأجيل</button>
+            <button disabled={busy} onClick={() => setSheet("fail")}><FiAlertTriangle aria-hidden="true" /> تعذّر</button>
+            {canCancel && <button className="danger" disabled={busy} onClick={() => setSheet("cancel")}><FiXCircle aria-hidden="true" /> إلغاء</button>}
+          </div>
+        </>
       )}
-
-      {showFailMenu && !showPostponeForm && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <button className="btn-secondary" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, "خارج المنزل"))}>
-            خارج المنزل
-          </button>
-          <button className="btn-secondary" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, "لا يرد"))}>
-            لا يرد
-          </button>
-          <button className="btn-secondary" disabled={busy} onClick={() => setShowPostponeForm(true)}>
-            ⏰ تأجيل (يرجعله بنفس الرحلة لاحقًا)
-          </button>
-          <button className="btn-secondary" onClick={() => setShowFailMenu(false)}>رجوع</button>
+      {readOnly && canCancel && (
+        <div className="stop-sub-actions">
+          <button className="danger" disabled={busy} onClick={() => setSheet("cancel")}><FiXCircle aria-hidden="true" /> إلغاء الطلب</button>
         </div>
       )}
 
-      {showPostponeForm && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          <div className="field">
-            <label>الموعد الجديد المطلوب (اختياري)</label>
-            <input type="datetime-local" value={postponeTime} onChange={(e) => setPostponeTime(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>ملاحظة (مثال: طلب يوصله بعد الظهر)</label>
-            <input value={postponeNote} onChange={(e) => setPostponeNote(e.target.value)} />
-          </div>
-          <button className="btn-primary" style={{ marginBottom: 8 }} disabled={busy} onClick={handlePostponeSubmit}>
-            تأكيد التأجيل
-          </button>
-          <button className="btn-secondary" onClick={() => setShowPostponeForm(false)}>إلغاء</button>
+      <ConfirmSheet
+        open={sheet === "cancel"}
+        title="إلغاء الطلب؟"
+        text={`طلب ${stop.customer_name} رح ينلغى وينشال من الرحلة.`}
+        confirmLabel="نعم، ألغِ الطلب"
+        danger
+        busy={busy}
+        onConfirm={() => withBusy(() => api.cancelStop(stop.id)).then(() => setSheet(null))}
+        onClose={() => setSheet(null)}
+      />
+
+      <Sheet open={sheet === "fail"} title={`ليش تعذّر تسليم ${stop.customer_name}؟`} onClose={() => setSheet(null)}>
+        <div className="sheet-options">
+          {STOP_FAIL_REASONS.map((r) => (
+            <button key={r} className="sheet-option" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, r)).then(() => setSheet(null))}>
+              {r} <FiChevronLeft aria-hidden="true" />
+            </button>
+          ))}
         </div>
-      )}
+        <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setSheet(null)}>رجوع</button>
+      </Sheet>
+
+      <Sheet open={sheet === "postpone"} title={`أجّل ${stop.customer_name} لإمتى؟`} onClose={() => setSheet(null)}>
+        <div className="chips" style={{ flexWrap: "wrap", marginBottom: 10 }} aria-label="السبب (اختياري)">
+          <span className="text-secondary" style={{ alignSelf: "center", fontSize: "0.8rem" }}>السبب (اختياري):</span>
+          {STOP_POSTPONE_REASONS.map((r) => (
+            <button key={r} type="button" className={`chip${postponeNote === r ? " on" : ""}`} onClick={() => setPostponeNote(postponeNote === r ? "" : r)}>{r}</button>
+          ))}
+        </div>
+        {!otherDay ? (
+          <div className="sheet-options">
+            <button className="sheet-option" disabled={busy} onClick={() => postpone({})}>
+              <span>آخر الرحلة <small>بيرجعله بعد ما تخلّص الباقي</small></span> <FiChevronLeft aria-hidden="true" />
+            </button>
+            <button className="sheet-option" disabled={busy} onClick={() => postpone({ new_time: inHours(1) })}>
+              <span>بعد ساعة <small>الساعة {formatClockTime(60)}</small></span> <FiChevronLeft aria-hidden="true" />
+            </button>
+            <button className="sheet-option" disabled={busy} onClick={() => postpone({ new_time: inHours(2) })}>
+              <span>بعد ساعتين <small>الساعة {formatClockTime(120)}</small></span> <FiChevronLeft aria-hidden="true" />
+            </button>
+            <button className="sheet-option" disabled={busy} onClick={() => setOtherDay(true)}>
+              <span>بكرة أو يوم ثاني <small>بيطلع من الرحلة وبيرجع بيومه</small></span> <FiChevronLeft aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <SchedulePicker value={dayDraft} onChange={setDayDraft} />
+            <div className="sheet-actions">
+              <button
+                className="btn-primary"
+                disabled={busy || !dayDraft?.scheduled_date}
+                onClick={() => postpone({ other_day: true, scheduled_date: dayDraft.scheduled_date, new_time: dayDraft.requested_time || undefined })}
+              >
+                تأكيد التأجيل
+              </button>
+              <button className="btn-secondary" onClick={() => setOtherDay(false)}>رجوع</button>
+            </div>
+          </>
+        )}
+        {!otherDay && <button className="btn-secondary" style={{ marginTop: 6 }} onClick={() => setSheet(null)}>رجوع</button>}
+      </Sheet>
     </div>
   );
 }

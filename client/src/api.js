@@ -180,7 +180,7 @@ export const api = {
   applyDiscount: (id, body) => request(`/orders/${id}/discount`, { method: "PUT", body }),
   cancelOrder: (id, reason) => request(`/orders/${id}/cancel`, { method: "POST", body: { reason } }),
   failDelivery: (id, reason) => request(`/orders/${id}/fail`, { method: "POST", body: { reason } }),
-  postponeOrder: (id, postponed_to, reason) => request(`/orders/${id}/postpone`, { method: "POST", body: { postponed_to, reason } }),
+  postponeOrder: (id, body) => request(`/orders/${id}/postpone`, { method: "POST", body }),
   reactivateOrder: (id) => request(`/orders/${id}/reactivate`, { method: "POST" }),
 
   getMyTrip: () => request("/trips/mine"),
