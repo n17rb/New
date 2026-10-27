@@ -4,6 +4,7 @@ import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Recei
 import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw } from "react-icons/fi";
 import { ConfirmSheet } from "../components/Sheet.jsx";
+import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
@@ -727,6 +728,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
             busy={busy}
             withBusy={withBusy}
             deliverFast={deliverFast}
+            onRefresh={onChanged}
           />
         )}
       </div>
@@ -1052,7 +1054,7 @@ function QuickQuantityForm({ stop, onSaved, onCancel }) {
   );
 }
 
-function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy, deliverFast }) {
+function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy, deliverFast, onRefresh }) {
   const { canAction } = usePerms();
   const canCancel = canAction("cancel_order");
   const [showFailMenu, setShowFailMenu] = useState(false);
@@ -1063,6 +1065,7 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
   const [dayDraft, setDayDraft] = useState(null);
   const [postponeNote, setPostponeNote] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const mapLink = (stop.latitude && stop.longitude)
     ? `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}`
@@ -1178,14 +1181,25 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
       )}
 
       <p className="text-secondary" style={{ lineHeight: 1.8 }}>
+        {stop.region_name && <>المنطقة: {stop.region_name}<br /></>}
         {stop.street && <>الشارع: {stop.street}<br /></>}
-        {stop.building_number && <>عمارة: {stop.building_number} {stop.building_name && `(${stop.building_name})`}<br /></>}
+        {(stop.building_number || stop.building_name) && <>عمارة: {stop.building_number} {stop.building_name && `(${stop.building_name})`}<br /></>}
         {stop.floor && <>الطابق: {stop.floor}<br /></>}
         {stop.apartment && <>شقة: {stop.apartment}<br /></>}
-        {stop.side && <>الجهة: {stop.side}<br /></>}
+        {stop.side && <>الجهة: <b style={{ color: "var(--text)" }}>{stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side}</b><br /></>}
         {stop.access_notes && <>ملاحظة: {stop.access_notes}<br /></>}
         {stop.order_notes && <>📝 {stop.order_notes}</>}
       </p>
+
+      <button type="button" className="edit-cust-btn" onClick={() => setEditing(true)}>
+        ✏️ تعديل بيانات الزبون {!stop.building_photo_url ? "· ضيف صورة البيت" : ""}
+      </button>
+      <CustomerEditSheet
+        open={editing}
+        c={stop}
+        onClose={() => setEditing(false)}
+        onSaved={() => onRefresh?.()}
+      />
 
       <div className="quick-actions" style={{ marginTop: 0, marginBottom: 14 }}>
         {mapLink ? (

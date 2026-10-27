@@ -49,6 +49,26 @@ function requireCanManageCustomers(req, res, next) {
   next();
 }
 
+// عنوان الزبون وصورة بيته: اللي بيعدّل العملاء، أو الكابتن (من الرحلة)
+function canEditAddress(user) {
+  return canManageCustomers(user) || can(user, "delivery", "edit");
+}
+function requireCanEditAddress(req, res, next) {
+  if (!canEditAddress(req.user)) {
+    return res.status(403).json({ error: "ليست لديك صلاحية تعديل عنوان الزبون." });
+  }
+  next();
+}
+
+// كل زبون لازم يكون إله سطر عنوان (عشان التعديل والصورة ينحفظوا)
+async function ensureLocationRow(customerId) {
+  await query(
+    `INSERT INTO customer_locations (customer_id)
+     SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM customer_locations WHERE customer_id = $1)`,
+    [customerId]
+  );
+}
+
 function requireCanDeleteCustomer(req, res, next) {
   if (!canDeleteCustomer(req.user)) {
     return res.status(403).json({ error: "ليست لديك صلاحية حذف العملاء." });
@@ -435,11 +455,11 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
   }
   const clip = (v, n) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, n));
   await query(
-    `INSERT INTO customer_locations (customer_id, latitude, longitude, maps_url, region_id, governorate, street, building_number, floor, side, access_notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO customer_locations (customer_id, latitude, longitude, maps_url, region_id, governorate, street, building_number, floor, side, access_notes, apartment, building_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [customer.id, hasCoords ? lat : null, hasCoords ? lon : null,
      clip(loc.maps_url, 1000) || (hasCoords ? `https://www.google.com/maps?q=${lat},${lon}` : null),
-     regionId, clip(loc.governorate, 80), clip(loc.street, 150), clip(loc.building_number, 30), clip(loc.floor, 30), clip(loc.side, 30), clip(loc.access_notes, 500)]
+     regionId, clip(loc.governorate, 80), clip(loc.street, 150), clip(loc.building_number, 30), clip(loc.floor, 30), clip(loc.side, 30), clip(loc.access_notes, 500), clip(loc.apartment, 30), clip(loc.building_name, 100)]
   );
 
   await logActivity({
@@ -453,17 +473,27 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
   res.status(201).json({ alreadyExists: false, customer });
 });
 
-router.put("/:id", requireCanManageCustomers, async (req, res) => {
+router.put("/:id", requireCanEditAddress, async (req, res) => {
   const { id } = req.params;
   const before = await query("SELECT * FROM customers WHERE id = $1", [id]);
   if (!before.rows[0]) return res.status(404).json({ error: "العميل غير موجود." });
 
+  // الكابتن بيعدّل العنوان بس — الاسم والتلفون والرقم لقسم العملاء
+  const body = canManageCustomers(req.user) ? req.body : { ...req.body, name: undefined, phone: undefined, sequential_number: undefined, notes: undefined, bottle_type: undefined };
   const {
     name, phone, sequential_number, notes,
-    region_id, street, building_number, building_name,
+    street, building_number, building_name,
     floor, apartment, side, access_notes,
     latitude, longitude, maps_url, preferred_delivery_note, bottle_type,
-  } = req.body;
+  } = body;
+  let region_id = body.region_id ? Number(body.region_id) : null;
+  // منطقة جديدة من الموقع (بالاسم): بنلاقيها أو بنضيفها
+  const regionName = String(body.region_name || "").trim().slice(0, 80);
+  if (!region_id && regionName) {
+    const regions = (await query("SELECT id, name FROM regions WHERE status = 'active'")).rows;
+    const found = matchRegion(regions, [regionName]);
+    region_id = found ? found.id : (await query("INSERT INTO regions (name) VALUES ($1) RETURNING id", [regionName])).rows[0].id;
+  }
 
   if (bottle_type !== undefined && bottle_type !== null && !["new", "used"].includes(bottle_type)) {
     return res.status(400).json({ error: "نوع القوارير غير صحيح." });
@@ -510,6 +540,7 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
     [name, phoneNormalized, phoneDisplay, sequential_number, notes, id, bottle_type || null]
   );
 
+  await ensureLocationRow(id);
   await query(
     `UPDATE customer_locations SET
       region_id = COALESCE($1, region_id),
@@ -528,7 +559,7 @@ router.put("/:id", requireCanManageCustomers, async (req, res) => {
       updated_at = now()
      WHERE customer_id = $12`,
     [region_id, street, building_number, building_name, floor, apartment, side,
-     access_notes, latitude, longitude, maps_url, id, preferred_delivery_note, req.body.governorate ? String(req.body.governorate).slice(0, 80) : null]
+     access_notes, latitude, longitude, maps_url, id, preferred_delivery_note, body.governorate ? String(body.governorate).slice(0, 80) : null]
   );
 
   await logActivity({
@@ -560,10 +591,11 @@ router.delete("/:id", requireCanDeleteCustomer, async (req, res) => {
   res.json({ message: "تم حذف العميل." });
 });
 
-router.post("/:id/photo", requireCanManageCustomers, uploadSingleImage, async (req, res) => {
+router.post("/:id/photo", requireCanEditAddress, uploadSingleImage, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "لم يتم إرفاق صورة." });
 
   const photoUrl = await saveCompressedImage(req.file.buffer, `customer-${req.params.id}`);
+  await ensureLocationRow(req.params.id);
 
   await query(
     "UPDATE customer_locations SET building_photo_url = $1, updated_at = now() WHERE customer_id = $2",

@@ -522,7 +522,8 @@ function LocationSection({ customer, canManage, onChanged }) {
           {street && <>الشارع: {street}<br /></>}
           {buildingNumber && <>عمارة: {buildingNumber} {buildingName && `(${buildingName})`}<br /></>}
           {floor && <>الطابق: {floor}<br /></>}
-          {apartment && <>شقة: {apartment} {side && `— ${side}`}<br /></>}
+          {apartment && <>شقة: {apartment}<br /></>}
+          {side && <>الجهة: {side === "يسار" ? "شمال الدرج" : side === "يمين" ? "يمين الدرج" : side}<br /></>}
           {accessNotes && <>ملاحظة: {accessNotes}</>}
         </p>
       </div>

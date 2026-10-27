@@ -20,6 +20,7 @@ function addressLine(c) {
   if (building) parts.push(withLabel("عمارة", building, /^(عمار|بناي|مبن|ع\s*\d)/));
   if (c.floor) parts.push(withLabel("طابق", c.floor, /^(طابق|الطابق|ط\s*\d|ط\.)/));
   if (c.apartment) parts.push(withLabel("شقة", c.apartment, /^(شق|ش\s*\d)/));
+  if (c.side) parts.push(c.side === "يسار" ? "شمال الدرج" : c.side === "يمين" ? "يمين الدرج" : c.side);
   return parts.join(" · ");
 }
 

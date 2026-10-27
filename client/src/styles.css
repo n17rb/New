@@ -2220,3 +2220,28 @@ button.stop-row:active { background: var(--surface-2); }
   padding: 8px 8px 10px; font: inherit; font-weight: 700; color: var(--text); cursor: pointer;
 }
 .trip-map-wrap .leaflet-container, .trip-map-wrap > div:last-child { border-radius: 14px; }
+
+/* خانات تفاصيل البيت بعنوان صغير */
+.loc-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.loc-field > span { font-size: 0.74rem; font-weight: 600; color: var(--text-secondary); padding-right: 2px; }
+
+/* تعديل بيانات الزبون من الرحلة */
+.edit-cust-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  background: var(--surface-2); color: var(--navy); border: none; border-radius: 12px;
+  padding: 10px; font: inherit; font-size: 0.88rem; font-weight: 700; cursor: pointer; margin-bottom: 12px;
+}
+[data-theme="dark"] .edit-cust-btn { color: var(--primary-dark); }
+.ce-photo { position: relative; border-radius: 14px; overflow: hidden; background: var(--surface-2); margin-bottom: 10px; }
+.ce-photo img { width: 100%; max-height: 190px; object-fit: cover; display: block; }
+.ce-photo-empty { padding: 22px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
+.ce-photo-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.ce-photo-btns label {
+  display: flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 8px; border-radius: 12px;
+  border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-weight: 700; font-size: 0.86rem; cursor: pointer;
+}
+.ce-photo-btns label svg { color: var(--primary); }
+.ce-photo-btns input { display: none; }
+.ce-ok { color: var(--success); font-size: 0.8rem; font-weight: 700; margin: -6px 0 10px; }
+.ce-input { width: 100%; min-width: 0; box-sizing: border-box; padding: 11px 13px; border: 1.5px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--text); font: inherit; font-size: 0.92rem; }
+.ce-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }

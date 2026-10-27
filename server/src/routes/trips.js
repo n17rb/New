@@ -142,7 +142,7 @@ async function buildTripDetailResponse(trip, requestingUser) {
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance, c.bottle_type,
             c.debt_balance, c.bottles_out, o.subtotal,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
-            l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url, r.name AS region_name
+            l.floor, l.apartment, l.side, l.access_notes, l.building_photo_url, l.region_id, l.governorate, r.name AS region_name
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
      JOIN customers c ON c.id = o.customer_id

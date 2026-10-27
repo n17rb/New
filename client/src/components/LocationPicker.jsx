@@ -4,7 +4,7 @@ import { api } from "../api.js";
 
 // اختيار موقع الزبون: «موقعي الحالي» أو رابط خرائط — والمنطقة والمحافظة بيتعبّوا لحالهم
 // value = { latitude, longitude, maps_url, region_id, region_name, governorate, street, building_number, floor, side }
-export default function LocationPicker({ value, onChange }) {
+export default function LocationPicker({ value, onChange, alwaysDetails = false, title = "موقع الزبون", optional = true }) {
   const [mode, setMode] = useState(null); // null | "link"
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,9 +70,41 @@ export default function LocationPicker({ value, onChange }) {
   const set = (k) => (e) => onChange({ ...v, [k]: e.target.value });
   const regionKnown = v.region_id && regions.some((r) => r.id === v.region_id);
 
+  // خانة بعنوان صغير فوقها (عشان لما تعدّل تعرف شو كل رقم)
+  const F = (k, label, extra = {}) => (
+    <label className="loc-field">
+      <span>{label}</span>
+      <input value={v[k] || ""} onChange={set(k)} placeholder={extra.placeholder || ""} ref={extra.ref} inputMode={extra.inputMode} />
+    </label>
+  );
+
+  const houseDetails = (
+    <div className="loc-details" ref={detailsRef}>
+      <div className="loc-sub">تفاصيل البيت</div>
+      <div className="loc-two">
+        {F("building_number", "رقم العمارة", { ref: buildingRef })}
+        {F("building_name", "اسم العمارة")}
+      </div>
+      <div className="loc-two">
+        {F("floor", "الطابق")}
+        {F("apartment", "رقم الشقة")}
+      </div>
+      <div className="side-btns">
+        {[["يمين", "يمين الدرج"], ["يسار", "شمال الدرج"]].map(([val, label]) => (
+          <button key={val} type="button" className={`side-btn${v.side === val ? " on" : ""}`}
+            onClick={() => onChange({ ...v, side: v.side === val ? "" : val })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {F("street", "الشارع")}
+      {F("access_notes", "ملاحظة للوصول", { placeholder: "مثلًا: الجرس التاني، الباب الخلفي" })}
+    </div>
+  );
+
   return (
     <div className="loc-picker">
-      <div className="loc-title"><FiMapPin /> موقع الزبون <span>(اختياري)</span></div>
+      <div className="loc-title"><FiMapPin /> {title} {optional && <span>(اختياري)</span>}</div>
 
       {!has && !mode && (
         <div className="loc-actions">
@@ -110,7 +142,7 @@ export default function LocationPicker({ value, onChange }) {
               <div className="loc-done-t">{v.region_name || "تم تحديد الموقع"}</div>
               <div className="loc-done-s">{[v.governorate, v.street].filter(Boolean).join(" · ") || "الموقع محفوظ على الخريطة"}</div>
             </div>
-            <button type="button" className="link-btn" onClick={() => onChange({})}>تغيير</button>
+            <button type="button" className="link-btn" onClick={() => onChange({ ...v, latitude: null, longitude: null, maps_url: null })}>تغيير</button>
           </div>
 
           <label className="loc-label">المنطقة</label>
@@ -130,24 +162,11 @@ export default function LocationPicker({ value, onChange }) {
             {regions.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
           </select>
 
-          <div className="loc-details" ref={detailsRef}>
-            <div className="loc-sub">تفاصيل البيت</div>
-            <div className="loc-two">
-              <input ref={buildingRef} value={v.building_number || ""} onChange={set("building_number")} placeholder="رقم العمارة" />
-              <input value={v.floor || ""} onChange={set("floor")} placeholder="الطابق" />
-            </div>
-            <div className="side-btns">
-              {[["يمين", "يمين الدرج"], ["يسار", "شمال الدرج"]].map(([val, label]) => (
-                <button key={val} type="button" className={`side-btn${v.side === val ? " on" : ""}`}
-                  onClick={() => onChange({ ...v, side: v.side === val ? "" : val })}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <input value={v.street || ""} onChange={set("street")} placeholder="الشارع" />
-          </div>
+          {houseDetails}
         </div>
       )}
+
+      {!has && alwaysDetails && <div style={{ marginTop: 10 }}>{houseDetails}</div>}
 
       {error && <div className="loc-error">{error}</div>}
     </div>
