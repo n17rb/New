@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2 } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck } from "react-icons/fi";
 import { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
@@ -13,7 +13,6 @@ import ShopLocationCard from "../components/ShopLocationCard.jsx";
 import { LoadInputs, TripLoadCard } from "../components/TripLoad.jsx";
 import { usePerms } from "../auth.jsx";
 import { scheduleLabel } from "../schedule.js";
-import DistributePlanner from "../components/DistributePlanner.jsx";
 
 function formatMinutes(mins) {
   if (mins <= 0) return "أقل من دقيقة";
@@ -204,7 +203,8 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   const perms = usePerms();
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState({});
-  const [routeMode, setRouteMode] = useState("nearest");
+  // الترتيب دايمًا من الأقرب للأبعد (أقصر طريق)
+  const routeMode = "nearest";
   const [useLocation, setUseLocation] = useState(true);
   const [drivers, setDrivers] = useState([]);
   const [assignTo, setAssignTo] = useState("self");
@@ -215,7 +215,6 @@ function CreateTripForm({ isPrivileged, onCreated }) {
   const [loadValues, setLoadValues] = useState({});
   const [showLoad, setShowLoad] = useState(false);
   const [futureCount, setFutureCount] = useState(0);
-  const [planMode, setPlanMode] = useState("single"); // single | distribute
 
   async function loadOrders() {
     setFetching(true);
@@ -313,106 +312,80 @@ function CreateTripForm({ isPrivileged, onCreated }) {
     );
   }
 
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+  const allOn = selectedCount === orders.length;
+  const loadTotal = Object.values(loadValues).reduce((a, b) => a + (b || 0), 0);
+
   return (
-    <div className="card">
+    <div className="ct">
       {error && <div className="error-box">{error}</div>}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <h2 className="title-md" style={{ margin: 0 }}>إنشاء رحلة جديدة</h2>
-        <button className="btn-secondary" style={{ width: "auto", padding: "8px 12px" }} onClick={loadOrders}>🔄 تحديث</button>
+
+      <div className="ct-head">
+        <div>
+          <h2 className="ct-title">رحلة جديدة</h2>
+          <div className="ct-sub">{orders.length} طلب جاهز للتوزيع</div>
+        </div>
+        <button type="button" className="ct-refresh" onClick={loadOrders} aria-label="تحديث الطلبات"><FiRefreshCw aria-hidden="true" /></button>
       </div>
 
-      {perms.can("settings") ? <ShopLocationCard /> : null}
+      {futureCount > 0 && <div className="ct-note">📅 في {futureCount} طلب بموعد لأيام جاية — بيطلعوا هون بيومهم.</div>}
 
-      {futureCount > 0 && (
-        <p className="text-secondary" style={{ fontSize: "0.82rem", marginTop: 0 }}>
-          📅 في {futureCount} طلب بموعد لأيام جاية — بيطلعوا هون بيومهم.
-        </p>
-      )}
-
-      {isPrivileged && perms.canEdit("trips") && drivers.length > 1 && (
-        <div className="seg" style={{ marginBottom: 14 }}>
-          <button type="button" className={planMode === "single" ? "on" : ""} onClick={() => setPlanMode("single")}>رحلة وحدة</button>
-          <button type="button" className={planMode === "distribute" ? "on" : ""} onClick={() => setPlanMode("distribute")}>وزّع على الكباتن</button>
-        </div>
-      )}
-
-      {planMode === "distribute" ? (
-        <DistributePlanner
-          orders={orders.filter((o) => selected[o.id])}
-          drivers={drivers}
-          onDone={onCreated}
-        />
-      ) : (
-      <>
-      {isPrivileged && (
-        <div className="field">
-          <label>مين اللي رح يوصّل هذه الرحلة؟</label>
-          <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)}>
-            <option value="self">أنا بنفسي</option>
+      {isPrivileged && drivers.length > 0 && (
+        <div className="ct-sec">
+          <div className="ct-label">مين بيوصّل؟</div>
+          <div className="ct-drivers">
+            <button type="button" className={`ct-driver${assignTo === "self" ? " on" : ""}`} onClick={() => setAssignTo("self")}>أنا</button>
             {drivers.map((d) => (
-              <option key={d.id} value={d.id}>{d.full_name}</option>
+              <button key={d.id} type="button" className={`ct-driver${String(assignTo) === String(d.id) ? " on" : ""}`} onClick={() => setAssignTo(String(d.id))}>
+                {d.full_name}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
       )}
 
-      <div className="field">
-        <label>طريقة الترتيب</label>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            type="button"
-            className={routeMode === "nearest" ? "btn-primary" : "btn-secondary"}
-            style={{ flex: 1 }}
-            onClick={() => setRouteMode("nearest")}
-          >
-            الأقرب فالأبعد (أقصر طريق)
-          </button>
-          <button
-            type="button"
-            className={routeMode === "urgent_smart" ? "btn-primary" : "btn-secondary"}
-            style={{ flex: 1 }}
-            onClick={() => setRouteMode("urgent_smart")}
-          >
-            🚨 المستعجل أولًا
-          </button>
+      <div className="ct-sec">
+        <div className="ct-label-row">
+          <span className="ct-label" style={{ margin: 0 }}>الطلبات <span className="ct-count">{selectedCount} من {orders.length}</span></span>
+          {orders.length > 1 && (
+            <button type="button" className="link-btn" onClick={() => {
+              const next = {};
+              orders.forEach((o) => { next[o.id] = !allOn; });
+              setSelected(next);
+            }}>{allOn ? "شيل الكل" : "اختار الكل"}</button>
+          )}
+        </div>
+        <div className="ct-orders">
+          {orders.map((o) => {
+            const on = !!selected[o.id];
+            const qty = (o.items || []).reduce((a, it) => a + Number(it.quantity || 0), 0);
+            return (
+              <button key={o.id} type="button" className={`ct-order${on ? " on" : ""}`} onClick={() => toggle(o.id)} aria-pressed={on}>
+                <span className="ct-check" aria-hidden="true">{on ? <FiCheckCircle /> : null}</span>
+                <span className="ct-o-main">
+                  <span className="ct-o-name">
+                    {o.customer_name}
+                    {o.priority === "urgent" && <span className="ct-flag">🚨</span>}
+                  </span>
+                  <span className="ct-o-meta tabular-num">
+                    #{o.order_number}{qty > 0 ? ` · ${qty} قارورة` : ""}
+                    {" "}<BottleTypeBadge type={o.bottle_type} />
+                    {" "}<NeedsQuantityBadge order={o} />
+                  </span>
+                  {scheduleLabel(o) && <span className="sched-badge" style={{ marginTop: 4, alignSelf: "flex-start" }}>📅 {scheduleLabel(o)}</span>}
+                </span>
+                <span className="ct-o-total tabular-num">{Number(o.final_total).toFixed(2)}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <p className="text-secondary" style={{ marginBottom: 14 }}>
-        الطلبات المختارة ({Object.values(selected).filter(Boolean).length} من {orders.length}):
-      </p>
-
-      <div style={{ marginBottom: 16, maxHeight: 300, overflowY: "auto" }}>
-        {orders.map((o) => (
-          <label key={o.id} className="customer-row" style={{ cursor: "pointer" }}>
-            <div className="icon-row">
-              <input type="checkbox" checked={!!selected[o.id]} onChange={() => toggle(o.id)} />
-              <div>
-                <div style={{ fontWeight: 600 }}>
-                  #{o.order_number} · {o.customer_name}
-                  {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
-                  {" "}<BottleTypeBadge type={o.bottle_type} />
-                  {" "}<NeedsQuantityBadge order={o} />
-                </div>
-                <div className="text-secondary tabular-num">
-                  {Number(o.final_total).toFixed(2)} JD
-                  {scheduleLabel(o) && <span className="sched-badge" style={{ marginRight: 6 }}>📅 {scheduleLabel(o)}</span>}
-                </div>
-              </div>
-            </div>
-          </label>
-        ))}
-      </div>
-
-      <div className="card" style={{ background: "var(--surface-2)", border: "none", marginBottom: 14 }}>
-        <button
-          type="button"
-          onClick={() => setShowLoad(!showLoad)}
-          aria-expanded={showLoad}
-          style={{ all: "unset", display: "flex", justifyContent: "space-between", width: "100%", cursor: "pointer", fontWeight: 700 }}
-        >
-          <span>🚚 حمولة السيارة {Object.values(loadValues).some((v) => v > 0) ? `(${Object.values(loadValues).reduce((a, b) => a + b, 0)})` : "(اختياري)"}</span>
-          <span className="text-secondary">{showLoad ? "إخفاء" : "تعبئة"}</span>
+      <div className="ct-sec ct-load">
+        <button type="button" className="ct-load-head" onClick={() => setShowLoad(!showLoad)} aria-expanded={showLoad}>
+          <FiTruck aria-hidden="true" />
+          <span style={{ flex: 1 }}>حمولة السيارة {loadTotal > 0 ? <b className="tabular-num">({loadTotal})</b> : <span className="text-secondary">(اختياري)</span>}</span>
+          <span className="link-btn">{showLoad ? "إخفاء" : "تعبئة"}</span>
         </button>
         {showLoad && (
           <div style={{ marginTop: 8 }}>
@@ -421,16 +394,20 @@ function CreateTripForm({ isPrivileged, onCreated }) {
         )}
       </div>
 
-      <label className="icon-row" style={{ marginBottom: 16, fontWeight: 600 }}>
+      <label className="ct-switch">
+        <span>
+          <b>ابدأ من موقعي الحالي</b>
+          <small>لو طفيتها، الترتيب بيبدأ من المحل</small>
+        </span>
         <input type="checkbox" checked={useLocation} onChange={(e) => setUseLocation(e.target.checked)} />
-        ابدأ الترتيب من موقعي الحالي (لو مطفي بيبدأ من المحل)
+        <i aria-hidden="true" />
       </label>
 
-      <button className="btn-primary" disabled={loading} onClick={handleCreate}>
-        {loading ? "جاري البدء..." : "🚀 بدء الرحلة"}
+      {perms.can("settings") ? <div className="ct-shop"><ShopLocationCard compact /></div> : null}
+
+      <button className="btn-primary ct-start" disabled={loading || selectedCount === 0} onClick={handleCreate}>
+        {loading ? "جاري البدء..." : `ابدأ الرحلة · ${selectedCount} ${selectedCount === 1 ? "طلب" : "طلبات"}`}
       </button>
-      </>
-      )}
     </div>
   );
 }

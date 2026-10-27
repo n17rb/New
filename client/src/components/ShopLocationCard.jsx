@@ -57,7 +57,7 @@ export default function ShopLocationCard({ compact = false }) {
   if (shop && !editing) {
     return (
       <div className="text-secondary" style={{ fontSize: "0.85rem", marginBottom: compact ? 0 : 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        🏪 كل رحلة بتخلص بالرجوع للمحل
+        كل رحلة بتخلص بالرجوع للمحل
         <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noreferrer">(شوف الموقع)</a>
         {editable && (
           <button type="button" onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", padding: 0, fontSize: "0.85rem" }}>
