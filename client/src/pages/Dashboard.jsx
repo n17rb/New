@@ -43,7 +43,9 @@ export default function Dashboard({ user }) {
       </div>
 
       <div className="home-today" aria-busy={!data}>
-        <div className="home-today-glow" aria-hidden="true" />
+        <div className="home-today-glow g1" aria-hidden="true" />
+        <div className="home-today-glow g2" aria-hidden="true" />
+        <div className="home-today-glow g3" aria-hidden="true" />
         <div className="home-stats">
           <button className="home-stat s-blue" onClick={() => navigate("/orders")}>
             <b className="tabular-num">{n(data?.new_orders)}</b>
