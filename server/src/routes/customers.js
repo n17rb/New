@@ -8,6 +8,7 @@ import { normalizePhone, formatPhoneForDisplay } from "../utils/phone.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 import { parseSearch, buildSearchSql } from "../utils/smartSearch.js";
 import { computeForecasts } from "../utils/forecast.js";
+import { getShopLocation } from "../utils/routing.js";
 
 // تلميح التوقع لكل زبون بالقائمة: كم ضايل عنده ومتى مفروض يطلب
 async function attachForecast(rows) {
@@ -200,6 +201,20 @@ router.get("/all-locations", async (req, res) => {
      WHERE c.status = 'active' AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL`
   );
   res.json(result.rows);
+});
+
+// خريطة الكثافة: مكان المحل وسيارات الرحلات الشغّالة
+router.get("/map-extras", async (req, res) => {
+  const shop = await getShopLocation().catch(() => null);
+  const cars = (await query(
+    `SELECT t.id AS trip_id, t.driver_id, u.full_name AS driver_name,
+            t.current_latitude AS lat, t.current_longitude AS lon, t.location_updated_at
+     FROM trips t LEFT JOIN users u ON u.id = t.driver_id
+     WHERE t.status = 'STARTED' AND t.current_latitude IS NOT NULL AND t.current_longitude IS NOT NULL
+       AND t.location_updated_at > now() - interval '12 hours'
+     ORDER BY t.location_updated_at DESC`
+  )).rows.map((c) => ({ ...c, is_me: c.driver_id === req.user.id }));
+  res.json({ shop, cars });
 });
 
 router.get("/growth", async (req, res) => {

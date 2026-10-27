@@ -1,5 +1,5 @@
 import { MapContainer, Marker, Popup, Polyline } from "react-leaflet";
-import MapTiles, { MAP_COLORS, pinHtml } from "./MapTiles.jsx";
+import MapTiles, { MAP_COLORS, pinHtml, carIconHtml, shopIconHtml, CAR_ICON_SIZE, CAR_ICON_ANCHOR, SHOP_ICON_SIZE, SHOP_ICON_ANCHOR } from "./MapTiles.jsx";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -55,12 +55,12 @@ export default function RoutePreviewMap({ stops, driverLocation, showDriverMarke
           );
         })}
         {shop && (
-          <Marker position={shop} icon={numberIcon("💧", MAP_COLORS.navy)}>
+          <Marker position={shop} icon={L.divIcon({ className: "", html: shopIconHtml(), iconSize: SHOP_ICON_SIZE, iconAnchor: SHOP_ICON_ANCHOR })}>
             <Popup>المحل — نهاية الرحلة</Popup>
           </Marker>
         )}
         {showDriverMarker && driverLocation && (
-          <Marker position={[driverLocation.lat, driverLocation.lng]} icon={numberIcon("🚚", "#FF8A00")}>
+          <Marker position={[driverLocation.lat, driverLocation.lng]} icon={L.divIcon({ className: "", html: carIconHtml(), iconSize: CAR_ICON_SIZE, iconAnchor: CAR_ICON_ANCHOR })} zIndexOffset={1000}>
             <Popup>موقع السائق الحالي</Popup>
           </Marker>
         )}

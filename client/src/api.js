@@ -147,6 +147,7 @@ export const api = {
   getRegions: () => request("/regions"),
   createRegion: (body) => request("/regions", { method: "POST", body }),
   getAllCustomerLocations: () => request("/customers/all-locations"),
+  getMapExtras: () => request("/customers/map-extras"),
   getNextCustomerSeq: () => request("/customers/next-seq"),
   getMessageTemplates: () => request("/settings/messages"),
   saveMessageTemplates: (templates) => request("/settings/messages", { method: "PUT", body: { templates } }),

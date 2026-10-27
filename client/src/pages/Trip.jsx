@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome } from "react-icons/fi";
 import { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
@@ -696,8 +696,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
             <div className="icon-row">
               <span style={{
                 width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "0.8rem", background: "#B8862E", color: "#fff",
-              }}>🏪</span>
+                background: "var(--navy)", color: "#fff",
+              }}><FiHome size={13} aria-hidden="true" /></span>
               <a
                 href={`https://www.google.com/maps/dir/?api=1&destination=${trip.shop_location.lat},${trip.shop_location.lon}&travelmode=driving`}
                 target="_blank"

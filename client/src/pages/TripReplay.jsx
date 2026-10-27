@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { FiArrowRight, FiPlay, FiPause, FiClock, FiMapPin, FiCheckCircle, FiXCircle } from "react-icons/fi";
 import { api } from "../api.js";
-import MapTiles, { MAP_COLORS, pinHtml } from "../components/MapTiles.jsx";
+import MapTiles, { MAP_COLORS, pinHtml, carIconHtml, shopIconHtml, CAR_ICON_SIZE, CAR_ICON_ANCHOR, SHOP_ICON_SIZE, SHOP_ICON_ANCHOR } from "../components/MapTiles.jsx";
 
 const icon = (label, color, size = 28) => L.divIcon({ className: "", html: pinHtml(label, color, size), iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 const clock = (d) => (d ? new Date(d).toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "numeric", minute: "2-digit" }) : "—");
@@ -82,7 +82,7 @@ export default function TripReplay() {
             {model.planned.length > 1 && <Polyline positions={model.planned} pathOptions={{ color: MAP_COLORS.blue, weight: 3, opacity: 0.55, dashArray: "6 8" }} />}
             {model.track.length > 1 && <Polyline positions={model.track.map((p) => p.pos)} pathOptions={{ color: "#FFB066", weight: 4, opacity: 0.5 }} />}
             {passed.length > 1 && <Polyline positions={passed.map((p) => p.pos)} pathOptions={{ color: "#FF8A00", weight: 5, opacity: 0.95 }} />}
-            {model.shop && <Marker position={model.shop} icon={icon("💧", MAP_COLORS.navy, 32)}><Popup>المحل</Popup></Marker>}
+            {model.shop && <Marker position={model.shop} icon={L.divIcon({ className: "", html: shopIconHtml(), iconSize: SHOP_ICON_SIZE, iconAnchor: SHOP_ICON_ANCHOR })}><Popup>المحل</Popup></Marker>}
             {model.located.map((s) => {
               const st = s.order_status === "FAILED" ? MAP_COLORS.fail : doneAt(s) ? MAP_COLORS.done : MAP_COLORS.muted;
               return (
@@ -91,7 +91,7 @@ export default function TripReplay() {
                 </Marker>
               );
             })}
-            {truck && <Marker position={truck} icon={icon("🚚", "#FF8A00", 34)} />}
+            {truck && <Marker position={truck} icon={L.divIcon({ className: "", html: carIconHtml(), iconSize: CAR_ICON_SIZE, iconAnchor: CAR_ICON_ANCHOR })} zIndexOffset={1000} />}
           </MapContainer>
         </div>
       )}

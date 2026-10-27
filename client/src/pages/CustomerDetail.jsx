@@ -1,6 +1,6 @@
 import { renderMessage } from "../messages.js";
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { api, API_ORIGIN } from "../api.js";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiEdit2, FiTrash2, FiCamera, FiImage, FiMapPin, FiArrowRight, FiPlusCircle, FiPhone } from "react-icons/fi";
@@ -20,6 +20,9 @@ const TABS = [
 export default function CustomerDetail({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  // جاي من خريطة العملاء؟ زر الرجوع بيرجعك عليها
+  const fromMap = location.state?.from === "/customers-map";
   const [customer, setCustomer] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -71,8 +74,8 @@ export default function CustomerDetail({ user }) {
 
   return (
     <div className="page">
-      <button className="back-link" onClick={() => navigate("/customers")}>
-        <FiArrowRight aria-hidden="true" /> العملاء
+      <button className="back-link" onClick={() => (fromMap ? navigate(-1) : navigate("/customers"))}>
+        <FiArrowRight aria-hidden="true" /> {fromMap ? "رجوع للخريطة" : "العملاء"}
       </button>
 
       {error && <div className="error-box">{error}</div>}
