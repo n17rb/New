@@ -1,43 +1,34 @@
 import { useEffect, useState } from "react";
+import { FiSearch, FiPhone, FiChevronLeft, FiEdit2, FiClock, FiAlertTriangle, FiXCircle, FiPercent, FiZap, FiRotateCcw, FiArrowRight, FiTruck } from "react-icons/fi";
+import { FaWhatsapp } from "react-icons/fa";
 import { api } from "../api.js";
-import { usePerms, ViewOnlyNote } from "../auth.jsx";
+import { usePerms } from "../auth.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import { scheduleLabel } from "../schedule.js";
 
-const STATUS_LABELS = {
-  NEW: "جديد",
-  READY: "جاهز",
-  IN_ROUTE: "في الطريق",
-  DELIVERED: "تم التسليم",
-  CANCELLED: "ملغي",
-  FAILED: "تعذر التسليم",
-  POSTPONED: "مؤجل",
+// الحالات: اسم + لون ناعم
+export const STATUS_META = {
+  NEW: { label: "جديد", tone: "blue" },
+  READY: { label: "جاهز", tone: "blue" },
+  IN_ROUTE: { label: "بالطريق", tone: "amber" },
+  DELIVERED: { label: "تسلّم", tone: "green" },
+  CANCELLED: { label: "ملغي", tone: "gray" },
+  FAILED: { label: "تعذّر", tone: "red" },
+  POSTPONED: { label: "مؤجل", tone: "amber" },
 };
 
-const STATUS_COLORS = {
-  DELIVERED: "var(--success)",
-  CANCELLED: "var(--urgent)",
-  IN_ROUTE: "var(--warning)",
-  POSTPONED: "#B8862E",
-  FAILED: "var(--urgent)",
-};
-
-function statusBadgeStyle(status) {
-  const color = STATUS_COLORS[status];
-  if (!color) return {};
-  return { background: color, color: "#fff", borderColor: color };
+export function StatusPill({ status }) {
+  const m = STATUS_META[status] || { label: status, tone: "gray" };
+  return <span className={`st-pill ${m.tone}`}>{m.label}</span>;
 }
 
-function formatOrderTime(iso) {
-  return new Date(iso).toLocaleString("ar-JO", {
-    timeZone: "Asia/Amman",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "numeric", minute: "2-digit" });
+}
+function formatDayTime(iso) {
+  return new Date(iso).toLocaleString("ar-JO", { timeZone: "Asia/Amman", weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
 }
 
 function jordanToday() {
@@ -68,19 +59,23 @@ const PERIODS = [
 ];
 
 const STATUS_CHIPS = [
-  { key: "", label: "كل الحالات" },
+  { key: "", label: "الكل" },
   { key: "NEW", label: "جديد" },
   { key: "IN_ROUTE", label: "بالطريق" },
   { key: "DELIVERED", label: "تسلّم" },
-  { key: "POSTPONED", label: "مؤجل" },
   { key: "FAILED", label: "تعذّر" },
   { key: "CANCELLED", label: "ملغي" },
 ];
 
+function itemsText(items) {
+  if (!items || !items.length) return "";
+  return items.map((it) => `${it.quantity} × ${it.product_name_snapshot}`).join("، ");
+}
+
 export default function Orders({ user }) {
   const [orders, setOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState("");
+  const [urgentOnly, setUrgentOnly] = useState(false);
   const [period, setPeriod] = useState("today");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -91,9 +86,9 @@ export default function Orders({ user }) {
     setError("");
     setLoading(true);
     try {
-      const params = { limit: 500 };
+      const params = { limit: 500, with_items: "true" };
       if (statusFilter) params.status = statusFilter;
-      if (priorityFilter) params.priority = priorityFilter;
+      if (urgentOnly) params.priority = "urgent";
       const [from, to] = PERIODS.find((p) => p.key === period).range(jordanToday());
       if (period === "scheduled") params.scheduled = "future";
       if (from) params.from = from;
@@ -110,7 +105,7 @@ export default function Orders({ user }) {
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [statusFilter, priorityFilter, period, search]);
+  }, [statusFilter, urgentOnly, period, search]);
 
   if (selectedId) {
     return (
@@ -127,11 +122,22 @@ export default function Orders({ user }) {
   const active = orders.filter((o) => o.status !== "CANCELLED");
   const total = active.reduce((sum, o) => sum + Number(o.final_total || 0), 0);
   const delivered = orders.filter((o) => o.status === "DELIVERED").length;
+  const waiting = orders.filter((o) => ["NEW", "READY", "IN_ROUTE"].includes(o.status)).length;
 
   return (
     <div className="page">
-      <h1 className="title-lg">الطلبات</h1>
+      <div className="ord-head">
+        <h1 className="title-lg" style={{ margin: 0 }}>الطلبات</h1>
+        <button className={`ord-urgent-toggle${urgentOnly ? " on" : ""}`} onClick={() => setUrgentOnly(!urgentOnly)} aria-pressed={urgentOnly}>
+          🚨 المستعجل
+        </button>
+      </div>
       {error && <div className="error-box">{error}</div>}
+
+      <div className="ord-search">
+        <FiSearch aria-hidden="true" />
+        <input placeholder="دوّر باسم، تلفون، أو رقم طلب" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="بحث بالطلبات" />
+      </div>
 
       <div className="chips" role="radiogroup" aria-label="الفترة">
         {PERIODS.map((p) => (
@@ -141,82 +147,71 @@ export default function Orders({ user }) {
         ))}
       </div>
 
-      <div className="field-row" style={{ marginBottom: 4 }}>
-        <div className="field" style={{ flex: 2 }}>
-          <input placeholder="اسم، تلفون، أو رقم طلب" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="بحث بالطلبات" />
-        </div>
-        <div className="field" style={{ flex: 1 }}>
-          <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} aria-label="الأولوية">
-            <option value="">الكل</option>
-            <option value="urgent">مستعجل</option>
-            <option value="normal">عادي</option>
-          </select>
-        </div>
+      <div className="ord-stats">
+        <div className="ord-stat"><b className="tabular-num">{orders.length}</b><span>طلب</span></div>
+        <div className="ord-stat blue"><b className="tabular-num">{waiting}</b><span>بستنى</span></div>
+        <div className="ord-stat green"><b className="tabular-num">{delivered}</b><span>تسلّم</span></div>
+        <div className="ord-stat"><b className="tabular-num">{total.toFixed(total >= 100 ? 0 : 2)}</b><span>JD</span></div>
       </div>
 
-      <div className="chips" role="radiogroup" aria-label="الحالة">
+      <div className="seg ord-status-seg" role="radiogroup" aria-label="الحالة">
         {STATUS_CHIPS.map((c) => (
-          <button key={c.key || "all"} className={`chip${statusFilter === c.key ? " on" : ""}`} role="radio" aria-checked={statusFilter === c.key} onClick={() => setStatusFilter(c.key)}>
+          <button key={c.key || "all"} className={statusFilter === c.key ? "on" : ""} role="radio" aria-checked={statusFilter === c.key} onClick={() => setStatusFilter(c.key)}>
             {c.label}
           </button>
         ))}
       </div>
 
-      <div className="today-strip" style={{ marginBottom: 12 }}>
-        <div className="today-cell" style={{ cursor: "default" }}>
-          <div className="today-num tabular-num">{orders.length}</div>
-          <div className="today-label">طلب</div>
+      {loading && orders.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>جاري التحميل...</p>}
+      {!loading && orders.length === 0 && (
+        <div className="ord-empty">
+          <div style={{ fontSize: "2rem" }}>📭</div>
+          <div>ما في طلبات هون</div>
         </div>
-        <div className="today-cell" style={{ cursor: "default" }}>
-          <div className="today-num tabular-num">{delivered}</div>
-          <div className="today-label">تسلّم</div>
-        </div>
-        <div className="today-cell" style={{ cursor: "default" }}>
-          <div className="today-num tabular-num" style={{ fontSize: total >= 1000 ? "1.15rem" : undefined }}>{total.toFixed(0)}</div>
-          <div className="today-label">المجموع JD</div>
-        </div>
-      </div>
+      )}
 
-      <div className="card" style={{ padding: 0 }}>
-        {loading && orders.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>جاري التحميل...</p>}
-        {!loading && orders.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>ما في طلبات بهالفترة.</p>}
-        {orders.map((o) => (
-          <div key={o.id} className="customer-row" style={{ padding: "12px 14px", cursor: "pointer" }} onClick={() => setSelectedId(o.id)}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600 }}>
-                {o.customer_name}
-                {o.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨</span>}
-                {" "}<BottleTypeBadge type={o.bottle_type} />
-                {" "}<NeedsQuantityBadge order={o} />
-              </div>
-              <div className="text-secondary tabular-num">#{o.order_number} · {formatOrderTime(o.created_at)}</div>
-              {scheduleLabel(o) && !["DELIVERED", "CANCELLED"].includes(o.status) && (
-                <span className="sched-badge" style={{ marginTop: 4 }}>📅 {scheduleLabel(o)}</span>
-              )}
-            </div>
-            <div style={{ textAlign: "left", flexShrink: 0 }}>
-              <div className="tabular-num" style={{ fontWeight: 700 }}>{Number(o.final_total).toFixed(2)} JD</div>
-              <span className="badge" style={statusBadgeStyle(o.status)}>{STATUS_LABELS[o.status] || o.status}</span>
-            </div>
-          </div>
-        ))}
+      <div className="ord-list">
+        {orders.map((o) => {
+          const tone = (STATUS_META[o.status] || {}).tone || "gray";
+          return (
+            <button key={o.id} className={`ord-card tone-${tone}${o.status === "CANCELLED" ? " dim" : ""}`} onClick={() => setSelectedId(o.id)}>
+              <span className="ord-avatar" aria-hidden="true">{(o.customer_name || "؟").trim().charAt(0)}</span>
+              <span className="ord-main">
+                <span className="ord-name">
+                  {o.customer_name}
+                  {o.priority === "urgent" && <span className="ord-flag">🚨</span>}
+                </span>
+                <span className="ord-items">{itemsText(o.items) || <NeedsQuantityBadge order={o} />}</span>
+                <span className="ord-meta tabular-num">
+                  #{o.order_number} · {formatTime(o.created_at)}
+                  {scheduleLabel(o) && !["DELIVERED", "CANCELLED"].includes(o.status) && <span className="sched-badge">📅 {scheduleLabel(o)}</span>}
+                </span>
+              </span>
+              <span className="ord-side">
+                <span className="ord-total tabular-num">{Number(o.final_total).toFixed(2)}</span>
+                <StatusPill status={o.status} />
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
+const FAIL_REASONS = ["لا يرد", "مش موجود بالبيت", "العنوان غلط", "مشكلة بالوصول"];
+const POSTPONE_REASONS = ["الزبون طلب", "مش موجود هلّق", "ما في وقت اليوم"];
+
 function OrderDetail({ orderId, user, onBack }) {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [editingItems, setEditingItems] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [sheet, setSheet] = useState(null); // cancel | postpone | fail | discount | schedule
   const [scheduleDraft, setScheduleDraft] = useState(null);
-  const [sheet, setSheet] = useState(null); // cancel | postpone | fail | discount
-  const [postponeDraft, setPostponeDraft] = useState(null);
   const [postponeReason, setPostponeReason] = useState("");
   const [discount, setDiscount] = useState({ value: "", type: "amount", reason: "" });
-  const [notice, setNotice] = useState("");
 
   const perms = usePerms();
   const canEditOrders = perms.canEdit("orders");
@@ -233,23 +228,25 @@ function OrderDetail({ orderId, user, onBack }) {
 
   useEffect(() => { load(); }, [orderId]);
 
-  async function withBusy(fn) {
+  function flash(msg) {
+    setNotice(msg);
+    setTimeout(() => setNotice(""), 4000);
+  }
+
+  async function run(fn, msg) {
     setBusy(true);
     setError("");
     try {
       await fn();
       setSheet(null);
       await load();
+      if (msg) flash(msg);
     } catch (err) {
       setError(err.message);
       setSheet(null);
     } finally {
       setBusy(false);
     }
-  }
-  function flash(msg) {
-    setNotice(msg);
-    setTimeout(() => setNotice(""), 4000);
   }
 
   if (!order) return <p className="text-secondary">جاري التحميل...</p>;
@@ -259,147 +256,166 @@ function OrderDetail({ orderId, user, onBack }) {
       <EditOrderItemsForm
         order={order}
         onCancel={() => setEditingItems(false)}
-        onSaved={() => { setEditingItems(false); load(); }}
+        onSaved={() => { setEditingItems(false); load(); flash("✅ انحفظ محتوى الطلب"); }}
       />
     );
   }
 
   const isFinal = ["DELIVERED", "CANCELLED"].includes(order.status);
+  const sched = scheduleLabel(order);
 
-  function toggleUrgent() {
-    withBusy(() => api.setOrderPriority(order.id, order.priority === "urgent" ? "normal" : "urgent"));
-  }
-
-  // إلغاء: تأكيد بس — تأجيل/تعذّر/خصم: لوحات بدل نوافذ المتصفح
-  function handleCancel() { setSheet("cancel"); }
-  function handleFail() { setSheet("fail"); }
-  function handlePostpone() {
-    setPostponeDraft({ scheduled_date: null, requested_time: null });
+  function openPostpone() {
+    setScheduleDraft({ scheduled_date: null, requested_time: null });
     setPostponeReason("");
     setSheet("postpone");
   }
+
   function submitPostpone() {
-    const d = postponeDraft || {};
+    const d = scheduleDraft || {};
     const label = d.requested_time || d.scheduled_date ? scheduleLabel(d) : null;
-    withBusy(() => api.postponeOrder(order.id, { scheduled_date: d.scheduled_date, requested_time: d.requested_time, reason: postponeReason }))
-      .then(() => flash(label ? `⏰ تأجّل لـ ${label}` : "✅ رجع لقائمة التوزيع"));
+    run(
+      () => api.postponeOrder(order.id, { scheduled_date: d.scheduled_date, requested_time: d.requested_time, reason: postponeReason }),
+      label ? `⏰ تأجّل لـ ${label}` : "✅ رجع لقائمة التوزيع"
+    );
   }
-  function handleDiscount() {
-    setDiscount({ value: "", type: "amount", reason: "" });
-    setSheet("discount");
-  }
+
   function submitDiscount() {
     const value = parseFloat(discount.value);
     if (!value || value <= 0) return;
-    withBusy(() => api.applyDiscount(order.id, { discount_type: discount.type, discount_value: value, reason: discount.reason }));
+    run(() => api.applyDiscount(order.id, { discount_type: discount.type, discount_value: value, reason: discount.reason }), "✅ انضاف الخصم");
   }
 
+  const phoneDigits = order.customer_phone_normalized || "";
+
   return (
-    <div className="card">
-      <button className="btn-danger-text" style={{ marginBottom: 10 }} onClick={onBack}>← رجوع لقائمة الطلبات</button>
+    <div className="od">
+      <button className="od-back" onClick={onBack}><FiArrowRight aria-hidden="true" /> الطلبات</button>
 
-      <h2 className="title-md">
-        طلب #{order.order_number}
-        {order.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
-      </h2>
-      <p className="text-secondary tabular-num">{order.customer_name} · {order.customer_phone}</p>
-      <BottleTypeBadge type={order.bottle_type} large />
-      <p className="text-secondary tabular-num" style={{ marginTop: -6 }}>🕐 {formatOrderTime(order.created_at)}</p>
-      <span className="badge" style={{ marginBottom: 12, display: "inline-block", ...statusBadgeStyle(order.status) }}>{STATUS_LABELS[order.status] || order.status}</span>
-
-      {!isFinal && (
-        <div className="card" style={{ background: "var(--surface-2)", border: "none", padding: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 700 }}>{scheduleLabel(order) ? `📅 موعده ${scheduleLabel(order)}` : "بدون موعد — بأقرب وقت"}</span>
-            {canEditOrders && !editingSchedule && (
-              <button className="chip" onClick={() => { setScheduleDraft({ scheduled_date: order.scheduled_date ? String(order.scheduled_date).slice(0, 10) : null, requested_time: order.requested_time }); setEditingSchedule(true); }}>
-                {scheduleLabel(order) ? "غيّر الموعد" : "حدّد موعد"}
-              </button>
-            )}
-          </div>
-          {editingSchedule && (
-            <div style={{ marginTop: 10 }}>
-              <SchedulePicker value={scheduleDraft} onChange={setScheduleDraft} />
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button className="btn-primary" disabled={busy} onClick={() => withBusy(async () => { await api.setOrderSchedule(order.id, scheduleDraft); setEditingSchedule(false); })}>حفظ الموعد</button>
-                <button className="btn-secondary" style={{ width: "auto", padding: "0 16px" }} onClick={() => setEditingSchedule(false)}>إلغاء</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && <div className="error-box">{error}</div>}
       {notice && <div className="success-box">{notice}</div>}
+      {error && <div className="error-box">{error}</div>}
 
-      {order.needs_quantity && !isFinal && canEditOrders && (
-        <div className="card" style={{ border: "2px solid #E8A020", background: "rgba(232, 160, 32, 0.08)" }}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 هذا طلب تلقائي لزبون موعده اليوم — لسا ما انحدد شو بده</div>
-          <button className="btn-primary" disabled={busy} onClick={() => setEditingItems(true)}>
-            حدد عدد القوارير
-          </button>
+      <div className="od-hero">
+        <div className="od-hero-top">
+          <StatusPill status={order.status} />
+          <span className="text-secondary tabular-num">#{order.order_number}</span>
         </div>
-      )}
-
-      <div className="card" style={{ background: "var(--bg)" }}>
-        {order.items.length === 0 && <p className="text-secondary" style={{ margin: 0 }}>لا يوجد منتجات بعد.</p>}
-        {order.items.map((item) => (
-          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-            <span>{item.product_name_snapshot} × {item.quantity}</span>
-            <span className="tabular-num">{Number(item.line_total).toFixed(2)} JD</span>
-          </div>
-        ))}
-        <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "8px 0" }} />
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>الإجمالي الفرعي</span>
-          <span className="tabular-num">{Number(order.subtotal).toFixed(2)} JD</span>
+        <h2 className="od-name">
+          {order.customer_name}
+          {order.priority === "urgent" && <span className="od-urgent">🚨 مستعجل</span>}
+        </h2>
+        <div className="od-sub tabular-num">
+          <BottleTypeBadge type={order.bottle_type} /> <span>{formatDayTime(order.created_at)}</span>
         </div>
-        {order.discount_value > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--urgent)" }}>
-            <span>الخصم</span>
-            <span className="tabular-num">
-              -{order.discount_type === "percent" ? `${order.discount_value}%` : `${Number(order.discount_value).toFixed(2)} JD`}
-            </span>
+        {order.driver_name && order.status === "IN_ROUTE" && (
+          <div className="od-driver"><FiTruck aria-hidden="true" /> مع {order.driver_name} بالرحلة</div>
+        )}
+        {(Number(order.debt_balance) > 0 || Number(order.coupon_balance) > 0) && (
+          <div className="od-tags">
+            {Number(order.debt_balance) > 0 && <span className="od-tag red">عليه {Number(order.debt_balance).toFixed(2)} JD</span>}
+            {Number(order.coupon_balance) > 0 && <span className="od-tag blue">🎫 معه {order.coupon_balance} كوبون</span>}
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "1.1rem" }}>
-          <span>الإجمالي النهائي</span>
+        {order.customer_phone && (
+          <div className="od-contact">
+            <a href={`tel:${order.customer_phone}`} className="od-contact-btn"><FiPhone aria-hidden="true" /> اتصال</a>
+            {phoneDigits && (
+              <a href={`https://wa.me/${phoneDigits}`} target="_blank" rel="noreferrer" className="od-contact-btn wa"><FaWhatsapp aria-hidden="true" /> واتساب</a>
+            )}
+          </div>
+        )}
+      </div>
+
+      {order.status === "CANCELLED" && order.cancelled_reason && <div className="od-note gray">سبب الإلغاء: {order.cancelled_reason}</div>}
+      {order.status === "FAILED" && order.failed_reason && <div className="od-note red">تعذّر: {order.failed_reason}</div>}
+
+      {!isFinal && (
+        <button className="od-sched" onClick={() => canEditOrders && openPostpone()} disabled={!canEditOrders}>
+          <FiClock aria-hidden="true" />
+          <span style={{ flex: 1 }}>
+            <b>{sched ? `موعده ${sched}` : "بدون موعد — بأقرب وقت"}</b>
+          </span>
+          {canEditOrders && <span className="od-sched-link">{sched ? "غيّر" : "حدّد موعد"}</span>}
+        </button>
+      )}
+
+      {order.needs_quantity && !isFinal && canEditOrders && (
+        <div className="od-note amber">
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 طلب تلقائي — لسا ما انحدد شو بده</div>
+          <button className="btn-primary" disabled={busy} onClick={() => setEditingItems(true)}>حدد عدد القوارير</button>
+        </div>
+      )}
+
+      <div className="od-receipt">
+        {order.items.length === 0 && <p className="text-secondary" style={{ margin: 0 }}>لا يوجد منتجات بعد.</p>}
+        {order.items.map((item) => (
+          <div key={item.id} className="od-line">
+            <span><b className="tabular-num">{item.quantity} ×</b> {item.product_name_snapshot}</span>
+            <span className="tabular-num">{Number(item.line_total).toFixed(2)}</span>
+          </div>
+        ))}
+        {order.discount_value > 0 && (
+          <>
+            <div className="od-line muted">
+              <span>المجموع</span>
+              <span className="tabular-num">{Number(order.subtotal).toFixed(2)}</span>
+            </div>
+            <div className="od-line red">
+              <span>خصم</span>
+              <span className="tabular-num">-{order.discount_type === "percent" ? `${order.discount_value}%` : Number(order.discount_value).toFixed(2)}</span>
+            </div>
+          </>
+        )}
+        <div className="od-line total">
+          <span>المطلوب</span>
           <span className="tabular-num">{Number(order.final_total).toFixed(2)} JD</span>
         </div>
       </div>
 
-      {order.notes && <p className="text-secondary">📝 {order.notes}</p>}
+      {order.notes && <div className="od-note">📝 {order.notes}</div>}
 
       {!isFinal && canEditOrders && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-          <button className="btn-secondary" disabled={busy} onClick={() => setEditingItems(true)}>
-            ✏️ تعديل محتوى الطلب
-          </button>
+        <>
           {order.status === "IN_ROUTE" && (
-            <p className="text-secondary" style={{ margin: "-4px 0 0", fontSize: "0.8rem" }}>
-              هذا الطلب مع سائق برحلة جارية — أي تعديل هون بينعكس عنده تلقائيًا بأقرب تحديث.
+            <p className="text-secondary" style={{ fontSize: "0.8rem", margin: "0 4px 8px" }}>
+              الطلب مع كابتن برحلة شغّالة — أي تعديل بيوصله لحاله.
             </p>
           )}
-
-          <button className="btn-secondary" disabled={busy} onClick={toggleUrgent}>
-            {order.priority === "urgent" ? "إلغاء المستعجل" : "🚨 تحويل لمستعجل"}
-          </button>
-
-          {canDiscount && <button className="btn-secondary" disabled={busy} onClick={handleDiscount}>💸 إعطاء خصم</button>}
-
-          <button className="btn-secondary" disabled={busy} onClick={handlePostpone}>⏰ تأجيل</button>
-          <button className="btn-secondary" disabled={busy} onClick={handleFail}>⚠️ تعذر التسليم</button>
-
-          {canCancel && <button className="btn-danger-text" disabled={busy} onClick={handleCancel}>❌ إلغاء الطلب</button>}
-        </div>
+          <div className="od-actions">
+            <button className="od-act" disabled={busy} onClick={() => setEditingItems(true)}>
+              <FiEdit2 aria-hidden="true" /><span>تعديل الطلب</span>
+            </button>
+            <button className="od-act" disabled={busy} onClick={openPostpone}>
+              <FiClock aria-hidden="true" /><span>تأجيل</span>
+            </button>
+            <button className={`od-act${order.priority === "urgent" ? " on" : ""}`} disabled={busy}
+              onClick={() => run(() => api.setOrderPriority(order.id, order.priority === "urgent" ? "normal" : "urgent"), order.priority === "urgent" ? "رجع عادي" : "🚨 صار مستعجل")}>
+              <FiZap aria-hidden="true" /><span>{order.priority === "urgent" ? "شيل المستعجل" : "مستعجل"}</span>
+            </button>
+            {canDiscount && (
+              <button className="od-act" disabled={busy} onClick={() => { setDiscount({ value: "", type: "amount", reason: "" }); setSheet("discount"); }}>
+                <FiPercent aria-hidden="true" /><span>خصم</span>
+              </button>
+            )}
+            <button className="od-act warn" disabled={busy} onClick={() => setSheet("fail")}>
+              <FiAlertTriangle aria-hidden="true" /><span>تعذّر التسليم</span>
+            </button>
+            {canCancel && (
+              <button className="od-act danger" disabled={busy} onClick={() => setSheet("cancel")}>
+                <FiXCircle aria-hidden="true" /><span>إلغاء الطلب</span>
+              </button>
+            )}
+          </div>
+        </>
       )}
 
       {(order.status === "POSTPONED" || order.status === "FAILED") && canEditOrders && (
-        <button className="btn-primary" style={{ marginTop: 10 }} disabled={busy} onClick={() => withBusy(() => api.reactivateOrder(order.id))}>
-          إعادة الطلب لقائمة التوزيع
+        <button className="btn-primary icon-row" style={{ justifyContent: "center", marginTop: 12 }} disabled={busy}
+          onClick={() => run(() => api.reactivateOrder(order.id), "✅ رجع لقائمة التوزيع")}>
+          <FiRotateCcw aria-hidden="true" /> رجّعه لقائمة التوزيع
         </button>
       )}
 
+      {/* إلغاء: تأكيد بس */}
       <ConfirmSheet
         open={sheet === "cancel"}
         title="إلغاء الطلب؟"
@@ -407,35 +423,40 @@ function OrderDetail({ orderId, user, onBack }) {
         confirmLabel="نعم، ألغِ الطلب"
         danger
         busy={busy}
-        onConfirm={() => withBusy(() => api.cancelOrder(order.id))}
+        onConfirm={() => run(() => api.cancelOrder(order.id), "انلغى الطلب")}
         onClose={() => setSheet(null)}
       />
 
+      {/* تأجيل: اليوم الساعة كذا / بكرة / ... */}
       <Sheet open={sheet === "postpone"} title="أجّل لإمتى؟" onClose={() => setSheet(null)}>
-        <SchedulePicker value={postponeDraft} onChange={setPostponeDraft} />
+        <SchedulePicker value={scheduleDraft} onChange={setScheduleDraft} />
         <div className="sheet-label">السبب (اختياري)</div>
         <div className="chips" style={{ flexWrap: "wrap" }}>
-          {["الزبون طلب", "مش موجود هلّق", "ما في وقت اليوم"].map((r) => (
+          {POSTPONE_REASONS.map((r) => (
             <button key={r} type="button" className={`chip${postponeReason === r ? " on" : ""}`} onClick={() => setPostponeReason(postponeReason === r ? "" : r)}>{r}</button>
           ))}
         </div>
         <div className="sheet-actions">
           <button className="btn-primary" disabled={busy} onClick={submitPostpone}>
-            {busy ? "لحظة..." : postponeDraft?.scheduled_date ? "تأكيد التأجيل" : "رجّعه لقائمة اليوم"}
+            {busy ? "لحظة..." : scheduleDraft?.scheduled_date ? "تأكيد التأجيل" : "رجّعه لقائمة اليوم"}
           </button>
           <button className="btn-secondary" disabled={busy} onClick={() => setSheet(null)}>رجوع</button>
         </div>
       </Sheet>
 
+      {/* تعذّر: كبسة وحدة على السبب */}
       <Sheet open={sheet === "fail"} title="ليش تعذّر التسليم؟" onClose={() => setSheet(null)}>
         <div className="sheet-options">
-          {["لا يرد", "مش موجود بالبيت", "العنوان غلط", "مشكلة بالوصول"].map((r) => (
-            <button key={r} className="sheet-option" disabled={busy} onClick={() => withBusy(() => api.failDelivery(order.id, r))}>{r}</button>
+          {FAIL_REASONS.map((r) => (
+            <button key={r} className="sheet-option" disabled={busy} onClick={() => run(() => api.failDelivery(order.id, r), "تسجّل: تعذّر التسليم")}>
+              {r} <FiChevronLeft aria-hidden="true" />
+            </button>
           ))}
         </div>
         <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setSheet(null)}>رجوع</button>
       </Sheet>
 
+      {/* خصم */}
       <Sheet open={sheet === "discount"} title="خصم على الطلب" onClose={() => setSheet(null)}>
         <div className="seg" style={{ marginBottom: 10 }}>
           <button type="button" className={discount.type === "amount" ? "on" : ""} onClick={() => setDiscount({ ...discount, type: "amount" })}>دينار JD</button>
@@ -443,7 +464,7 @@ function OrderDetail({ orderId, user, onBack }) {
         </div>
         <div className="field">
           <input type="number" inputMode="decimal" min="0" step="0.01" placeholder={discount.type === "percent" ? "مثلًا 10" : "مثلًا 0.50"}
-            value={discount.value} onChange={(e) => setDiscount({ ...discount, value: e.target.value })} aria-label="قيمة الخصم" />
+            value={discount.value} onChange={(e) => setDiscount({ ...discount, value: e.target.value })} aria-label="قيمة الخصم" autoFocus />
         </div>
         <div className="field">
           <input placeholder="السبب (اختياري)" value={discount.reason} onChange={(e) => setDiscount({ ...discount, reason: e.target.value })} aria-label="سبب الخصم" />
@@ -499,35 +520,38 @@ function EditOrderItemsForm({ order, onCancel, onSaved }) {
   }
 
   return (
-    <div className="card">
-      <h2 className="title-md">تعديل طلب #{order.order_number}</h2>
-      {error && <div className="error-box">{error}</div>}
+    <div className="od">
+      <button className="od-back" onClick={onCancel}><FiArrowRight aria-hidden="true" /> رجوع للطلب</button>
+      <div className="card">
+        <h2 className="title-md">تعديل طلب {order.customer_name}</h2>
+        {error && <div className="error-box">{error}</div>}
 
-      <div style={{ marginBottom: 16 }}>
-        {products.map((p) => (
-          <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{p.name}</div>
-              <div className="text-secondary tabular-num">{Number(p.unit_price).toFixed(2)} JD</div>
+        <div style={{ marginBottom: 16 }}>
+          {products.filter((p) => p.status !== "inactive" || quantities[p.id]).map((p) => (
+            <div key={p.id} className="od-qty-row">
+              <div>
+                <div style={{ fontWeight: 600 }}>{p.name}</div>
+                <div className="text-secondary tabular-num">{Number(p.unit_price).toFixed(2)} JD</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button type="button" className="step-btn" onClick={() => changeQty(p.id, -1)} aria-label="أقل">−</button>
+                <span className="tabular-num" style={{ minWidth: 22, textAlign: "center", fontWeight: 800, fontSize: "1.05rem" }}>{quantities[p.id] || 0}</span>
+                <button type="button" className="step-btn plus" onClick={() => changeQty(p.id, 1)} aria-label="أكثر">+</button>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button type="button" onClick={() => changeQty(p.id, -1)} style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid var(--border)", background: "#fff", fontSize: "1.1rem" }}>−</button>
-              <span className="tabular-num" style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>{quantities[p.id] || 0}</span>
-              <button type="button" onClick={() => changeQty(p.id, 1)} style={{ width: 36, height: 36, borderRadius: 8, border: "none", background: "var(--primary)", color: "#fff", fontSize: "1.1rem" }}>+</button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <div className="card" style={{ background: "var(--bg)", textAlign: "center", marginBottom: 14 }}>
-        <div className="text-secondary">الإجمالي الجديد (قبل أي خصم سابق)</div>
-        <div className="tabular-num" style={{ fontSize: "1.6rem", fontWeight: 700 }}>{total.toFixed(2)} JD</div>
-      </div>
+        <div className="od-newtotal">
+          <span className="text-secondary">المجموع الجديد</span>
+          <b className="tabular-num">{total.toFixed(2)} JD</b>
+        </div>
 
-      <button className="btn-primary" style={{ marginBottom: 10 }} disabled={!hasAnyItem || saving} onClick={handleSave}>
-        {saving ? "جاري الحفظ..." : "حفظ التعديلات"}
-      </button>
-      <button type="button" className="btn-secondary" onClick={onCancel}>إلغاء</button>
+        <button className="btn-primary" style={{ marginBottom: 10 }} disabled={!hasAnyItem || saving} onClick={handleSave}>
+          {saving ? "جاري الحفظ..." : "حفظ"}
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCancel}>إلغاء</button>
+      </div>
     </div>
   );
 }
