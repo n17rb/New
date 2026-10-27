@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck } from "react-icons/fi";
-import { ConfirmSheet } from "../components/Sheet.jsx";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck, FiPhoneOff, FiRotateCw, FiCalendar } from "react-icons/fi";
+import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import { FaWhatsapp } from "react-icons/fa";
@@ -1294,66 +1294,92 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
       </button>
 
       {/* تحت «تم التسليم»: تأجيل · تعذّر · إلغاء */}
-      {!showFailMenu && !showPostponeForm && (
-        <div className="stop-sub-actions">
-          <button disabled={busy} onClick={() => setShowPostponeForm(true)}><FiClock aria-hidden="true" /> تأجيل</button>
-          <button disabled={busy} onClick={() => setShowFailMenu(true)}><FiAlertTriangle aria-hidden="true" /> تعذّر</button>
-          {canCancel && <button className="danger" disabled={busy} onClick={() => setConfirmCancel(true)}><FiXCircle aria-hidden="true" /> إلغاء</button>}
-        </div>
-      )}
+      <div className="stop-sub-actions">
+        <button disabled={busy} onClick={() => { setOtherDay(false); setDayDraft(null); setPostponeNote(""); setShowPostponeForm(true); }}><FiClock aria-hidden="true" /> تأجيل</button>
+        <button disabled={busy} onClick={() => setShowFailMenu(true)}><FiAlertTriangle aria-hidden="true" /> تعذّر</button>
+        {canCancel && <button className="danger" disabled={busy} onClick={() => setConfirmCancel(true)}><FiXCircle aria-hidden="true" /> إلغاء</button>}
+      </div>
 
-      {showFailMenu && !showPostponeForm && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>ليش تعذّر تسليم {stop.customer_name}؟</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {["خارج المنزل", "لا يرد", "العنوان غلط"].map((r) => (
-              <button key={r} className="btn-secondary" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, r))}>{r}</button>
-            ))}
-            <button className="btn-secondary" onClick={() => setShowFailMenu(false)}>رجوع</button>
-          </div>
+      {/* تعذّر التسليم: كبسة وحدة على السبب */}
+      <Sheet open={showFailMenu} title="تعذّر التسليم" onClose={() => setShowFailMenu(false)}>
+        <div className="sheet-who">
+          <span className="sheet-who-n tabular-num">{index || "•"}</span>
+          <span><b>{stop.customer_name}</b><small className="tabular-num">#{stop.order_number}</small></span>
         </div>
-      )}
+        <div className="sheet-q">شو صار؟</div>
+        <div className="sopts">
+          {[
+            ["لا يرد", "اتصلت وما رد", FiPhoneOff],
+            ["خارج المنزل", "ما في حدا بالبيت", FiHome],
+            ["العنوان غلط", "ما لقيت المكان", FiMapPin],
+          ].map(([r, sub, Ic]) => (
+            <button key={r} className="sopt warn" disabled={busy} onClick={() => withBusy(() => api.failStop(stop.id, r)).then(() => setShowFailMenu(false))}>
+              <span className="sopt-ic"><Ic aria-hidden="true" /></span>
+              <span className="sopt-t"><b>{r}</b><small>{sub}</small></span>
+            </button>
+          ))}
+        </div>
+        <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setShowFailMenu(false)}>رجوع</button>
+      </Sheet>
 
-      {showPostponeForm && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>أجّل {stop.customer_name} لإمتى؟</div>
-          <div className="chips" style={{ flexWrap: "wrap", marginBottom: 10 }}>
-            <span className="text-secondary" style={{ alignSelf: "center", fontSize: "0.8rem" }}>السبب (اختياري):</span>
-            {["الزبون طلب", "مش موجود هلّق"].map((r) => (
-              <button key={r} type="button" className={`chip${postponeNote === r ? " on" : ""}`} onClick={() => setPostponeNote(postponeNote === r ? "" : r)}>{r}</button>
-            ))}
-          </div>
-          {!otherDay ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button className="btn-secondary" disabled={busy} onClick={() => postpone({})}>آخر الرحلة (يرجعله بعد ما تخلّص الباقي)</button>
-              <button className="btn-secondary" disabled={busy} onClick={() => postpone({ new_time: inHours(1) })}>بعد ساعة (الساعة {formatClockTime(60)})</button>
-              <button className="btn-secondary" disabled={busy} onClick={() => postpone({ new_time: inHours(2) })}>بعد ساعتين (الساعة {formatClockTime(120)})</button>
-              <button className="btn-secondary" disabled={busy} onClick={() => setOtherDay(true)}>📅 بكرة أو يوم ثاني</button>
-              <button className="btn-secondary" onClick={() => setShowPostponeForm(false)}>رجوع</button>
+      {/* تأجيل */}
+      <Sheet open={showPostponeForm} title="تأجيل الطلب" onClose={() => setShowPostponeForm(false)}>
+        <div className="sheet-who">
+          <span className="sheet-who-n tabular-num">{index || "•"}</span>
+          <span><b>{stop.customer_name}</b><small className="tabular-num">#{stop.order_number}</small></span>
+        </div>
+        {!otherDay ? (
+          <>
+            <div className="sheet-q">لإمتى بدك تأجّله؟</div>
+            <div className="sopts">
+              <button className="sopt" disabled={busy} onClick={() => postpone({})}>
+                <span className="sopt-ic"><FiRotateCw aria-hidden="true" /></span>
+                <span className="sopt-t"><b>آخر الرحلة</b><small>بترجعله بعد ما تخلّص الباقي</small></span>
+              </button>
+              <button className="sopt" disabled={busy} onClick={() => postpone({ new_time: inHours(1) })}>
+                <span className="sopt-ic"><FiClock aria-hidden="true" /></span>
+                <span className="sopt-t"><b>بعد ساعة</b><small className="tabular-num">الساعة {formatClockTime(60)}</small></span>
+              </button>
+              <button className="sopt" disabled={busy} onClick={() => postpone({ new_time: inHours(2) })}>
+                <span className="sopt-ic"><FiClock aria-hidden="true" /></span>
+                <span className="sopt-t"><b>بعد ساعتين</b><small className="tabular-num">الساعة {formatClockTime(120)}</small></span>
+              </button>
+              <button className="sopt" disabled={busy} onClick={() => setOtherDay(true)}>
+                <span className="sopt-ic"><FiCalendar aria-hidden="true" /></span>
+                <span className="sopt-t"><b>بكرة أو يوم ثاني</b><small>بيطلع من الرحلة وبيرجع بيومه</small></span>
+              </button>
             </div>
-          ) : (
-            <>
-              <SchedulePicker value={dayDraft} onChange={setDayDraft} />
-              <p className="text-secondary" style={{ fontSize: "0.8rem" }}>الطلب بيطلع من الرحلة وبيرجع بيومه بقائمة التوزيع.</p>
+            <div className="sheet-q" style={{ marginTop: 14 }}>السبب <span>(اختياري)</span></div>
+            <div className="chips" style={{ flexWrap: "wrap", marginBottom: 0 }}>
+              {["الزبون طلب", "مش موجود هلّق"].map((r) => (
+                <button key={r} type="button" className={`chip${postponeNote === r ? " on" : ""}`} onClick={() => setPostponeNote(postponeNote === r ? "" : r)}>{r}</button>
+              ))}
+            </div>
+            <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setShowPostponeForm(false)}>رجوع</button>
+          </>
+        ) : (
+          <>
+            <div className="sheet-q">اختار اليوم والساعة</div>
+            <SchedulePicker value={dayDraft} onChange={setDayDraft} />
+            <div className="sheet-actions">
               <button
                 className="btn-primary"
-                style={{ marginBottom: 8 }}
                 disabled={busy || !dayDraft?.scheduled_date}
                 onClick={() => postpone({ other_day: true, scheduled_date: dayDraft.scheduled_date, new_time: dayDraft.requested_time || undefined })}
               >
                 تأكيد التأجيل
               </button>
               <button className="btn-secondary" onClick={() => setOtherDay(false)}>رجوع</button>
-            </>
-          )}
-        </div>
-      )}
+            </div>
+          </>
+        )}
+      </Sheet>
       </>)}
 
       <ConfirmSheet
         open={confirmCancel}
         title="إلغاء الطلب؟"
-        text={`طلب ${stop.customer_name} رح ينلغى وينشال من الرحلة.`}
+        text={`طلب ${stop.customer_name} (#${stop.order_number}) رح ينلغى وينشال من الرحلة. ما بينحسب عليه إشي.`}
         confirmLabel="نعم، ألغِ الطلب"
         danger
         busy={busy}
