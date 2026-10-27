@@ -1317,3 +1317,6 @@ ALTER TABLE f_plines ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
 -- الإنتاج لكل مصنع (خط): مصنع الكاسات ١، ٢، المطرات…
 ALTER TABLE f_stock_moves ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_plines(id) ON DELETE SET NULL;
+
+-- نفس رقم التلفون لأكثر من زبون مسموح، بشرط يكون الموقع مختلف (بيت ومكتب مثلًا) — الفحص بالسيرفر
+ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_phone_normalized_key;

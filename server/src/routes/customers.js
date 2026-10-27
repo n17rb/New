@@ -394,6 +394,40 @@ router.post("/fix-locations", requireCanManageCustomers, async (req, res) => {
   });
 });
 
+// ---------- نفس الرقم بموقع ثاني ----------
+// المسافة بالمتر بين نقطتين
+function metersBetween(a, b) {
+  const R = 6371000, toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+const SAME_PLACE_METERS = 40;
+
+// زبون بنفس الرقم ونفس المكان؟ (نفس الموقع تقريبًا، وإذا الشقتين مكتوبين ومختلفين بنعتبرهم مكانين)
+async function findSamePhoneSamePlace(normalized, place, exceptId = null) {
+  const rows = (await query(
+    `SELECT c.*, l.latitude, l.longitude, l.apartment
+     FROM customers c
+     LEFT JOIN LATERAL (SELECT latitude, longitude, apartment FROM customer_locations WHERE customer_id = c.id ORDER BY id LIMIT 1) l ON true
+     WHERE c.phone_normalized = $1 AND ($2::int IS NULL OR c.id <> $2) AND c.status <> 'archived'`,
+    [normalized, exceptId]
+  )).rows;
+  if (!rows.length) return { others: [], same: null };
+  const lat = Number(place?.latitude), lon = Number(place?.longitude);
+  const hasPlace = Number.isFinite(lat) && Number.isFinite(lon) && place?.latitude != null && place?.longitude != null;
+  if (!hasPlace) return { others: rows, same: null, noPlace: true };
+  const apt = String(place.apartment || "").trim();
+  const same = rows.find((r) => {
+    if (r.latitude == null || r.longitude == null) return false;
+    if (metersBetween({ lat, lon }, { lat: Number(r.latitude), lon: Number(r.longitude) }) > SAME_PLACE_METERS) return false;
+    const otherApt = String(r.apartment || "").trim();
+    if (apt && otherApt && apt !== otherApt) return false;
+    return true;
+  });
+  return { others: rows, same: same || null };
+}
+
 router.post("/", requireCanManageCustomers, async (req, res) => {
   const { name, phone, phone_alt, notes, sequential_number, bottle_type, seq_in_name } = req.body;
 
@@ -405,13 +439,24 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
   }
 
   const normalized = normalizePhone(phone);
-  const existingPhone = await query("SELECT * FROM customers WHERE phone_normalized = $1", [normalized]);
-  if (existingPhone.rows[0]) {
-    return res.status(200).json({
-      alreadyExists: true,
-      message: "رقم الهاتف موجود مسبقًا — تم عرض العميل الحالي بدل إنشاء عميل جديد.",
-      customer: existingPhone.rows[0],
-    });
+  // نفس الرقم: مسموح بس إذا الموقع مختلف (بيت ومكتب مثلًا)
+  const dup = await findSamePhoneSamePlace(normalized, req.body.location);
+  if (dup.others.length) {
+    if (dup.noPlace) {
+      return res.status(200).json({
+        alreadyExists: true,
+        message: "الرقم موجود لزبون ثاني — تم عرضه. إذا هذا مكان ثاني لنفس الزبون (بيت/مكتب)، حدّد الموقع وضيفه من جديد.",
+        customer: dup.others[0],
+      });
+    }
+    if (dup.same) {
+      const { latitude, longitude, apartment, ...existing } = dup.same;
+      return res.status(200).json({
+        alreadyExists: true,
+        message: "هذا الزبون موجود بنفس الرقم ونفس الموقع — تم عرضه بدل ما ننعمل نسخة ثانية.",
+        customer: existing,
+      });
+    }
   }
 
   let seqNumber = String(sequential_number || "").trim();
@@ -520,16 +565,30 @@ router.put("/:id", requireCanEditAddress, async (req, res) => {
   if (phone) {
     const newNormalized = normalizePhone(phone);
     if (newNormalized !== before.rows[0].phone_normalized) {
-      const dup = await query(
-        "SELECT id FROM customers WHERE phone_normalized = $1 AND id != $2",
-        [newNormalized, id]
-      );
-      if (dup.rows[0]) {
-        return res.status(400).json({ error: "رقم الهاتف هذا مستخدم لعميل آخر مسبقًا." });
+      // نفس الرقم لزبون ثاني مسموح بس إذا مكانهم مختلف
+      const myLoc = (await query("SELECT latitude, longitude, apartment FROM customer_locations WHERE customer_id = $1 ORDER BY id LIMIT 1", [id])).rows[0] || {};
+      const place = {
+        latitude: req.body.latitude ?? myLoc.latitude,
+        longitude: req.body.longitude ?? myLoc.longitude,
+        apartment: req.body.apartment ?? myLoc.apartment,
+      };
+      const dup = await findSamePhoneSamePlace(newNormalized, place, Number(id));
+      if (dup.others.length && (dup.noPlace || dup.same)) {
+        return res.status(400).json({
+          error: dup.same
+            ? "رقم الهاتف هذا لزبون ثاني بنفس الموقع."
+            : "رقم الهاتف هذا لزبون ثاني — حدّد موقع هذا الزبون أول (لازم يكون مكان مختلف).",
+        });
       }
       phoneNormalized = newNormalized;
       phoneDisplay = formatPhoneForDisplay(newNormalized);
     }
+  }
+
+  // نقل زبون لنفس مكان زبون ثاني إله نفس الرقم = نسخة مكررة
+  if (latitude != null && longitude != null && phoneNormalized === before.rows[0].phone_normalized) {
+    const dupLoc = await findSamePhoneSamePlace(phoneNormalized, { latitude, longitude, apartment }, Number(id));
+    if (dupLoc.same) return res.status(400).json({ error: "في زبون ثاني بنفس الرقم ونفس الموقع." });
   }
 
   if (sequential_number && sequential_number.trim() !== before.rows[0].sequential_number) {
