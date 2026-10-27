@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet, FiPackage, FiDollarSign } from "react-icons/fi";
+import { FiSearch, FiCalendar, FiTruck, FiCreditCard, FiChevronLeft, FiAlertCircle, FiDroplet, FiPackage } from "react-icons/fi";
 import { qtyWord } from "../components/Forecast.jsx";
 import { api, peek } from "../api.js";
 import { usePerms } from "../auth.jsx";
@@ -38,30 +38,31 @@ export default function Dashboard({ user }) {
 
   return (
     <div className="page">
-      <div className="home-hero">
-        <div className="home-hello">
-          <div className="home-greet">{greetingWord()} {firstName} 👋</div>
-          <div className="home-date">{todayLabel()}</div>
-        </div>
+      <div className="home-hello">
+        <div className="home-greet">{greetingWord()} {firstName}</div>
+        <div className="home-date">{todayLabel()}</div>
+      </div>
 
-        <div className="home-stats" aria-busy={!data}>
-          <button className="home-stat" onClick={() => navigate("/orders")}>
+      <div className="home-today" aria-busy={!data}>
+        <div className="home-today-glow" aria-hidden="true" />
+        <div className="home-stats">
+          <button className="home-stat s-blue" onClick={() => navigate("/orders")}>
             <b className="tabular-num">{n(data?.new_orders)}</b>
             <span>طلبات جديدة</span>
           </button>
-          <button className="home-stat" onClick={() => navigate("/trip")}>
+          <button className="home-stat s-amber" onClick={() => navigate("/trip")}>
             <b className="tabular-num">{n(data?.in_route)}</b>
             <span>بالطريق</span>
           </button>
-          <button className="home-stat" onClick={() => navigate(can("reports") ? "/reports" : "/orders")}>
+          <button className="home-stat s-green" onClick={() => navigate(can("reports") ? "/reports" : "/orders")}>
             <b className="tabular-num">{n(data?.delivered_today)}</b>
             <span>تسلّمت اليوم</span>
           </button>
         </div>
-
         {data?.delivered_value_today != null && (
           <div className="home-value">
-            <FiDollarSign aria-hidden="true" /> مبيعات اليوم <b className="tabular-num">{Number(data.delivered_value_today).toFixed(2)} JD</b>
+            <span>مبيعات اليوم</span>
+            <b className="tabular-num">{Number(data.delivered_value_today).toFixed(2)} <small>JD</small></b>
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2 } from "react-icons/fi";
 import { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
@@ -559,40 +559,46 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
     <div>
       {error && <div className="error-box">{error}</div>}
 
-      <div className="card">
-        <div className="text-secondary">
-          رحلة جارية
-          {trip.driver_name && ` · السائق: ${trip.driver_name}`}
+      {/* ملخص الرحلة */}
+      <div className="trip-sum">
+        <div className="trip-sum-top">
+          <span className="trip-sum-live"><i aria-hidden="true" /> رحلة جارية</span>
+          {trip.driver_name && <span className="trip-sum-driver">{trip.driver_name}</span>}
         </div>
-        <div className="tabular-num" style={{ fontSize: "1.3rem", fontWeight: 700 }}>
-          {deliveredCount} / {totalCount} تم التسليم
+        <div className="trip-sum-count tabular-num">
+          <b>{deliveredCount}</b> <span>من {totalCount} تم التسليم</span>
         </div>
-        {deliveredCount > 0 && (
-          <div className="trip-money">
-            <span>💵 كاش معك <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.cash_collected || 0) : 0), 0).toFixed(2)} JD</b></span>
-            <span>🎫 كوبونات <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.coupons_collected || 0) : 0), 0)}</b></span>
+        <div className="trip-sum-bar" aria-hidden="true"><span style={{ width: `${totalCount ? Math.round((deliveredCount / totalCount) * 100) : 0}%` }} /></div>
+        <div className="trip-sum-grid">
+          <div className="tsg cash">
+            <span>كاش معك</span>
+            <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.cash_collected || 0) : 0), 0).toFixed(2)} <small>JD</small></b>
           </div>
-        )}
-        {trip.total_distance_km > 0 && (
-          <div className="text-secondary">
-            المسافة الكلية: {Number(trip.total_distance_km).toFixed(1)} كم
-            {trip.distance_before_km > trip.total_distance_km && (
-              <> · وفّرنا {(Number(trip.distance_before_km) - Number(trip.total_distance_km)).toFixed(1)} كم بالتحسين ✅</>
-            )}
+          <div className="tsg coupon">
+            <span>كوبونات</span>
+            <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.coupons_collected || 0) : 0), 0)}</b>
           </div>
-        )}
-        {trip.started_at && (
-          <div className="text-secondary">🕐 وقت البدء: {formatClockTime(trip.started_at)}</div>
-        )}
-        {remainingKm && (
-          <div className="text-secondary">المسافة المتبقية التقريبية: {remainingKm} كم</div>
-        )}
-        {estimatedFinishLabel && (
-          <div className="text-secondary" style={{ marginTop: 4 }}>⏱️ الوقت المتوقع لإنهاء الرحلة: {estimatedFinishLabel}</div>
-        )}
-        {isManagerViewOnly && (
-          <div className="text-secondary" style={{ marginTop: 6, fontStyle: "italic" }}>وضع العرض فقط — التحكم بالرحلة للسائق</div>
-        )}
+          {remainingKm && (
+            <div className="tsg">
+              <span>المسافة الباقية</span>
+              <b className="tabular-num">{remainingKm} <small>كم</small></b>
+            </div>
+          )}
+          {trip.status === "STARTED" && trip.estimated_minutes_remaining != null && (
+            <div className="tsg">
+              <span>بتخلص حوالي</span>
+              <b className="tabular-num">{formatClockTime(trip.estimated_minutes_remaining)}</b>
+            </div>
+          )}
+        </div>
+        <div className="trip-sum-foot tabular-num">
+          {trip.started_at && <span>بدأت {formatClockTime(trip.started_at)}</span>}
+          {trip.total_distance_km > 0 && <span>المسافة الكلية {Number(trip.total_distance_km).toFixed(1)} كم</span>}
+          {trip.distance_before_km > trip.total_distance_km && (
+            <span className="ok">وفّرنا {(Number(trip.distance_before_km) - Number(trip.total_distance_km)).toFixed(1)} كم</span>
+          )}
+        </div>
+        {isManagerViewOnly && <div className="trip-sum-foot">وضع العرض فقط — التحكم بالرحلة للسائق</div>}
       </div>
 
       <TripLoadCard trip={trip} canOperate={canOperate} onChanged={onChanged} />
@@ -1066,6 +1072,30 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
   const [postponeNote, setPostponeNote] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoMsg, setPhotoMsg] = useState("");
+
+  // صورة البيت: أول ما تختارها بتنرفع وبتنحفظ — بدون زر حفظ
+  async function uploadPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoBusy(true);
+    setPhotoMsg("");
+    try {
+      await api.uploadCustomerPhoto(stop.customer_id, file);
+      setPhotoMsg("✅ انحفظت صورة البيت");
+      setTimeout(() => setPhotoMsg(""), 3000);
+      onRefresh?.();
+    } catch (err) {
+      setPhotoPreview(null);
+      setPhotoMsg(`ما انحفظت الصورة: ${err.message}`);
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
 
   const mapLink = (stop.latitude && stop.longitude)
     ? `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}`
@@ -1130,16 +1160,42 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
           <button className="link-btn" onClick={onBackToNext}>رجوع للتالي بالترتيب</button>
         </div>
       )}
-      {stop.building_photo_url && (
-        <img src={stop.building_photo_url} alt="صورة العمارة" style={{ width: "100%", borderRadius: 8, marginBottom: 12 }} />
+      {/* صورة البيت: تصوير مباشر وبتنحفظ لحالها */}
+      {(stop.building_photo_url || photoPreview) ? (
+        <div className="sc-photo">
+          <img src={photoPreview || stop.building_photo_url} alt="صورة البيت" />
+          <label className="sc-photo-btn">
+            <FiCamera aria-hidden="true" /> {photoBusy ? "جاري الحفظ…" : "غيّر الصورة"}
+            <input type="file" accept="image/*" capture="environment" onChange={uploadPhoto} disabled={photoBusy} hidden />
+          </label>
+        </div>
+      ) : (
+        <label className="sc-photo-add">
+          <FiCamera aria-hidden="true" /> {photoBusy ? "جاري الحفظ…" : "صوّر البيت"}
+          <input type="file" accept="image/*" capture="environment" onChange={uploadPhoto} disabled={photoBusy} hidden />
+        </label>
       )}
+      {photoMsg && <div className="sc-photo-msg">{photoMsg}</div>}
 
-      <h2 className="title-md">
-        {index ? <span className="tabular-num" style={{ color: "var(--primary)" }}>{index}. </span> : null}
-        {stop.customer_name}
-        {stop.priority === "urgent" && <span style={{ color: "var(--urgent)" }}> 🚨 مستعجل</span>}
-      </h2>
-      <p className="tabular-num text-secondary" style={{ marginTop: 0 }}>#{stop.order_number} · {Number(stop.final_total).toFixed(2)} JD</p>
+      <div className="sc-head">
+        {index ? <span className="sc-num tabular-num">{index}</span> : null}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 className="sc-name">
+            {stop.customer_name}
+            {stop.priority === "urgent" && <span className="sc-urgent">🚨 مستعجل</span>}
+          </h2>
+          <div className="sc-sub tabular-num">#{stop.order_number}</div>
+        </div>
+        <button type="button" className="sc-edit" onClick={() => setEditing(true)} aria-label="تعديل بيانات الزبون" title="تعديل بيانات الزبون">
+          <FiEdit2 aria-hidden="true" />
+        </button>
+      </div>
+      <CustomerEditSheet
+        open={editing}
+        c={stop}
+        onClose={() => setEditing(false)}
+        onSaved={() => onRefresh?.()}
+      />
 
       {(debt > 0 || (stop.coupon_balance || 0) > 0) && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1169,37 +1225,57 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
       )}
 
       {stop.items && stop.items.length > 0 && (
-        <div className="card" style={{ background: "var(--bg)" }}>
-          <div className="text-secondary" style={{ marginBottom: 4 }}>محتوى الطلب:</div>
+        <div className="sc-order">
+          <div className="sc-sec-t">الطلب</div>
           {stop.items.map((it, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{it.product_name_snapshot}</span>
-              <span className="tabular-num" style={{ fontWeight: 700 }}>× {it.quantity}</span>
+            <div key={i} className="sc-item">
+              <span className="sc-qty tabular-num">{it.quantity}</span>
+              <span className="sc-pname">{it.product_name_snapshot}</span>
+              <span className="sc-price tabular-num">{(Number(it.unit_price_snapshot || 0) * it.quantity).toFixed(2)}</span>
             </div>
           ))}
+          <div className="sc-total">
+            <span>المطلوب</span>
+            <b className="tabular-num">{Number(stop.final_total).toFixed(2)} JD</b>
+          </div>
         </div>
       )}
 
-      <p className="text-secondary" style={{ lineHeight: 1.8 }}>
-        {stop.region_name && <>المنطقة: {stop.region_name}<br /></>}
-        {stop.street && <>الشارع: {stop.street}<br /></>}
-        {(stop.building_number || stop.building_name) && <>عمارة: {stop.building_number} {stop.building_name && `(${stop.building_name})`}<br /></>}
-        {stop.floor && <>الطابق: {stop.floor}<br /></>}
-        {stop.apartment && <>شقة: {stop.apartment}<br /></>}
-        {stop.side && <>الجهة: <b style={{ color: "var(--text)" }}>{stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side}</b><br /></>}
-        {stop.access_notes && <>ملاحظة: {stop.access_notes}<br /></>}
-        {stop.order_notes && <>📝 {stop.order_notes}</>}
-      </p>
-
-      <button type="button" className="edit-cust-btn" onClick={() => setEditing(true)}>
-        ✏️ تعديل بيانات الزبون {!stop.building_photo_url ? "· ضيف صورة البيت" : ""}
-      </button>
-      <CustomerEditSheet
-        open={editing}
-        c={stop}
-        onClose={() => setEditing(false)}
-        onSaved={() => onRefresh?.()}
-      />
+      {(() => {
+        const sideTxt = stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side;
+        const rows = [
+          ["المنطقة", stop.region_name],
+          ["الشارع", stop.street],
+          ["العمارة", [stop.building_number, stop.building_name].filter(Boolean).join(" · ")],
+          ["الطابق", stop.floor],
+          ["الشقة", stop.apartment],
+          ["الجهة", sideTxt],
+        ].filter(([, v]) => v);
+        if (!rows.length && !stop.access_notes && !stop.order_notes) {
+          return (
+            <button type="button" className="sc-addr-empty" onClick={() => setEditing(true)}>
+              ما في عنوان مفصّل لهالزبون — اكبس لتضيفه
+            </button>
+          );
+        }
+        return (
+          <div className="sc-addr">
+            <div className="sc-sec-t">العنوان</div>
+            {rows.length > 0 && (
+              <div className="sc-addr-grid">
+                {rows.map(([k, v]) => (
+                  <div key={k} className={`sc-cell${k === "الجهة" ? " hl" : ""}`}>
+                    <span>{k}</span>
+                    <b>{v}</b>
+                  </div>
+                ))}
+              </div>
+            )}
+            {stop.access_notes && <div className="sc-note">🔔 {stop.access_notes}</div>}
+            {stop.order_notes && <div className="sc-note">📝 {stop.order_notes}</div>}
+          </div>
+        );
+      })()}
 
       <div className="quick-actions" style={{ marginTop: 0, marginBottom: 14 }}>
         {mapLink ? (

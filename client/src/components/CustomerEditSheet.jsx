@@ -55,6 +55,7 @@ export default function CustomerEditSheet({ open, c, onClose, onSaved }) {
       const r = await api.uploadCustomerPhoto(c.customer_id, file);
       if (r?.photoUrl) setPhoto(r.photoUrl);
       setPhotoOk(true);
+      onSaved?.();
     } catch (err) {
       setError(`ما انحفظت الصورة: ${err.message}`);
     } finally {
