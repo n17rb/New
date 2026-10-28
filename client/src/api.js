@@ -200,6 +200,8 @@ export const api = {
   updateTripLocation: (id, latitude, longitude) => request(`/trips/${id}/location`, { method: "POST", body: { latitude, longitude } }),
   postponeStop: (stopId, body) => request(`/trips/stops/${stopId}/postpone`, { method: "POST", body }),
   cancelStop: (stopId, reason) => request(`/trips/stops/${stopId}/cancel`, { method: "POST", body: { reason } }),
+  updateStopItems: (stopId, items) => request(`/trips/stops/${stopId}/items`, { method: "PUT", body: { items } }),
+  sellPackageInTrip: (stopId, body) => request(`/trips/stops/${stopId}/sell-package`, { method: "POST", body }),
   addOrderToTrip: (tripId, orderId) => request(`/trips/${tripId}/add-order`, { method: "POST", body: { order_id: orderId } }),
   reoptimizeTrip: (tripId) => request(`/trips/${tripId}/reoptimize`, { method: "POST" }),
 

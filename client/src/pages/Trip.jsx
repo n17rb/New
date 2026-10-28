@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck, FiPhoneOff, FiRotateCw, FiCalendar } from "react-icons/fi";
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
+import { EditItemsSheet, SellPackageSheet } from "../components/TripStopSheets.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
@@ -549,7 +550,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         <div className="trip-sum-grid">
           <div className="tsg cash">
             <span>كاش معك</span>
-            <b className="tabular-num">{stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.cash_collected || 0) : 0), 0).toFixed(2)} <small>JD</small></b>
+            <b className="tabular-num">{(stops.reduce((a, x) => a + (x.order_status === "DELIVERED" ? Number(x.cash_collected || 0) : 0), 0) + Number(trip.package_cash || 0)).toFixed(2)} <small>JD</small></b>
+            {Number(trip.package_cash || 0) > 0 && <small className="tsg-sub">منها {Number(trip.package_cash).toFixed(2)} باقات</small>}
           </div>
           <div className="tsg coupon">
             <span>كوبونات</span>
@@ -1049,6 +1051,14 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
   const [postponeNote, setPostponeNote] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editingItems, setEditingItems] = useState(false);
+  const [selling, setSelling] = useState(false);
+  const [stopMsg, setStopMsg] = useState("");
+  function afterSheet(msg) {
+    setStopMsg(msg || "");
+    if (msg) setTimeout(() => setStopMsg(""), 4000);
+    onRefresh?.();
+  }
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoMsg, setPhotoMsg] = useState("");
@@ -1203,7 +1213,14 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
 
       {stop.items && stop.items.length > 0 && (
         <div className="sc-order">
-          <div className="sc-sec-t">الطلب</div>
+          <div className="sc-sec-row">
+            <span className="sc-sec-t" style={{ margin: 0 }}>الطلب</span>
+            {!readOnly && (
+              <button type="button" className="sc-mini-btn" onClick={() => setEditingItems(true)}>
+                <FiEdit2 aria-hidden="true" /> تعديل
+              </button>
+            )}
+          </div>
           {stop.items.map((it, i) => (
             <div key={i} className="sc-item">
               <span className="sc-qty tabular-num">{it.quantity}</span>
@@ -1217,6 +1234,17 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
           </div>
         </div>
       )}
+
+      {!readOnly && (
+        <button type="button" className="sc-sell" onClick={() => setSelling(true)}>
+          <span>🎫</span>
+          <span style={{ flex: 1 }}>بيع باقة كوبونات</span>
+          {(stop.coupon_balance || 0) > 0 && <small>معه {stop.coupon_balance}</small>}
+        </button>
+      )}
+      {stopMsg && <div className="success-box" style={{ marginBottom: 10 }}>{stopMsg}</div>}
+      <EditItemsSheet open={editingItems} stop={stop} onClose={() => setEditingItems(false)} onSaved={afterSheet} />
+      <SellPackageSheet open={selling} stop={stop} onClose={() => setSelling(false)} onSaved={afterSheet} />
 
       {(() => {
         const sideTxt = stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side;
@@ -1421,6 +1449,12 @@ function TripSummary({ summary, onDone }) {
         <span style={{ fontWeight: 700 }}>الكاش المُحصَّل</span>
         <span className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem", color: "var(--success)" }}>{summary.total_cash_collected.toFixed(2)} JD</span>
       </div>
+      {summary.packages_cash > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+          <span>باقات كوبونات انباعت ({summary.packages_sold})</span>
+          <span className="tabular-num" style={{ fontWeight: 700, color: "var(--success)" }}>+ {Number(summary.packages_cash).toFixed(2)} JD</span>
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", marginBottom: 14 }}>
         <span style={{ fontWeight: 700 }}>كوبونات مُحصَّلة</span>
         <span className="tabular-num" style={{ fontWeight: 700, fontSize: "1.2rem" }}>🎫 {summary.total_coupons_collected}</span>

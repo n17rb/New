@@ -72,16 +72,17 @@ router.post("/packages/:id/image", requirePerm("coupons", "edit"), uploadSingleI
 });
 
 // بيع باقة لزبون: بتنضاف الكوبونات فورًا، واللي ما دفعه بيصير دين عليه
-router.post("/sell", requirePerm("coupons", "edit"), async (req, res) => {
-  const customerId = Number(req.body?.customer_id);
-  const packageId = Number(req.body?.package_id);
+// بيع باقة كوبونات لزبون (من صفحة الزبون أو من جوّا الرحلة)
+// بيرجع {sale, coupon_balance, debt_balance} أو بيرمي خطأ فيه status
+export async function sellCouponPackage({ customerId, packageId, paidAmount, userId, tripId = null }) {
+  const fail = (status, msg) => Object.assign(new Error(msg), { status });
   const pkg = (await query("SELECT * FROM coupon_packages WHERE id = $1 AND status = 'active'", [packageId])).rows[0];
-  if (!pkg) return res.status(404).json({ error: "الباقة غير موجودة." });
+  if (!pkg) throw fail(404, "الباقة غير موجودة.");
 
   const price = round2(pkg.price);
-  const paid = req.body?.paid_amount == null || req.body.paid_amount === "" ? price : round2(req.body.paid_amount);
+  const paid = paidAmount == null || paidAmount === "" ? price : round2(paidAmount);
   if (!Number.isFinite(paid) || paid < 0 || paid > price + 0.001) {
-    return res.status(400).json({ error: `المبلغ المدفوع لازم يكون بين 0 و ${price.toFixed(2)}.` });
+    throw fail(400, `المبلغ المدفوع لازم يكون بين 0 و ${price.toFixed(2)}.`);
   }
   const unpaid = round2(price - paid);
   const totalCoupons = pkg.coupons + pkg.bonus_coupons;
@@ -90,45 +91,57 @@ router.post("/sell", requirePerm("coupons", "edit"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const c = (await client.query("SELECT id, name, coupon_balance, debt_balance FROM customers WHERE id = $1 FOR UPDATE", [customerId])).rows[0];
-    if (!c) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "العميل غير موجود." });
-    }
+    if (!c) throw fail(404, "العميل غير موجود.");
     const newCoupons = c.coupon_balance + totalCoupons;
     const newDebt = round2(Number(c.debt_balance) + unpaid);
 
     const sale = (await client.query(
-      `INSERT INTO coupon_sales (customer_id, package_id, package_name_snapshot, coupons, price, paid_amount, sold_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [customerId, pkg.id, pkg.name, totalCoupons, price, paid, req.user.id]
+      `INSERT INTO coupon_sales (customer_id, package_id, package_name_snapshot, coupons, price, paid_amount, sold_by, trip_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [customerId, pkg.id, pkg.name, totalCoupons, price, paid, userId, tripId]
     )).rows[0];
     await client.query(
       `INSERT INTO coupon_ledger (customer_id, change_amount, reason, balance_after, created_by, notes)
        VALUES ($1, $2, 'package_purchase', $3, $4, $5)`,
-      [customerId, totalCoupons, newCoupons, req.user.id, pkg.name]
+      [customerId, totalCoupons, newCoupons, userId, pkg.name]
     );
     if (unpaid > 0) {
       await client.query(
         `INSERT INTO customer_debt_ledger (customer_id, change_amount, reason, balance_after, notes, created_by)
          VALUES ($1, $2, 'coupon_package', $3, $4, $5)`,
-        [customerId, unpaid, newDebt, `باقي ثمن ${pkg.name}`, req.user.id]
+        [customerId, unpaid, newDebt, `باقي ثمن ${pkg.name}`, userId]
       );
     }
     await client.query("UPDATE customers SET coupon_balance = $1, debt_balance = $2 WHERE id = $3", [newCoupons, newDebt, customerId]);
     await client.query("COMMIT");
 
     await logActivity({
-      userId: req.user.id, action: "SELL_COUPON_PACKAGE", recordType: "customer", recordId: customerId,
-      newValue: { package: pkg.name, coupons: totalCoupons, price, paid, unpaid },
+      userId, action: "SELL_COUPON_PACKAGE", recordType: "customer", recordId: customerId,
+      newValue: { package: pkg.name, coupons: totalCoupons, price, paid, unpaid, trip_id: tripId },
     });
-    res.json({ sale, coupon_balance: newCoupons, debt_balance: newDebt });
+    return { sale, coupon_balance: newCoupons, debt_balance: newDebt };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();
   }
+}
+
+router.post("/sell", requirePerm("coupons", "edit"), async (req, res) => {
+  try {
+    res.json(await sellCouponPackage({
+      customerId: Number(req.body?.customer_id),
+      packageId: Number(req.body?.package_id),
+      paidAmount: req.body?.paid_amount,
+      userId: req.user.id,
+    }));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
 });
+
 
 // ملخص مبيعات الباقات + الزباين اللي كوبوناتهم قربت تخلص
 router.get("/overview", requirePerm("coupons", "view"), async (req, res) => {

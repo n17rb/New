@@ -1320,3 +1320,6 @@ ALTER TABLE f_stock_moves ADD COLUMN IF NOT EXISTS line_id INTEGER REFERENCES f_
 
 -- نفس رقم التلفون لأكثر من زبون مسموح، بشرط يكون الموقع مختلف (بيت ومكتب مثلًا) — الفحص بالسيرفر
 ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_phone_normalized_key;
+
+-- بيع باقة كوبونات من جوّا الرحلة: الكاش بينحسب بجرد السيارة
+ALTER TABLE coupon_sales ADD COLUMN IF NOT EXISTS trip_id INTEGER REFERENCES trips(id) ON DELETE SET NULL;

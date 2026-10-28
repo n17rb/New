@@ -7,6 +7,8 @@ import { planDistribution } from "../utils/dispatch.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction } from "../permissions.js";
 import { cleanSchedule } from "../utils/schedule.js";
+import { replaceOrderItems } from "../utils/orderEdit.js";
+import { sellCouponPackage } from "./coupons.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -243,9 +245,18 @@ async function buildTripDetailResponse(trip, requestingUser) {
     cumulativeMinutes += (returnLegKm / AVERAGE_SPEED_KMH) * 60;
   }
 
+  // باقات كوبونات انباعت من جوّا الرحلة (كاشها مع الكابتن)
+  const packageSales = (await query(
+    `SELECT id, customer_id, package_name_snapshot, coupons, price, paid_amount, created_at
+     FROM coupon_sales WHERE trip_id = $1 ORDER BY id`,
+    [trip.id]
+  )).rows;
+
   return {
     ...trip,
     stops: stopsWithEta,
+    package_sales: packageSales,
+    package_cash: Number(packageSales.reduce((a, x) => a + Number(x.paid_amount || 0), 0).toFixed(2)),
     shop_location: shop,
     load,
     has_load: loadResult.rows.length > 0,
@@ -1099,6 +1110,46 @@ router.post("/stops/:stopId/cancel", async (req, res) => {
   res.json({ message: "تم إلغاء الطلب." });
 });
 
+// تعديل محتوى الطلب من جوّا الرحلة (مثلًا أخذ قارورتين بدل ٣)
+router.put("/stops/:stopId/items", async (req, res) => {
+  const stop = (await query("SELECT * FROM trip_stops WHERE id = $1", [req.params.stopId])).rows[0];
+  if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+  const trip = (await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id])).rows[0];
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
+  if (stop.delivered_at) return res.status(400).json({ error: "الطلب تسلّم — رجّع التسليم أول إذا بدك تعدّله." });
+  try {
+    const order = await replaceOrderItems(stop.order_id, req.body?.items, req.user.id);
+    await logActivity({ userId: req.user.id, action: "EDIT_ORDER_IN_TRIP", recordType: "order", recordId: stop.order_id, newValue: { items: order.items } });
+    res.json(order);
+  } catch (err) {
+    res.status(400).json({ error: err.message || "تعذّر تعديل الطلب." });
+  }
+});
+
+// بيع باقة كوبونات للزبون من جوّا الرحلة — الكاش بينحسب مع الكابتن
+router.post("/stops/:stopId/sell-package", async (req, res) => {
+  const stop = (await query(
+    "SELECT ts.*, o.customer_id FROM trip_stops ts JOIN orders o ON o.id = ts.order_id WHERE ts.id = $1",
+    [req.params.stopId]
+  )).rows[0];
+  if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
+  const trip = (await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id])).rows[0];
+  if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
+  if (trip.status === "COMPLETED") return res.status(400).json({ error: "الرحلة خلصت." });
+  try {
+    res.json(await sellCouponPackage({
+      customerId: stop.customer_id,
+      packageId: Number(req.body?.package_id),
+      paidAmount: req.body?.paid_amount,
+      userId: req.user.id,
+      tripId: trip.id,
+    }));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
+});
+
 // يضيف طلب لآخر الرحلة، وبعدين بيعيد ترتيب كل الباقي بأحسن طريق
 async function appendOrderAndReoptimize(trip, orderId) {
   await query(
@@ -1299,11 +1350,17 @@ router.post("/:id/complete", async (req, res) => {
     [trip.id]
   )).rows.map((r) => ({ ...r, returned: r.loaded - r.delivered }));
 
-  if (trip.driver_id && delivered.length > 0) {
+  const pkg = (await query(
+    "SELECT COUNT(*)::int AS n, COALESCE(SUM(paid_amount), 0) AS cash FROM coupon_sales WHERE trip_id = $1",
+    [trip.id]
+  )).rows[0];
+  const packagesCash = Number(pkg.cash);
+
+  if (trip.driver_id && (delivered.length > 0 || packagesCash > 0)) {
     await query(
       `INSERT INTO driver_ledger (driver_id, trip_id, entry_type, amount, coupons_redeemed, created_by)
        VALUES ($1, $2, 'trip_due', $3, $4, $5)`,
-      [trip.driver_id, trip.id, totalCash, totalCoupons, req.user.id]
+      [trip.driver_id, trip.id, totalCash + packagesCash, totalCoupons, req.user.id]
     );
   }
 
@@ -1317,6 +1374,8 @@ router.post("/:id/complete", async (req, res) => {
     returned_to_queue: remaining.length,
     total_delivered_value: totalCash + totalCoupons,
     total_cash_collected: totalCash,
+    packages_sold: pkg.n,
+    packages_cash: packagesCash,
     total_coupons_collected: totalCoupons,
     total_debt_added: totalDebtAdded,
     total_debt_paid: totalDebtPaid,

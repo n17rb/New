@@ -2557,3 +2557,40 @@ button.stop-row:active { background: var(--surface-2); }
 .home-today .home-value { color: rgba(255, 255, 255, 0.85); }
 .home-today .home-value b { color: #fff; }
 .home-today .home-value small { color: rgba(255, 255, 255, 0.8); }
+
+/* ---------- تعديل الطلب وبيع باقة من الرحلة ---------- */
+.sc-sec-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sc-mini-btn {
+  display: inline-flex; align-items: center; gap: 5px; border: none; background: var(--surface); color: var(--primary);
+  border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(13, 71, 161, 0.08);
+}
+.sc-sell {
+  display: flex; align-items: center; gap: 10px; width: 100%; margin: 0 0 12px; padding: 12px 14px; cursor: pointer;
+  border: 1.5px dashed rgba(10, 102, 245, 0.35); background: var(--primary-soft); color: var(--navy);
+  border-radius: 14px; font: inherit; font-weight: 700; font-size: 0.92rem; text-align: right;
+}
+.sc-sell small { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); }
+[data-theme="dark"] .sc-sell { color: var(--primary-dark); }
+.tsg-sub { font-size: 0.68rem; color: var(--text-secondary); }
+.ei-list { display: flex; flex-direction: column; gap: 8px; }
+.ei-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); border: 1.5px solid transparent; }
+.ei-row.on { background: var(--primary-soft); border-color: rgba(10, 102, 245, 0.3); }
+.ei-name { display: flex; flex-direction: column; min-width: 0; }
+.ei-name b { font-size: 0.95rem; }
+.ei-name small { font-size: 0.76rem; color: var(--text-secondary); }
+.ei-step { display: flex; align-items: center; gap: 10px; }
+.ei-step span { min-width: 26px; text-align: center; font-size: 1.2rem; font-weight: 800; }
+.ei-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; padding: 10px 4px 0; border-top: 1px dashed var(--border); color: var(--text-secondary); }
+.ei-total b { font-size: 1.2rem; color: var(--text); }
+.pk-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pk-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; text-align: right; cursor: pointer;
+  border-radius: 16px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: inherit;
+}
+.pk-card.on { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 3px rgba(10, 102, 245, 0.12); }
+.pk-name { font-weight: 800; font-size: 0.95rem; }
+.pk-c { font-size: 0.8rem; color: var(--text-secondary); }
+.pk-c em { font-style: normal; color: var(--success); font-weight: 700; }
+.pk-price { font-size: 1.15rem; font-weight: 800; color: var(--primary); margin-top: 2px; }
+.pk-price small { font-size: 0.72rem; color: var(--text-secondary); }
