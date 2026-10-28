@@ -2638,3 +2638,76 @@ button.stop-row:active { background: var(--surface-2); }
 .sc-sell2-t small { font-size: 0.78rem; color: var(--text-secondary); }
 .sc-sell2-c { color: var(--primary); flex-shrink: 0; }
 .sc-sell2:active { filter: brightness(0.97); }
+
+/* ============================================================
+   الفاتورة العامة (الشكل الجديد)
+   ============================================================ */
+.inv-page { min-height: 100vh; background: linear-gradient(180deg, #E9F1FE 0%, #F4F8FD 40%); padding: 18px 12px 40px; color: #102A43; }
+.inv { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 14px 40px rgba(10, 102, 245, 0.12); }
+.inv-hero { position: relative; overflow: hidden; isolation: isolate; color: #fff; padding: 20px 18px 16px; background: linear-gradient(140deg, #0A5CE0 0%, #0A66F5 50%, #2F86FF 100%); }
+.inv-hero-glow { position: absolute; z-index: -1; width: 220px; height: 220px; border-radius: 50%; top: -110px; left: -60px; background: #36C6FF; filter: blur(40px); opacity: 0.6; }
+.inv-hero-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.inv-shop { font-size: 1.3rem; font-weight: 800; }
+.inv-shop-phone { font-size: 0.82rem; opacity: 0.85; text-align: right; margin-top: 2px; }
+.inv-no { display: flex; flex-direction: column; align-items: flex-end; background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 14px; padding: 6px 12px; }
+.inv-no span { font-size: 0.72rem; opacity: 0.85; }
+.inv-no b { font-size: 1rem; }
+.inv-hero-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; font-size: 0.8rem; opacity: 0.95; }
+.inv-status { display: inline-flex; align-items: center; gap: 4px; background: rgba(255, 255, 255, 0.2); padding: 3px 10px; border-radius: 999px; font-weight: 800; }
+.inv-status.ok { background: #fff; color: #1F9D55; }
+.inv-body { padding: 16px 18px 18px; }
+.inv-to { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 12px; border-bottom: 1px dashed #E1E7EF; margin-bottom: 8px; }
+.inv-to span { font-size: 0.8rem; color: #5E7085; }
+.inv-to b { font-size: 1.05rem; }
+.inv-items { display: flex; flex-direction: column; }
+.inv-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #F0F3F8; }
+.inv-qty { min-width: 36px; height: 36px; border-radius: 11px; background: #E6F0FF; color: #0846B8; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.05rem; }
+.inv-iname { flex: 1; display: flex; flex-direction: column; font-weight: 700; font-size: 0.95rem; }
+.inv-iname small { font-weight: 500; font-size: 0.76rem; color: #5E7085; }
+.inv-iprice { font-weight: 700; }
+.inv-sum { margin-top: 6px; }
+.inv-sum > div { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; color: #5E7085; }
+.inv-sum .grand { color: #102A43; font-size: 1.25rem; font-weight: 800; padding-top: 10px; }
+.inv-sum .grand small { font-size: 0.75rem; color: #5E7085; font-weight: 600; }
+.inv-sec-t { font-size: 0.78rem; font-weight: 700; color: #5E7085; margin-bottom: 8px; }
+.inv-paid { background: #F5F8FC; border-radius: 16px; padding: 12px; margin-top: 12px; }
+.inv-paid-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.inv-paid-chips span { font-size: 0.82rem; font-weight: 700; padding: 6px 11px; border-radius: 999px; background: #fff; }
+.inv-paid-chips .chip-c { color: #0846B8; background: #E6F0FF; }
+.inv-paid-chips .chip-m { color: #1F9D55; background: #E6F5EC; }
+.inv-paid-chips .chip-d { color: #C77C02; background: #FDF3E1; }
+
+/* كرت رصيد الكوبونات */
+.inv-wallet {
+  position: relative; overflow: hidden; isolation: isolate; margin-top: 14px; border-radius: 20px; padding: 16px; color: #fff;
+  background: linear-gradient(135deg, #5B3FD6 0%, #0A66F5 60%, #1FB6E8 100%);
+  box-shadow: 0 10px 26px rgba(70, 70, 220, 0.25);
+}
+.inv-wallet.low { background: linear-gradient(135deg, #E07B00 0%, #F2A54A 60%, #FFC56E 100%); box-shadow: 0 10px 26px rgba(224, 123, 0, 0.25); }
+.inv-wallet.empty { background: linear-gradient(135deg, #6B7A90 0%, #8A9BB0 100%); box-shadow: none; }
+.inv-wallet-glow { position: absolute; z-index: -1; width: 180px; height: 180px; border-radius: 50%; right: -60px; bottom: -90px; background: #fff; opacity: 0.18; filter: blur(30px); }
+.inv-wallet::before, .inv-wallet::after { content: ""; position: absolute; top: 50%; width: 22px; height: 22px; border-radius: 50%; background: #fff; transform: translateY(-50%); }
+.inv-wallet::before { right: -11px; }
+.inv-wallet::after { left: -11px; }
+.inv-wallet-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.inv-wallet-label { font-size: 0.82rem; font-weight: 700; opacity: 0.9; }
+.inv-wallet-pkg { font-size: 0.72rem; font-weight: 700; background: rgba(255, 255, 255, 0.2); padding: 3px 9px; border-radius: 999px; }
+.inv-wallet-num { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 10px; }
+.inv-wallet-num b { font-size: 2.6rem; font-weight: 900; line-height: 1; }
+.inv-wallet-num span { font-size: 0.9rem; font-weight: 700; opacity: 0.92; }
+.inv-tickets { display: flex; flex-wrap: wrap; gap: 5px; }
+.inv-tk { width: 24px; height: 16px; fill: #fff; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.12)); }
+.inv-tk.used { fill: rgba(255, 255, 255, 0.28); }
+.inv-wallet-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
+.inv-wallet-bar span { display: block; height: 100%; background: #fff; border-radius: 99px; }
+.inv-wallet-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 0.78rem; font-weight: 700; opacity: 0.92; }
+.inv-wallet-hint { margin-top: 10px; font-size: 0.8rem; font-weight: 700; background: rgba(255, 255, 255, 0.18); border-radius: 12px; padding: 8px 10px; }
+.inv-debt { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #FCEBEB; color: #D64545; font-size: 0.88rem; font-weight: 700; }
+.inv-debt b { font-size: 1.05rem; }
+.inv-thanks { text-align: center; font-weight: 800; color: #0A66F5; margin: 18px 0 12px; }
+.inv-footer { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px; font-size: 0.76rem; color: #8A9BB0; }
+@media print {
+  .inv-page { background: #fff; padding: 0; }
+  .inv { box-shadow: none; }
+  .inv-hero, .inv-wallet { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

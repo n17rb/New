@@ -43,7 +43,7 @@ publicInvoiceRouter.get("/invoice/:token", async (req, res) => {
   setRequestTenant(tenant);
 
   const r = await query(
-    `SELECT o.id, o.order_number, o.status, o.subtotal, o.final_total, o.discount_type, o.discount_value, o.created_at, o.updated_at,
+    `SELECT o.id, o.customer_id, o.order_number, o.status, o.subtotal, o.final_total, o.discount_type, o.discount_value, o.created_at, o.updated_at,
             c.name AS customer_name, c.phone_display, c.coupon_balance, c.debt_balance,
             ts.cash_collected, ts.coupons_collected, ts.debt_added, ts.debt_paid, ts.delivered_at
      FROM orders o JOIN customers c ON c.id = o.customer_id
@@ -57,6 +57,11 @@ publicInvoiceRouter.get("/invoice/:token", async (req, res) => {
     "SELECT product_name_snapshot AS name, quantity, unit_price_snapshot AS unit_price, line_total, coupon_quantity FROM order_items WHERE order_id = $1 ORDER BY id",
     [o.id]
   );
+  // آخر باقة اشتراها (عشان نرسم «باقي ٦ من ١٢»)
+  const lastPkg = (await query(
+    "SELECT package_name_snapshot AS name, coupons, created_at FROM coupon_sales WHERE customer_id = $1 ORDER BY id DESC LIMIT 1",
+    [o.customer_id]
+  )).rows[0] || null;
   const shopName = tenant.name;
   res.set("Cache-Control", "no-store");
   res.json({
@@ -70,7 +75,10 @@ publicInvoiceRouter.get("/invoice/:token", async (req, res) => {
       debt_added: Number(o.debt_added || 0),
       debt_paid: Number(o.debt_paid || 0),
     },
-    customer: { name: o.customer_name, coupon_balance: o.coupon_balance, debt_balance: Number(o.debt_balance || 0) },
+    customer: {
+      name: o.customer_name, coupon_balance: o.coupon_balance, debt_balance: Number(o.debt_balance || 0),
+      last_package: lastPkg ? { name: lastPkg.name, coupons: lastPkg.coupons } : null,
+    },
     items: items.rows.map((i) => ({ ...i, unit_price: Number(i.unit_price), line_total: Number(i.line_total) })),
   });
 });

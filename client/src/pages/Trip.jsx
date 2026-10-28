@@ -1080,6 +1080,11 @@ function ClosedStopCard({ stop, index, canOperate, busy, onUndo, onBack, onRefre
   const [editing, setEditing] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState(false);
   const delivered = stop.order_status === "DELIVERED" || !!stop.delivered_at;
+  // رابط الفاتورة جوّا رسالة الإيصال
+  const [invoiceToken, setInvoiceToken] = useState(null);
+  useEffect(() => {
+    if (delivered && stop.order_id) api.getInvoiceLink(stop.order_id).then((r) => setInvoiceToken(r.token)).catch(() => {});
+  }, [stop.order_id, delivered]);
   const mapLink = (stop.latitude && stop.longitude) ? `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}` : stop.maps_url || null;
   const sideTxt = stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side;
   const rows = [
@@ -1156,7 +1161,7 @@ function ClosedStopCard({ stop, index, canOperate, busy, onUndo, onBack, onRefre
         <a className="quick-action" href={`tel:${stop.phone_display}`}><FiPhone aria-hidden="true" /><span>اتصال</span></a>
         <a className="quick-action whatsapp" href={`https://wa.me/${stop.phone_normalized}`} target="_blank" rel="noreferrer"><FaWhatsapp aria-hidden="true" /><span>واتساب</span></a>
         {delivered && stop.cash_collected != null && stop.phone_normalized && (
-          <a className="quick-action whatsapp" href={receiptLink(stop.phone_normalized, receiptFromStop(stop))} target="_blank" rel="noreferrer"><FaWhatsapp aria-hidden="true" /><span>الإيصال</span></a>
+          <a className="quick-action whatsapp" href={receiptLink(stop.phone_normalized, { ...receiptFromStop(stop), invoiceToken })} target="_blank" rel="noreferrer"><FaWhatsapp aria-hidden="true" /><span>الإيصال</span></a>
         )}
       </div>
 
