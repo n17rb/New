@@ -39,12 +39,12 @@ export async function reoptimizeTrip(tripId, { withGeometry = true } = {}) {
   const stopsResult = await query(
     `SELECT ts.id, ts.sequence_number, ts.delivered_at, ts.leg_distance_km, ts.postponed_at,
             o.status AS order_status, o.priority, o.requested_time,
-            l.latitude, l.longitude
+            l.latitude, l.longitude, l.region_id
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
      JOIN customers c ON c.id = o.customer_id
      LEFT JOIN LATERAL (
-       SELECT latitude, longitude FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
+       SELECT latitude, longitude, region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
      ) l ON true
      WHERE ts.trip_id = $1
      ORDER BY ts.sequence_number ASC`,
@@ -506,11 +506,11 @@ router.post("/", async (req, res) => {
 // إنشاء رحلة لكابتن (من صفحة الرحلة أو من «التوزيع على الكباتن»)
 async function createTripRecord({ driverId, orderIds, actorId, start = null, mode = "nearest", load = [] }) {
   const ordersResult = await query(
-    `SELECT o.id, o.priority, o.requested_time, l.latitude, l.longitude
+    `SELECT o.id, o.priority, o.requested_time, l.latitude, l.longitude, l.region_id
      FROM orders o
      JOIN customers c ON c.id = o.customer_id
      LEFT JOIN LATERAL (
-       SELECT latitude, longitude FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
+       SELECT latitude, longitude, region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
      ) l ON true
      WHERE o.id = ANY($1::int[]) AND o.status IN ('NEW','READY','POSTPONED','FAILED')`,
     [orderIds]

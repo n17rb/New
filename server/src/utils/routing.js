@@ -93,7 +93,12 @@ const LATE_PENALTY = 6; // كل ثانية تأخير بعد هيك بتنحسب
 const WAIT_PENALTY = 0.4; // الانتظار أرخص من السواقة بس مش مجاني
 const METER_WEIGHT = 0.04; // ١ كم = ٤٠ ثانية — بيفضّل الطريق الأقصر لما الوقت متقارب
 
-export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, timeBudgetMs = 700 } = {}) {
+// خلّص المنطقة قبل ما تطلع منها: الرجوع لمنطقة طلعت منها بيكلّف كأنه ربع ساعة زيادة،
+// والمنطقة اللي أنت فيها (أو المحل) بتنخلص أول
+const REENTRY_PENALTY = 15 * 60;
+const HOME_FIRST_PENALTY = 10 * 60;
+
+export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, timeBudgetMs = 700, groups = null, homeGroup = null } = {}) {
   if (nodes.length <= 1) return [...nodes];
   const { dist, dur } = matrix;
   const END_FREE = endIdx == null;
@@ -103,7 +108,18 @@ export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, tim
     let total = 0;
     let t = 0;
     let prev = startIdx;
+    let curGroup = null;
+    const left = groups ? new Set() : null;
+    if (groups && homeGroup != null && order.length && groups.get(order[0]) !== homeGroup) total += HOME_FIRST_PENALTY;
     for (const n of order) {
+      if (groups) {
+        const g = groups.get(n);
+        if (g !== curGroup) {
+          if (curGroup != null) left.add(curGroup);
+          if (left.has(g)) total += REENTRY_PENALTY;
+          curGroup = g;
+        }
+      }
       const e = edge(prev, n);
       total += e;
       t += dur(prev, n);
@@ -288,6 +304,59 @@ export function solvePath(startIdx, nodes, endIdx, matrix, { windows = null, tim
 }
 
 // ------------------------------------------------------------
+// تقسيم الطلبات لمناطق: حسب المنطقة المحفوظة للزبون، واللي بدون منطقة
+// بينضم لأقرب زبون إله منطقة (لو قريب) أو بيتجمّع مع جيرانه
+// بيرجع groups: Map(رقم النقطة ← المنطقة) و homeGroup: المنطقة اللي بلّش منها
+// ------------------------------------------------------------
+const AREA_JOIN_KM = 0.7;
+const HOME_AREA_KM = 1.5;
+export function areaGroups(stops, startPoint) {
+  const key = stops.map((s) => (s.region_id != null ? `r${s.region_id}` : null));
+  // اللي بدون منطقة: أقرب جار إله منطقة
+  stops.forEach((s, i) => {
+    if (key[i]) return;
+    let best = null;
+    let bestD = Infinity;
+    stops.forEach((o, j) => {
+      if (!key[j] || j === i || o.region_id == null) return;
+      const d = distanceKm(s.latitude, s.longitude, o.latitude, o.longitude);
+      if (d < bestD) { bestD = d; best = key[j]; }
+    });
+    if (best && bestD <= AREA_JOIN_KM) key[i] = best;
+  });
+  // الباقي: تجميع بالقرب من بعض
+  let n = 0;
+  stops.forEach((s, i) => {
+    if (key[i]) return;
+    key[i] = `c${n++}`;
+    const queue = [i];
+    while (queue.length) {
+      const a = queue.pop();
+      stops.forEach((o, j) => {
+        if (key[j]) return;
+        if (distanceKm(stops[a].latitude, stops[a].longitude, o.latitude, o.longitude) <= AREA_JOIN_KM) {
+          key[j] = key[i];
+          queue.push(j);
+        }
+      });
+    }
+  });
+  const groups = new Map(stops.map((_, i) => [i + 1, key[i]]));
+  if (new Set(key).size <= 1) return { groups: null, homeGroup: null };
+  // المنطقة اللي أنت فيها هلّق (أقرب زبون للبداية) — بتنخلص أول
+  let homeGroup = null;
+  if (startPoint) {
+    let bestD = Infinity;
+    stops.forEach((s, i) => {
+      const d = distanceKm(startPoint.lat, startPoint.lon, s.latitude, s.longitude);
+      if (d < bestD) { bestD = d; homeGroup = key[i]; }
+    });
+    if (bestD > HOME_AREA_KM) homeGroup = null;
+  }
+  return { groups, homeGroup };
+}
+
+// ------------------------------------------------------------
 // optimizeRoute
 // start: {lat, lon} أو null — end: {lat, lon} أو null (المحل)
 // stops: [{ ...anything, latitude, longitude, priority, requested_time? }]
@@ -340,6 +409,7 @@ export async function optimizeRoute({ start, end, stops, mode = "nearest", withG
 
   const stopIdxs = locatedStops.map((_, i) => i + 1);
   const budget = stopIdxs.length > 40 ? 500 : 800;
+  const { groups, homeGroup } = areaGroups(locatedStops, startPoint);
   let orderIdxs;
 
   if (mode === "urgent_smart") {
@@ -347,13 +417,13 @@ export async function optimizeRoute({ start, end, stops, mode = "nearest", withG
     const normal = stopIdxs.filter((i) => locatedStops[i - 1].priority !== "urgent");
     if (urgent.length && normal.length) {
       const urgentOrder = solvePath(0, urgent, null, matrix, { windows, timeBudgetMs: budget / 2 });
-      const normalOrder = solvePath(urgentOrder[urgentOrder.length - 1], normal, endIdx, matrix, { windows: null, timeBudgetMs: budget / 2 });
+      const normalOrder = solvePath(urgentOrder[urgentOrder.length - 1], normal, endIdx, matrix, { windows: null, timeBudgetMs: budget / 2, groups });
       orderIdxs = [...urgentOrder, ...normalOrder];
     } else {
-      orderIdxs = solvePath(0, stopIdxs, endIdx, matrix, { windows, timeBudgetMs: budget });
+      orderIdxs = solvePath(0, stopIdxs, endIdx, matrix, { windows, timeBudgetMs: budget, groups, homeGroup });
     }
   } else {
-    orderIdxs = solvePath(0, stopIdxs, endIdx, matrix, { windows, timeBudgetMs: budget });
+    orderIdxs = solvePath(0, stopIdxs, endIdx, matrix, { windows, timeBudgetMs: budget, groups, homeGroup });
   }
 
   const legDistances = [];
