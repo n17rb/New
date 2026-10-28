@@ -483,11 +483,12 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   const isOpenStop = (s) => !s.delivered_at && s.order_status !== "FAILED" && s.order_status !== "CANCELLED";
   const nextStop = stops.find((s) => isOpenStop(s) && !s.is_time_locked);
   const pickedStop = stops.find((s) => s.id === selectedStopId && isOpenStop(s));
-  const currentStop = pickedStop || nextStop;
+  // زبون خلص (تسلّم/تعذّر/انلغى) واخترته من القائمة: بنعرض تفاصيله
+  const closedStop = stops.find((s) => s.id === selectedStopId && !isOpenStop(s)) || null;
+  const currentStop = closedStop ? null : pickedStop || nextStop;
 
   function pickStop(s) {
-    if (!isOpenStop(s)) return;
-    setSelectedStopId(s.id === nextStop?.id ? null : s.id);
+    setSelectedStopId(isOpenStop(s) && s.id === nextStop?.id ? null : s.id);
     setTimeout(() => cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   }
   const nextLockedStop = [...stops].filter((s) => s.is_time_locked).sort((a, b) => new Date(a.requested_time) - new Date(b.requested_time))[0];
@@ -621,7 +622,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         </div>
         {reorderMessage && <div className="success-box" style={{ marginBottom: 8 }}>{reorderMessage}</div>}
         {stops.length > 1 && trip.status === "STARTED" && (
-          <div className="text-secondary" style={{ fontSize: "0.75rem", marginBottom: 4 }}>اكبس على أي زبون بيفتحلك تفاصيله تحت</div>
+          <div className="text-secondary" style={{ fontSize: "0.75rem", marginBottom: 4 }}>اكبس على أي زبون (حتى اللي تسلّم) بيفتحلك تفاصيله</div>
         )}
         {stops.map((s, i) => (
           <div
@@ -629,9 +630,9 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
             onClick={() => pickStop(s)}
             style={{
               display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 4px", borderBottom: "1px solid var(--border)",
-              cursor: isOpenStop(s) ? "pointer" : "default",
-              background: currentStop && s.id === currentStop.id && trip.status === "STARTED" ? "var(--primary-soft)" : undefined,
-              borderRadius: currentStop && s.id === currentStop.id ? 8 : 0,
+              cursor: "pointer",
+              background: ((currentStop && s.id === currentStop.id) || (closedStop && s.id === closedStop.id)) && trip.status === "STARTED" ? "var(--primary-soft)" : undefined,
+              borderRadius: (currentStop && s.id === currentStop.id) || (closedStop && s.id === closedStop.id) ? 8 : 0,
             }}
           >
             <div className="icon-row">
@@ -702,6 +703,18 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
       {canOperate && receipt && <ReceiptBanner receipt={receipt} onClose={() => setReceipt(null)} />}
 
       <div ref={cardRef} style={{ scrollMarginTop: 90 }}>
+        {closedStop && (
+          <ClosedStopCard
+            key={`c${closedStop.id}`}
+            stop={closedStop}
+            index={stops.findIndex((s) => s.id === closedStop.id) + 1}
+            canOperate={canOperate}
+            busy={busy}
+            onUndo={() => withBusy(() => api.undoDeliver(closedStop.id))}
+            onBack={() => setSelectedStopId(null)}
+            onRefresh={onChanged}
+          />
+        )}
         {trip.status === "STARTED" && currentStop && (canOperate || isSuperAdmin) && (
           <StopCard
             key={currentStop.id}
@@ -1035,6 +1048,107 @@ function QuickQuantityForm({ stop, onSaved, onCancel }) {
         {saving ? "جاري الحفظ..." : "حفظ الكمية"}
       </button>
       <button className="btn-secondary" onClick={onCancel}>إلغاء</button>
+    </div>
+  );
+}
+
+// زبون خلص (تسلّم أو تعذّر أو انلغى) — تفاصيل البيت والتواصل، وتراجع عن التسليم
+function ClosedStopCard({ stop, index, canOperate, busy, onUndo, onBack, onRefresh }) {
+  const [editing, setEditing] = useState(false);
+  const [confirmUndo, setConfirmUndo] = useState(false);
+  const delivered = stop.order_status === "DELIVERED" || !!stop.delivered_at;
+  const mapLink = (stop.latitude && stop.longitude) ? `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}` : stop.maps_url || null;
+  const sideTxt = stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side;
+  const rows = [
+    ["المنطقة", stop.region_name],
+    ["الشارع", stop.street],
+    ["العمارة", [stop.building_number, stop.building_name].filter(Boolean).join(" · ")],
+    ["الطابق", stop.floor],
+    ["الشقة", stop.apartment],
+    ["الجهة", sideTxt],
+  ].filter(([, v]) => v);
+  const cash = Number(stop.cash_collected || 0);
+  const coupons = Number(stop.coupons_collected || 0);
+
+  return (
+    <div className="card closed-card">
+      <div className={`closed-status ${delivered ? "ok" : stop.order_status === "FAILED" ? "bad" : "muted"}`}>
+        <span>
+          {delivered ? `✓ تسلّم${stop.delivered_at ? ` الساعة ${formatClockTime(stop.delivered_at)}` : ""}` : stop.order_status === "FAILED" ? "تعذّر التسليم" : "انلغى"}
+        </span>
+        <button className="link-btn" onClick={onBack}>رجوع للتالي</button>
+      </div>
+
+      {stop.building_photo_url && (
+        <div className="sc-photo"><img src={stop.building_photo_url} alt="صورة البيت" /></div>
+      )}
+
+      <div className="sc-head">
+        {index ? <span className="sc-num tabular-num" style={{ background: delivered ? "var(--success)" : "var(--mist)" }}>{index}</span> : null}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 className="sc-name">{stop.customer_name}</h2>
+          <div className="sc-sub tabular-num">#{stop.order_number}</div>
+        </div>
+        <button type="button" className="sc-edit" onClick={() => setEditing(true)} aria-label="تعديل بيانات الزبون"><FiEdit2 aria-hidden="true" /></button>
+      </div>
+      <CustomerEditSheet open={editing} c={stop} onClose={() => setEditing(false)} onSaved={() => onRefresh?.()} />
+
+      {delivered && (
+        <div className="sc-order">
+          <div className="sc-sec-t">اللي استلمته</div>
+          {(stop.items || []).map((it, i) => (
+            <div key={i} className="sc-item">
+              <span className="sc-qty tabular-num">{it.quantity}</span>
+              <span className="sc-pname">{it.product_name_snapshot}</span>
+            </div>
+          ))}
+          <div className="sc-total">
+            <span>{coupons > 0 && cash > 0 ? "كوبون + كاش" : coupons > 0 ? "كوبون" : "كاش"}</span>
+            <b className="tabular-num">
+              {coupons > 0 && <span style={{ color: "var(--primary)" }}>🎫 {coupons}{cash > 0 ? " + " : ""}</span>}
+              {(cash > 0 || coupons === 0) && `${cash.toFixed(2)} JD`}
+            </b>
+          </div>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="sc-addr">
+          <div className="sc-sec-t">العنوان</div>
+          <div className="sc-addr-grid">
+            {rows.map(([k, v]) => (
+              <div key={k} className={`sc-cell${k === "الجهة" ? " hl" : ""}`}><span>{k}</span><b>{v}</b></div>
+            ))}
+          </div>
+          {stop.access_notes && <div className="sc-note">🔔 {stop.access_notes}</div>}
+        </div>
+      )}
+
+      <div className="quick-actions" style={{ marginTop: 0, marginBottom: delivered && canOperate ? 12 : 0 }}>
+        {mapLink ? (
+          <a className="quick-action primary" href={mapLink} target="_blank" rel="noreferrer"><FiNavigation aria-hidden="true" /><span>الملاحة</span></a>
+        ) : (
+          <span className="quick-action disabled"><FiNavigation aria-hidden="true" /><span>بدون موقع</span></span>
+        )}
+        <a className="quick-action" href={`tel:${stop.phone_display}`}><FiPhone aria-hidden="true" /><span>اتصال</span></a>
+        <a className="quick-action whatsapp" href={`https://wa.me/${stop.phone_normalized}`} target="_blank" rel="noreferrer"><FaWhatsapp aria-hidden="true" /><span>واتساب</span></a>
+        {delivered && stop.cash_collected != null && stop.phone_normalized && (
+          <a className="quick-action whatsapp" href={receiptLink(stop.phone_normalized, receiptFromStop(stop))} target="_blank" rel="noreferrer"><FaWhatsapp aria-hidden="true" /><span>الإيصال</span></a>
+        )}
+      </div>
+
+      {delivered && canOperate && (
+        <button className="btn-secondary" disabled={busy} onClick={() => setConfirmUndo(true)}>↩️ تراجع عن التسليم (رجّعه لسا ما تسلّم)</button>
+      )}
+      <ConfirmSheet
+        open={confirmUndo}
+        title="تراجع عن التسليم؟"
+        text={`طلب ${stop.customer_name} برجع «لسا ما تسلّم»، والكاش والكوبونات اللي انسجّلت عليه بتنشال.`}
+        confirmLabel="نعم، تراجع"
+        busy={busy}
+        onConfirm={() => { setConfirmUndo(false); onUndo(); }}
+        onClose={() => setConfirmUndo(false)}
+      />
     </div>
   );
 }

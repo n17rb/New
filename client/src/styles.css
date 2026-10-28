@@ -2594,3 +2594,10 @@ button.stop-row:active { background: var(--surface-2); }
 .pk-c em { font-style: normal; color: var(--success); font-weight: 700; }
 .pk-price { font-size: 1.15rem; font-weight: 800; color: var(--primary); margin-top: 2px; }
 .pk-price small { font-size: 0.72rem; color: var(--text-secondary); }
+
+/* زبون خلص: تفاصيله من القائمة */
+.closed-card { border: 2px solid var(--success-soft); }
+.closed-status { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; font-size: 0.86rem; font-weight: 800; }
+.closed-status.ok { background: var(--success-soft); color: var(--success); }
+.closed-status.bad { background: var(--urgent-soft); color: var(--urgent); }
+.closed-status.muted { background: var(--surface-2); color: var(--text-secondary); }
