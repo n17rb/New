@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck, FiPhoneOff, FiRotateCw, FiCalendar } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck, FiPhoneOff, FiRotateCw, FiCalendar, FiGrid, FiChevronLeft } from "react-icons/fi";
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import { EditItemsSheet, SellPackageSheet } from "../components/TripStopSheets.jsx";
@@ -464,12 +464,16 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
       });
   }
 
-  async function handleReorder() {
+  const [reorderSheet, setReorderSheet] = useState(false);
+  const routeStyle = trip.route_style === "loop" ? "loop" : "area";
+
+  async function handleReorder(style) {
+    setReorderSheet(false);
     setReordering(true);
     setReorderMessage("");
     setError("");
     try {
-      const r = await api.reoptimizeTrip(trip.id);
+      const r = await api.reoptimizeTrip(trip.id, style);
       setReorderMessage(r.message);
       setTimeout(() => setReorderMessage(""), 5000);
       onChanged();
@@ -614,12 +618,31 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
               className="btn-secondary"
               style={{ width: "auto", padding: "6px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
               disabled={reordering}
-              onClick={handleReorder}
+              onClick={() => setReorderSheet(true)}
             >
               <FiRefreshCw /> {reordering ? "جاري الترتيب..." : "رتّب من جديد"}
             </button>
           )}
         </div>
+        <Sheet open={reorderSheet} title="كيف بدك ترتّب الرحلة؟" onClose={() => setReorderSheet(false)}>
+          <div className="ro-opts">
+            <button type="button" className={`ro-opt${routeStyle === "area" ? " on" : ""}`} onClick={() => handleReorder("area")}>
+              <span className="ro-ic"><FiGrid aria-hidden="true" /></span>
+              <span className="ro-t">
+                <b>منطقة منطقة {routeStyle === "area" && <em>المستعمل هلّق</em>}</b>
+                <small>بتخلّص كل طلبات المنطقة اللي أنت فيها (مثلًا الرابية كلها) وبعدين بتطلع للي بعدها</small>
+              </span>
+            </button>
+            <button type="button" className={`ro-opt${routeStyle === "loop" ? " on" : ""}`} onClick={() => handleReorder("loop")}>
+              <span className="ro-ic"><FiRotateCw aria-hidden="true" /></span>
+              <span className="ro-t">
+                <b>دائرة بأقصر طريق {routeStyle === "loop" && <em>المستعمل هلّق</em>}</b>
+                <small>بتاخذ الأقرب فالأقرب وأنت طالع، والباقي بتمر عليهم وأنت راجع للمحل</small>
+              </span>
+            </button>
+          </div>
+          <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setReorderSheet(false)}>رجوع</button>
+        </Sheet>
         {reorderMessage && <div className="success-box" style={{ marginBottom: 8 }}>{reorderMessage}</div>}
         {stops.length > 1 && trip.status === "STARTED" && (
           <div className="text-secondary" style={{ fontSize: "0.75rem", marginBottom: 4 }}>اكبس على أي زبون (حتى اللي تسلّم) بيفتحلك تفاصيله</div>
@@ -1350,10 +1373,15 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
       )}
 
       {!readOnly && (
-        <button type="button" className="sc-sell" onClick={() => setSelling(true)}>
-          <span>🎫</span>
-          <span style={{ flex: 1 }}>بيع باقة كوبونات</span>
-          {(stop.coupon_balance || 0) > 0 && <small>معه {stop.coupon_balance}</small>}
+        <button type="button" className="sc-sell2" onClick={() => setSelling(true)}>
+          <span className="sc-sell2-ic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 6v12" strokeDasharray="2 2"/></svg>
+          </span>
+          <span className="sc-sell2-t">
+            <b>بيع باقة كوبونات</b>
+            <small>{(stop.coupon_balance || 0) > 0 ? `معه هلّق ${stop.coupon_balance} كوبون` : "ما معه كوبونات — اعرض عليه باقة"}</small>
+          </span>
+          <FiChevronLeft className="sc-sell2-c" aria-hidden="true" />
         </button>
       )}
       {stopMsg && <div className="success-box" style={{ marginBottom: 10 }}>{stopMsg}</div>}

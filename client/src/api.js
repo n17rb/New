@@ -203,7 +203,7 @@ export const api = {
   updateStopItems: (stopId, items) => request(`/trips/stops/${stopId}/items`, { method: "PUT", body: { items } }),
   sellPackageInTrip: (stopId, body) => request(`/trips/stops/${stopId}/sell-package`, { method: "POST", body }),
   addOrderToTrip: (tripId, orderId) => request(`/trips/${tripId}/add-order`, { method: "POST", body: { order_id: orderId } }),
-  reoptimizeTrip: (tripId) => request(`/trips/${tripId}/reoptimize`, { method: "POST" }),
+  reoptimizeTrip: (tripId, style) => request(`/trips/${tripId}/reoptimize`, { method: "POST", body: style ? { style } : {} }),
 
   getDriverBalances: () => request("/drivers/balances"),
   getDriverPerformance: () => request("/drivers/performance"),

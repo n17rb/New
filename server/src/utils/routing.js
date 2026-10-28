@@ -362,7 +362,8 @@ export function areaGroups(stops, startPoint) {
 // stops: [{ ...anything, latitude, longitude, priority, requested_time? }]
 // mode: "nearest" (أقصر وقت) أو "urgent_smart" (المستعجل أولًا)
 // ------------------------------------------------------------
-export async function optimizeRoute({ start, end, stops, mode = "nearest", withGeometry = true, startTime = new Date() }) {
+// style: "area" = خلّص كل منطقة قبل ما تطلع منها — "loop" = دائرة بأقصر طريق (بتمر على الباقي وأنت راجع)
+export async function optimizeRoute({ start, end, stops, mode = "nearest", withGeometry = true, startTime = new Date(), style = "area" }) {
   const withLocation = stops.filter((s) => s.latitude != null && s.longitude != null);
   const withoutLocation = stops.filter((s) => s.latitude == null || s.longitude == null);
 
@@ -409,7 +410,7 @@ export async function optimizeRoute({ start, end, stops, mode = "nearest", withG
 
   const stopIdxs = locatedStops.map((_, i) => i + 1);
   const budget = stopIdxs.length > 40 ? 500 : 800;
-  const { groups, homeGroup } = areaGroups(locatedStops, startPoint);
+  const { groups, homeGroup } = style === "loop" ? { groups: null, homeGroup: null } : areaGroups(locatedStops, startPoint);
   let orderIdxs;
 
   if (mode === "urgent_smart") {

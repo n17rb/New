@@ -1323,3 +1323,6 @@ ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_phone_normalized_key;
 
 -- بيع باقة كوبونات من جوّا الرحلة: الكاش بينحسب بجرد السيارة
 ALTER TABLE coupon_sales ADD COLUMN IF NOT EXISTS trip_id INTEGER REFERENCES trips(id) ON DELETE SET NULL;
+
+-- طريقة ترتيب الرحلة: area = خلّص كل منطقة قبل ما تطلع منها، loop = دائرة بأقصر طريق
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS route_style VARCHAR(10) NOT NULL DEFAULT 'area';

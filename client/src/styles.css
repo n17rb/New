@@ -2601,3 +2601,40 @@ button.stop-row:active { background: var(--surface-2); }
 .closed-status.ok { background: var(--success-soft); color: var(--success); }
 .closed-status.bad { background: var(--urgent-soft); color: var(--urgent); }
 .closed-status.muted { background: var(--surface-2); color: var(--text-secondary); }
+
+/* اختيار طريقة ترتيب الرحلة */
+.ro-opts { display: flex; flex-direction: column; gap: 10px; }
+.ro-opt {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: right; padding: 14px; cursor: pointer;
+  border-radius: 16px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: inherit;
+}
+.ro-opt.on { border-color: var(--primary); background: var(--primary-soft); }
+.ro-ic { width: 40px; height: 40px; border-radius: 12px; background: var(--primary-soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0; }
+.ro-opt.on .ro-ic { background: var(--primary); color: #fff; }
+.ro-t { display: flex; flex-direction: column; gap: 3px; }
+.ro-t b { font-size: 0.98rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ro-t em { font-style: normal; font-size: 0.7rem; font-weight: 700; color: var(--primary); background: var(--surface); padding: 2px 8px; border-radius: 999px; }
+.ro-t small { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; }
+
+/* بيع باقة كوبونات — كرت أنعم */
+.sc-sell2 {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; width: 100%;
+  margin: 0 0 12px; padding: 12px 14px; cursor: pointer; text-align: right; font: inherit; color: var(--text);
+  border-radius: 16px; border: 1px solid rgba(10, 102, 245, 0.16);
+  background: linear-gradient(120deg, #EEF5FF 0%, #F3F0FF 55%, #FFF6EA 100%);
+}
+[data-theme="dark"] .sc-sell2 { background: linear-gradient(120deg, #15294A 0%, #1E2147 55%, #2A2620 100%); border-color: var(--border); }
+.sc-sell2::after {
+  content: ""; position: absolute; width: 90px; height: 90px; border-radius: 50%; left: -20px; top: -30px;
+  background: radial-gradient(circle, rgba(255, 176, 64, 0.25), transparent 70%); pointer-events: none;
+}
+.sc-sell2-ic {
+  width: 42px; height: 42px; border-radius: 13px; flex-shrink: 0; color: #fff;
+  background: linear-gradient(135deg, #0A66F5, #6C4BD8); display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(10, 102, 245, 0.28); transform: rotate(-6deg);
+}
+.sc-sell2-t { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sc-sell2-t b { font-size: 0.97rem; }
+.sc-sell2-t small { font-size: 0.78rem; color: var(--text-secondary); }
+.sc-sell2-c { color: var(--primary); flex-shrink: 0; }
+.sc-sell2:active { filter: brightness(0.97); }

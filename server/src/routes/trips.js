@@ -88,6 +88,7 @@ export async function reoptimizeTrip(tripId, { withGeometry = true } = {}) {
     stops: free,
     mode: trip.route_mode === "urgent_smart" ? "urgent_smart" : "nearest",
     withGeometry,
+    style: trip.route_style === "loop" ? "loop" : "area",
   });
 
   const newOrder = [...done, ...route.ordered, ...locked];
@@ -1210,8 +1211,16 @@ router.post("/:id/reoptimize", async (req, res) => {
   if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
   if (trip.status === "COMPLETED") return res.status(400).json({ error: "الرحلة منتهية." });
 
+  // طريقة الترتيب (لو انبعتت) بتنحفظ للرحلة — وأي ترتيب بعدها (طلب جديد مثلًا) بيمشي عليها
+  const style = req.body?.style;
+  if (style === "area" || style === "loop") {
+    await query("UPDATE trips SET route_style = $1 WHERE id = $2", [style, trip.id]);
+  }
   const result = await reoptimizeTrip(trip.id);
-  res.json({ message: "تم ترتيب الرحلة من جديد بأحسن طريق.", ...result });
+  const msg = (style || trip.route_style) === "loop"
+    ? "رتّبتها دائرة بأقصر طريق — بتمر على الباقي وأنت راجع."
+    : "رتّبتها منطقة منطقة — بتخلّص المنطقة اللي أنت فيها قبل ما تطلع.";
+  res.json({ message: msg, ...result });
 });
 
 router.post("/:id/add-order", async (req, res) => {
