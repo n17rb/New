@@ -3,7 +3,7 @@ import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, Fi
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today, DateInput } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
-import { PlaceChips, matchPlace } from "../RegionFilter.jsx";
+import { PlaceChips, matchPlace, placeName } from "../RegionFilter.jsx";
 import { FiGift } from "react-icons/fi";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
@@ -25,7 +25,13 @@ export default function Orders() {
   const open = all.filter((o) => matchPlace(o, region));
   const free = open.filter((o) => !o.trip_id && ["new", "delayed"].includes(o.status));
   const assigned = open.filter((o) => o.trip_id);
-  const selCartons = sel.reduce((s, id) => s + (open.find((o) => o.id === id)?.cartons || 0), 0);
+  const selCartons = sel.reduce((s, id) => s + (all.find((o) => o.id === id)?.cartons || 0), 0);
+  // التحديد بيضل لما تغيّر المنطقة: بتختار من صريح، بتروح الحصن وبتزيد، وكلهم بيطلعوا على نفس السيارة
+  const selPlaces = useMemo(() => {
+    const m = new Map();
+    for (const id of sel) { const o = all.find((x) => x.id === id); if (!o) continue; const k = placeName(o); m.set(k, (m.get(k) || 0) + 1); }
+    return [...m.entries()];
+  }, [sel, all]);
 
   function toggle(id) {
     setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
@@ -76,14 +82,14 @@ export default function Orders() {
 
           {editOrders && <PostponeCard onDone={reload} />}
 
-          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => { setRegion(r); setSel([]); }} noun="طلب" />}
+          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => setRegion(r)} noun="طلب" />}
 
           {cur === "free" && (
             <>
               {dispatch && free.length > 0 && (
                 <div className="fx-hint-line">
                   <span>اختار الطلبات وحطها على سيارة</span>
-                  {free.length > 1 && <button className="fx-link" onClick={() => setSel(sel.length === free.length ? [] : free.map((o) => o.id))}>{sel.length === free.length ? "إلغاء" : "اختار الكل"}</button>}
+                  {free.length > 1 && (() => { const allOn = free.every((o) => sel.includes(o.id)); return <button className="fx-link" onClick={() => setSel(allOn ? sel.filter((id) => !free.some((o) => o.id === id)) : [...new Set([...sel, ...free.map((o) => o.id)])])}>{allOn ? "شيل تحديد هدول" : "اختار الكل هون"}</button>; })()}
                 </div>
               )}
               <div className="fx-clist" data-hl="orders-list">
@@ -142,7 +148,7 @@ export default function Orders() {
 
       {dispatch && sel.length > 0 && (
         <div className="fx-selbar">
-          <span className="fx-grow"><b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة</span>
+          <span className="fx-grow"><b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة{selPlaces.length > 1 && <small className="fx-sel-places">{selPlaces.map(([k, n]) => `${n} ${k}`).join(" · ")}</small>}</span>
           <button className="fx-btn sm" onClick={() => setSel([])}>إلغاء</button>
           <button className="fx-btn pri" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}><FiTruck /> حطها على سيارة</button>
         </div>
@@ -152,7 +158,7 @@ export default function Orders() {
       {sheet?.kind === "edit" && <OrderSheet order={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "info" && ["delivered", "failed"].includes(sheet.o.status) && <StopSheet o={sheet.o} onClose={() => setSheet(null)} />}
       {sheet?.kind === "info" && !["delivered", "failed"].includes(sheet.o.status) && <OrderInfo o={sheet.o} onClose={() => setSheet(null)} onEdit={() => setSheet({ kind: "edit", o: sheet.o })} onChanged={after} />}
-      {sheet?.kind === "trip" && <TripBuilder orderIds={sel} orders={open} onClose={() => setSheet(null)} onSaved={after} />}
+      {sheet?.kind === "trip" && <TripBuilder orderIds={sel} orders={all} onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "move" && <TransferSheet o={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
       {msgs && <SendMessages ids={msgs} onClose={() => setMsgs(null)} />}
     </div>
