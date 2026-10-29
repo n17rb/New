@@ -1122,3 +1122,22 @@ a.fx-pill { text-decoration: none; }
 .fx-place-chip.on { background: var(--fx-navy); border-color: var(--fx-navy); color: #fff; }
 .fx-place-chip.on i { background: rgba(255,255,255,.22); color: #fff; }
 .fx-place-chip.sm { padding: 7px 12px; font-size: 13.5px; }
+
+/* إرسال الرسائل واحد ورا الثاني */
+.sm-prog { display: grid; gap: 4px; }
+.sm-bar { height: 8px; border-radius: 999px; background: #e9eff5; overflow: hidden; }
+.sm-bar i { display: block; height: 100%; background: #25b55a; border-radius: 999px; transition: width .3s; }
+.sm-prog small { color: var(--fx-muted); font-size: 12.5px; }
+.sm-card { background: #fff; border-radius: 22px; padding: 18px 16px; display: grid; gap: 10px; justify-items: center; text-align: center; box-shadow: 0 1px 10px rgba(16, 48, 77, .06); }
+.sm-card > small { color: var(--fx-muted); }
+.sm-card .nm { font-size: 22px; color: #10304d; }
+.sm-card .txt { margin: 0; white-space: pre-line; text-align: start; font-size: 13.5px; color: #4a6077; background: #f6f9fc; border-radius: 12px; padding: 10px 12px; width: 100%; box-sizing: border-box; }
+.sm-card .fx-row { width: 100%; }
+.sm-done { display: grid; gap: 10px; justify-items: center; padding: 18px; background: #e8f6ee; border-radius: 22px; color: #14653a; }
+.sm-done svg { width: 40px; height: 40px; }
+.sm-done b { font-size: 18px; }
+.sm-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.sm-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e1e9f1; background: #fff; border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 12.5px; color: #4a6077; cursor: pointer; }
+.sm-chip.on { border-color: var(--fx-navy); color: var(--fx-navy); font-weight: 700; }
+.sm-chip.ok { background: #e8f6ee; border-color: #c9ead6; color: #14653a; }
+.sm-chip.no { opacity: .45; }

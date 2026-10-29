@@ -484,22 +484,85 @@ export function waLink(phone, text) {
 }
 
 // قائمة رسائل الزباين اللي لازم تنبعت — كل وحدة بزر واتساب
+// إرسال رسائل لأكثر من زبون: واحد ورا الثاني بكبسة — بتبعت، بترجع من واتساب، وبيجهّزلك اللي بعده لحاله
 export function SendMessages({ ids, title = "بلّغ الزباين", onClose }) {
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
+  const [cur, setCur] = useState(0);
+  const [showText, setShowText] = useState(false);
+  const away = useRef(false);
   useEffect(() => {
     if (!ids?.length) return;
-    fapi.messages({ ids: ids.join(",") }).then(setList).catch((e) => setError(e.message));
+    fapi.messages({ ids: ids.join(",") }).then((l) => { setList(l); setCur(Math.max(0, l.findIndex((m) => !m.sent_at && m.phone))); }).catch((e) => setError(e.message));
   }, [ids?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nextFrom = (l, i) => { for (let k = 1; k <= l.length; k++) { const j = (i + k) % l.length; if (!l[j].sent_at && l[j].phone) return j; } return -1; };
+  // رجعت من واتساب؟ بنروح للي بعده لحاله
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState !== "visible" || !away.current) return;
+      away.current = false;
+      setList((l) => { if (l) { const n = nextFrom(l, cur); if (n >= 0) setCur(n); } return l; });
+      setShowText(false);
+    };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
+    return () => { document.removeEventListener("visibilitychange", back); window.removeEventListener("focus", back); };
+  }, [cur]);
   if (!ids?.length) return null;
+  const withPhone = list?.filter((m) => m.phone) || [];
+  const sentN = withPhone.filter((m) => m.sent_at).length;
+  const allDone = list && sentN === withPhone.length;
+  const m = list?.[cur];
+  const send = () => {
+    fapi.messageSent(m.id).catch(() => {});
+    setList((l) => l.map((x) => (x.id === m.id ? { ...x, sent_at: new Date().toISOString() } : x)));
+    away.current = true;
+  };
   return (
     <Sheet title={title} onClose={onClose}>
       <div className="fx-stack">
-        <p className="fx-muted" style={{ margin: 0 }}>كل رسالة جاهزة. اكبس «ابعت» وبتفتح على واتساب الزبون والرسالة مكتوبة.</p>
         <Err msg={error} />
         {!list && !error && <Loading />}
-        {list?.map((m) => <MessageRow key={m.id} m={m} onSent={() => setList((l) => l.map((x) => (x.id === m.id ? { ...x, sent_at: new Date().toISOString() } : x)))} />)}
-        <button className="fx-btn block" onClick={onClose}>خلص</button>
+        {list && (
+          <>
+            <div className="sm-prog">
+              <div className="sm-bar"><i style={{ width: `${withPhone.length ? (sentN / withPhone.length) * 100 : 0}%` }} /></div>
+              <small>انبعت {num(sentN)} من {num(withPhone.length)}</small>
+            </div>
+            {allDone ? (
+              <div className="sm-done">
+                <FiCheck aria-hidden="true" />
+                <b>انبعتت لكل الزباين</b>
+                <button className="fx-btn pri block" onClick={onClose}>تمام</button>
+              </div>
+            ) : m && (
+              <div className="sm-card">
+                <small>الزبون {num(withPhone.findIndex((x) => x.id === m.id) + 1)} من {num(withPhone.length)}</small>
+                <b className="nm">{m.customer_name}</b>
+                <button type="button" className="fx-link" onClick={() => setShowText(!showText)}>{showText ? "خبّي الرسالة" : "شوف الرسالة"}</button>
+                {showText && <p className="txt">{m.body}</p>}
+                {m.phone ? (
+                  <a className="fx-btn wa block fx-huge" href={waLink(m.phone, m.body)} target="_blank" rel="noreferrer" onClick={send}>
+                    <FiMessageCircle /> {m.sent_at ? "ابعتها مرة ثانية" : "ابعت على واتساب"}
+                  </a>
+                ) : <div className="fx-note warn">ما إله رقم تلفون.</div>}
+                <div className="fx-row" style={{ justifyContent: "space-between" }}>
+                  <button type="button" className="fx-link" onClick={() => { const n = nextFrom(list, cur); if (n >= 0) setCur(n); }}>تخطّاه ←</button>
+                  {m.sent_at && <span className="fx-pill ok"><FiCheck /> انبعتت</span>}
+                </div>
+              </div>
+            )}
+            <div className="sm-list">
+              {list.map((x, i) => (
+                <button key={x.id} type="button" className={`sm-chip ${i === cur ? "on" : ""} ${x.sent_at ? "ok" : ""} ${!x.phone ? "no" : ""}`} onClick={() => setCur(i)} disabled={!x.phone}>
+                  {x.sent_at ? <FiCheck aria-hidden="true" /> : null}{x.customer_name}
+                </button>
+              ))}
+            </div>
+            <small className="fx-muted">بعد ما تبعت ارجع للتطبيق، وبيطلعلك الزبون اللي بعده لحاله.</small>
+            {!allDone && <button className="fx-btn block" onClick={onClose}>بعدين</button>}
+          </>
+        )}
       </div>
     </Sheet>
   );
