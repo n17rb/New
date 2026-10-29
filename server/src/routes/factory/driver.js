@@ -449,7 +449,7 @@ router.post("/driver/problem/:id/resolve", drive, async (req, res) => {
 });
 
 // ---------- المصاريف ----------
-const EXP_KINDS = ["ديزل", "تصليح", "بنشر", "غسيل", "مخالفة", "أكل", "غيره"];
+const EXP_KINDS = ["ديزل", "تصليح", "بنشر", "غسيل", "مخالفة", "أكل", "ضيافة", "غيره"];
 router.get("/driver/expenses", drive, async (req, res) => {
   const r = await query("SELECT * FROM f_expenses WHERE driver_id = $1 ORDER BY id DESC LIMIT 40", [req.user.id]);
   res.json({ kinds: EXP_KINDS, list: r.rows.map((e) => ({ ...e, amount: Number(e.amount) })) });
