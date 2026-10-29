@@ -3,7 +3,7 @@ import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, Fi
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today, DateInput } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
-import { AreasFilter, matchAreas } from "../RegionFilter.jsx";
+import { PlaceChips, matchPlace } from "../RegionFilter.jsx";
 import { FiGift } from "react-icons/fi";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
@@ -19,10 +19,10 @@ export default function Orders() {
   const [msgs, setMsgs] = useState(null);
 
   // المناطق اللي اختارها (بتنحفظ على هالتلفون)
-  const [region, setRegionS] = useState(() => { try { return JSON.parse(localStorage.getItem("fx-orders-areas") || "[]").filter((k) => /^[da]\|/.test(k)); } catch { return []; } });
-  const setRegion = (v) => { setRegionS(v); try { localStorage.setItem("fx-orders-areas", JSON.stringify(v)); } catch { /* */ } };
+  const [region, setRegionS] = useState(() => { try { const v = JSON.parse(localStorage.getItem("fx-orders-place") || "null"); return v && typeof v === "object" ? { gov: v.gov || null, areas: Array.isArray(v.areas) ? v.areas : [] } : { gov: null, areas: [] }; } catch { return { gov: null, areas: [] }; } });
+  const setRegion = (v) => { setRegionS(v); try { localStorage.setItem("fx-orders-place", JSON.stringify(v)); } catch { /* */ } };
   const all = data || [];
-  const open = all.filter((o) => matchAreas(o, region));
+  const open = all.filter((o) => matchPlace(o, region));
   const free = open.filter((o) => !o.trip_id && ["new", "delayed"].includes(o.status));
   const assigned = open.filter((o) => o.trip_id);
   const selCartons = sel.reduce((s, id) => s + (open.find((o) => o.id === id)?.cartons || 0), 0);
@@ -76,7 +76,7 @@ export default function Orders() {
 
           {editOrders && <PostponeCard onDone={reload} />}
 
-          {all.length > 0 && <AreasFilter items={all} value={region} onChange={(r) => { setRegion(r); setSel([]); }} noun="طلب" />}
+          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => { setRegion(r); setSel([]); }} noun="طلب" />}
 
           {cur === "free" && (
             <>
@@ -123,7 +123,7 @@ export default function Orders() {
             <div className="fx-clist">
               {!done && <Loading />}
               {done && done.length === 0 && <div className="fx-empty-soft">ما خلص إشي آخر ٣ أيام.</div>}
-              {done?.filter((o) => matchAreas(o, region)).map((o) => (
+              {done?.filter((o) => matchPlace(o, region)).map((o) => (
                 <div key={o.id} className="fx-crow">
                   <button className="fx-plain fx-crow-main" onClick={() => setSheet({ kind: "info", o })}>
                     <span className="t">
