@@ -1106,3 +1106,8 @@ a.fx-pill { text-decoration: none; }
 .ag-party { display: grid; gap: 6px; background: #f6f9fc; border-radius: 16px; padding: 10px 12px; }
 .ag-party small { color: var(--fx-muted); font-weight: 700; font-size: 12.5px; }
 .ag-text { min-height: 320px; line-height: 1.9; font-size: 14.5px; resize: vertical; white-space: pre-wrap; }
+
+/* التسليم: البونص بيكتبه السائق بإيده */
+.fx-dlv-bonus { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #effaf3; border-radius: 12px; padding: 6px 10px; color: #14653a; font-weight: 700; font-size: 14px; }
+.fx-dlv-bonus .fx-stepper button { width: 36px; height: 36px; background: #fff; border-color: #c9ead6; color: #14653a; }
+.fx-dlv-bonus .fx-stepper input { width: 64px; font-size: 17px; padding: 5px; }

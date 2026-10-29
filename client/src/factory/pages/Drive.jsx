@@ -355,13 +355,18 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
               {step(qty[i.id], (v) => setQty((x) => ({ ...x, [i.id]: v })), `سلّم من ${i.name}`)}
               {back > 0 && <small className="fx-dlv-hint warn">بيرجع معك {num(back)}</small>}
               {more > 0 && <small className="fx-dlv-hint">+{num(more)} زيادة من السيارة</small>}
-              {(Number(bon[i.id]) > 0 || bonEdit[i.id] !== undefined) && (
+              {canBonus ? (
+                <div className="fx-dlv-bonus">
+                  <span>🎁 بونص ببلاش</span>
+                  <div className="fx-stepper">
+                    <button type="button" dir="ltr" onClick={() => setBon((x) => ({ ...x, [i.id]: Math.max(0, (Number(bon[i.id]) || 0) - 1) }))} aria-label="ناقص بونص">−</button>
+                    <input className="fx-input" type="number" inputMode="numeric" min="0" value={bon[i.id]} onChange={(e) => setBon((x) => ({ ...x, [i.id]: e.target.value }))} aria-label={`بونص ${i.name}`} />
+                    <button type="button" dir="ltr" onClick={() => setBon((x) => ({ ...x, [i.id]: (Number(bon[i.id]) || 0) + 1 }))} aria-label="زايد بونص">+</button>
+                  </div>
+                </div>
+              ) : (Number(bon[i.id]) > 0 || bonEdit[i.id] !== undefined) && (
                 <small className="fx-dlv-hint ok fx-row" style={{ gap: 6 }}>
-                  🎁 +
-                  {canBonus
-                    ? <input className="fx-input" style={{ width: 64, padding: "2px 6px", textAlign: "center" }} type="number" inputMode="numeric" min="0" value={bon[i.id]} onChange={(e) => setBon((x) => ({ ...x, [i.id]: e.target.value }))} aria-label={`بونص ${i.name}`} />
-                    : <b>{num(bon[i.id])}</b>}
-                  بونص ببلاش
+                  🎁 + <b>{num(bon[i.id])}</b> بونص ببلاش
                   {bonEdit[i.id] === undefined && <button type="button" className="fx-link" onClick={() => setBon((x) => ({ ...x, [i.id]: 0 }))}>(ما أخذه)</button>}
                 </small>
               )}

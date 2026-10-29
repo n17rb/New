@@ -1359,3 +1359,12 @@ WHERE o.id = i.order_id AND pr.id = i.product_id AND o.status IN ('new','assigne
   AND i.price <> COALESCE((SELECT cp.price FROM f_customer_prices cp WHERE cp.customer_id = o.customer_id AND cp.product_id = i.product_id), pr.price);
 UPDATE f_orders o SET total = s.t FROM (SELECT order_id, COALESCE(SUM(qty * price),0) AS t FROM f_order_items GROUP BY order_id) s
 WHERE s.order_id = o.id AND o.status IN ('new','assigned','onway','delayed') AND o.total <> s.t;
+
+-- السائق بيكتب البونص بإيده وقت التسليم (مرة وحدة: بنفعّلها لحسابات السائقين الموجودة)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'mig_driver_bonus') THEN
+    UPDATE users SET permissions = jsonb_set(permissions, '{actions,give_bonus}', 'true'::jsonb, true)
+      WHERE permissions IS NOT NULL AND permissions->>'template' = 'driver' AND permissions ? 'actions';
+    INSERT INTO app_settings (key, value) VALUES ('mig_driver_bonus', '1') ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;
