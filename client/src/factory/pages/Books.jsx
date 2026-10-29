@@ -275,7 +275,7 @@ ${e.note ? `<p style="font-size:13px">ملاحظات: ${esc(e.note)}</p>` : ""}
 }
 
 // ---------- الصندوق ----------
-const CASH_CATS = { in: ["مبيعات مباشرة", "بيع أرض/أصول", "قرض", "رأس مال", "دخل ثاني"], out: ["إيجار", "رواتب", "كهربا", "مي", "ضرايب ورسوم", "صيانة", "مصاريف مكتب", "مصاريف ثانية"] };
+const CASH_CATS = { in: ["مبيعات مباشرة", "بيع أرض/أصول", "قرض", "رأس مال", "دخل ثاني"], out: ["ضيافة", "إيجار", "رواتب", "كهربا", "مي", "ضرايب ورسوم", "صيانة", "مصاريف مكتب", "مصاريف ثانية"] };
 function Cash() {
   const fx = useFx();
   const edit = fx.can("f_money", "edit");
@@ -323,7 +323,7 @@ function Cash() {
 function CashSheet({ kind, cats, onClose, onDone }) {
   const fx = useFx();
   const used = cats.filter((c) => c.kind === kind).map((c) => c.category);
-  const opts = [...new Set([...used, ...CASH_CATS[kind]])].slice(0, 12);
+  const opts = [...new Set([...CASH_CATS[kind], ...used])].slice(0, 16);
   const [cat, setCat] = useState("");
   const [amount, setAmount] = useState("");
   const [d, setD] = useState(today());
