@@ -99,4 +99,110 @@ router.post("/orders/:id/correct", canFix, async (req, res) => {
   res.json({ ok: true, total: newTotal, cash: newCash, balance: round2(balance) });
 });
 
+// ============================================================
+// تصحيح سعر منتج على فواتير قديمة (مثلًا: انحسب 1.50 والسعر الصح 1.70)
+// الفواتير المسلّمة: بيتعدّل السعر والمجموع، والفرق بينضاف على حساب الزبون (أو بينزل منه)، وكل فاتورة بتنعلّم «معدّلة»
+// الطلبات اللي لسا ما انسلّمت: بيتعدّل سعرها بس
+// ============================================================
+const OPEN = ["new", "assigned", "onway", "delayed"];
+async function priceLines({ product_id, wrong, from, to, skip_special }) {
+  const r = await query(
+    `SELECT i.id AS item_id, i.order_id, i.qty, i.delivered_qty, i.price, o.status, o.customer_id, o.trip_id,
+            c.name AS customer_name, COALESCE(o.delivered_at, o.created_at) AS at,
+            EXISTS (SELECT 1 FROM f_customer_prices cp WHERE cp.customer_id = o.customer_id AND cp.product_id = i.product_id) AS special
+     FROM f_order_items i JOIN f_orders o ON o.id = i.order_id JOIN f_customers c ON c.id = o.customer_id
+     WHERE i.product_id = $1 AND i.price = $2 AND o.status NOT IN ('cancelled','failed')
+       AND (COALESCE(o.delivered_at, o.created_at) AT TIME ZONE 'Asia/Amman')::date BETWEEN $3 AND $4
+     ORDER BY COALESCE(o.delivered_at, o.created_at) DESC`,
+    [product_id, wrong, from, to]
+  );
+  return r.rows.filter((x) => !(skip_special && x.special)).map((x) => ({ ...x, price: Number(x.price) }));
+}
+function priceArgs(src) {
+  const isD = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+  const a = {
+    product_id: Number(src.product_id), wrong: round2(src.wrong), right: round2(src.right),
+    from: isD(src.from) ? src.from : "2000-01-01", to: isD(src.to) ? src.to : "2100-01-01",
+    skip_special: !(src.skip_special === false || src.skip_special === "0" || src.skip_special === "false"),
+  };
+  if (!a.product_id) throw new Error("اختار المنتج.");
+  if (!(a.wrong >= 0) || !(a.right >= 0)) throw new Error("اكتب السعر الغلط والسعر الصح.");
+  if (a.wrong === a.right) throw new Error("السعرين نفس الإشي.");
+  return a;
+}
+function summarize(lines, right) {
+  const byOrder = new Map();
+  for (const l of lines) {
+    const done = l.status === "delivered";
+    const q = done ? (l.delivered_qty ?? l.qty) : l.qty;
+    const d = round2(q * (right - l.price));
+    const o = byOrder.get(l.order_id) || { order_id: l.order_id, customer_id: l.customer_id, customer_name: l.customer_name, at: l.at, delivered: done, qty: 0, diff: 0, trip_id: l.trip_id, items: [] };
+    o.qty += q; o.diff = round2(o.diff + d); o.items.push(l);
+    byOrder.set(l.order_id, o);
+  }
+  const orders = [...byOrder.values()];
+  const del = orders.filter((o) => o.delivered);
+  return {
+    orders,
+    delivered_count: del.length,
+    open_count: orders.length - del.length,
+    customers: new Set(del.map((o) => o.customer_id)).size,
+    total_diff: round2(del.reduce((a, o) => a + o.diff, 0)),
+  };
+}
+
+router.get("/prices/fix-preview", canFix, async (req, res) => {
+  let a; try { a = priceArgs(req.query); } catch (e) { return bad(res, e.message); }
+  const lines = await priceLines(a);
+  const special = a.skip_special ? (await priceLines({ ...a, skip_special: false })).filter((x) => x.special) : [];
+  const s = summarize(lines, a.right);
+  res.json({ ...s, orders: s.orders.slice(0, 300).map(({ items, ...o }) => o), special_customers: [...new Set(special.map((x) => x.customer_name))].slice(0, 30) });
+});
+
+router.post("/prices/fix", canFix, async (req, res) => {
+  let a; try { a = priceArgs(req.body || {}); } catch (e) { return bad(res, e.message); }
+  const reason = String(req.body?.reason || "").trim().slice(0, 200) || `تصحيح السعر من ${a.wrong} إلى ${a.right}`;
+  const p = (await query("SELECT name FROM f_products WHERE id = $1", [a.product_id])).rows[0];
+  if (!p) return bad(res, "المنتج غير موجود.", 404);
+  const s = summarize(await priceLines(a), a.right);
+  if (!s.orders.length) return bad(res, "ما في فواتير بهالسعر.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const o of s.orders) {
+      const before = (await client.query("SELECT total, delivered_total FROM f_orders WHERE id = $1 FOR UPDATE", [o.order_id])).rows[0];
+      await client.query("UPDATE f_order_items SET price = $1 WHERE id = ANY($2::int[])", [a.right, o.items.map((x) => x.item_id)]);
+      const t = (await client.query(
+        "SELECT COALESCE(SUM(qty * price),0) AS total, COALESCE(SUM(COALESCE(delivered_qty, qty) * price),0) AS dtotal FROM f_order_items WHERE order_id = $1",
+        [o.order_id]
+      )).rows[0];
+      if (o.delivered) {
+        const newD = round2(t.dtotal);
+        const oldD = round2(before.delivered_total ?? 0);
+        await client.query("UPDATE f_orders SET total = $1, delivered_total = $2, edited_by = $3, edited_at = now(), updated_at = now() WHERE id = $4", [round2(t.total), newD, req.user.id, o.order_id]);
+        const dTotal = round2(newD - oldD);
+        if (dTotal !== 0) await postLedger(client, { customerId: o.customer_id, kind: "adjust", amount: dTotal, orderId: o.order_id, tripId: o.trip_id, note: `تصحيح سعر ${p.name} (${a.wrong} ← ${a.right}) فاتورة #${o.order_id}`, userId: req.user.id });
+        await client.query("INSERT INTO f_order_edits (order_id, user_id, reason, before, after) VALUES ($1,$2,$3,$4,$5)", [
+          o.order_id, req.user.id, `${reason} — ${p.name}`, JSON.stringify({ total: oldD, price: a.wrong }), JSON.stringify({ total: newD, price: a.right }),
+        ]);
+      } else {
+        await client.query("UPDATE f_orders SET total = $1, updated_at = now() WHERE id = $2", [round2(t.total), o.order_id]);
+      }
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  await logActivity({ userId: req.user.id, action: "F_PRICE_FIX", recordType: "f_product", recordId: a.product_id, newValue: { ...a, orders: s.orders.length, total_diff: s.total_diff } });
+  await alert({
+    level: "info", kind: "invoice_edit", ref: a.product_id,
+    title: `✏️ ${req.user.full_name} صحّح سعر ${p.name} على ${s.delivered_count} فاتورة`,
+    body: `${a.wrong} ← ${a.right}. الفرق على حسابات الزباين: ${s.total_diff.toFixed(2)} د.أ${s.open_count ? ` · و${s.open_count} طلب لسا ما انسلّم` : ""}.`,
+  });
+  res.json({ ok: true, delivered_count: s.delivered_count, open_count: s.open_count, customers: s.customers, total_diff: s.total_diff });
+});
+
 export default router;

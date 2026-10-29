@@ -80,10 +80,25 @@ router.post("/products", edit, async (req, res) => {
 });
 router.put("/products/:id", edit, async (req, res) => {
   let p; try { p = cleanProduct(req.body || {}); } catch (e) { return bad(res, e.message); }
+  const prev = (await query("SELECT price FROM f_products WHERE id = $1", [req.params.id])).rows[0];
   const r = await query("UPDATE f_products SET name=$1, per_carton=$2, price=$3, min_stock=$4, active=$5, sort_order=$6 WHERE id=$7 RETURNING *", [p.name, p.per_carton, p.price, p.min_stock, p.active, p.sort_order, req.params.id]);
   if (!r.rows[0]) return bad(res, "المنتج غير موجود.", 404);
+  // السعر تغيّر؟ الطلبات اللي لسا ما انسلّمت بتاخذ السعر الجديد (إلا الزبون اللي إله سعر خاص)
+  let repriced = 0;
+  if (prev && Number(prev.price) !== Number(p.price)) {
+    const u = await query(
+      `UPDATE f_order_items i SET price = $1 FROM f_orders o
+       WHERE o.id = i.order_id AND i.product_id = $2 AND o.status IN ('new','assigned','onway','delayed')
+         AND NOT EXISTS (SELECT 1 FROM f_customer_prices cp WHERE cp.customer_id = o.customer_id AND cp.product_id = i.product_id)
+       RETURNING i.order_id`,
+      [p.price, req.params.id]
+    );
+    const ids = [...new Set(u.rows.map((x) => x.order_id))];
+    if (ids.length) await query("UPDATE f_orders o SET total = (SELECT COALESCE(SUM(qty * price),0) FROM f_order_items WHERE order_id = o.id), updated_at = now() WHERE o.id = ANY($1::int[])", [ids]);
+    repriced = ids.length;
+  }
   await logActivity({ userId: req.user.id, action: "F_UPDATE_PRODUCT", recordType: "f_product", recordId: r.rows[0].id, newValue: p });
-  res.json(r.rows[0]);
+  res.json({ ...r.rows[0], repriced, old_price: prev ? Number(prev.price) : null });
 });
 // صورة المنتج
 router.post("/products/:id/image", edit, uploadSingleImage, async (req, res) => {

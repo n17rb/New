@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiPlus, FiMapPin, FiUpload, FiChevronLeft, FiGift } from "react-icons/fi";
+import { FiPlus, FiMapPin, FiUpload, FiChevronLeft, FiGift, FiRefreshCw } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, Sheet, Tip, Err, Act, LocationPicker, ProductArt, money, num, DateInput } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Act, LocationPicker, ProductArt, money, num, date, today, DateInput } from "../ui.jsx";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: "موقفة" };
@@ -137,10 +137,14 @@ export function SampleCard() {
 export function Products() {
   const fx = useFx();
   const [edit, setEdit] = useState(null);
+  const [fix, setFix] = useState(null);
   return (
     <div className="fx-stack">
       <Tip id="products">كل منتج: الاسم، كم حبة بالكرتونة، وسعر الكرتونة. سعر الزبون الخاص بتحطه من بطاقة الزبون.</Tip>
-      <button className="fx-btn pri" onClick={() => setEdit({})}><FiPlus /> منتج جديد</button>
+      <div className="fx-grid2">
+        <button className="fx-btn pri" onClick={() => setEdit({})}><FiPlus /> منتج جديد</button>
+        <button className="fx-btn" onClick={() => setFix({})}><FiRefreshCw /> صحّح أسعار فواتير</button>
+      </div>
       <div className="fx-list">
         {fx.boot.products.length === 0 && <div className="fx-item"><span className="fx-muted">ما في منتجات لسا.</span></div>}
         {fx.boot.products.map((p) => (
@@ -151,12 +155,91 @@ export function Products() {
           </button>
         ))}
       </div>
-      {edit && <ProductSheet p={edit} onClose={() => setEdit(null)} />}
+      {edit && <ProductSheet p={edit} onClose={() => setEdit(null)} onFix={(x) => { setEdit(null); setFix(x); }} />}
+      {fix && <PriceFixSheet init={fix} onClose={() => setFix(null)} />}
     </div>
   );
 }
 
-function ProductSheet({ p, onClose }) {
+// تصحيح سعر منتج على فواتير قديمة: بتشوف قبل ما تثبّت كم فاتورة وكم الفرق
+function PriceFixSheet({ init, onClose }) {
+  const fx = useFx();
+  const products = fx.boot.products;
+  const monthAgo = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+  const [f, setF] = useState({ product_id: init.product_id || products[0]?.id || "", wrong: init.wrong ?? "", right: init.right ?? "", from: monthAgo, to: today(), skip_special: true });
+  const [pv, setPv] = useState(null);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(null);
+  const prod = products.find((p) => p.id === Number(f.product_id));
+  useEffect(() => { if (prod && f.right === "") setF((x) => ({ ...x, right: String(prod.price) })); }, [prod]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPv(null); }, [f.product_id, f.wrong, f.right, f.from, f.to, f.skip_special]);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  async function preview() {
+    setErr("");
+    try { setPv(await fapi.priceFixPreview({ ...f, skip_special: f.skip_special ? "1" : "0" })); } catch (e) { setErr(e.message); }
+  }
+  if (done) {
+    return (
+      <Sheet title="تم التصحيح" onClose={onClose}>
+        <div className="fx-stack">
+          <div className="fx-note ok">انصحّحت {num(done.delivered_count)} فاتورة لـ {num(done.customers)} زبون{done.open_count ? `، و${num(done.open_count)} طلب لسا ما انسلّم` : ""}.</div>
+          <div className="fx-pay-total"><span>الفرق على حسابات الزباين</span><b>{money(done.total_diff)} <small>د.أ</small></b></div>
+          <small className="fx-muted">كل فاتورة انعلّمت «معدّلة» وبينكتب بكشف حساب الزبون سطر تصحيح بالفرق.</small>
+          <button className="fx-btn pri block" onClick={onClose}>تمام</button>
+        </div>
+      </Sheet>
+    );
+  }
+  return (
+    <Sheet title="صحّح سعر على فواتير قديمة" onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-note sky">إذا منتج انحسب بسعر غلط: اختار المنتج، اكتب السعر اللي انحسب والسعر الصح، وشوف شو رح يتغيّر قبل ما تثبّت.</div>
+        <label className="fx-field">المنتج
+          <select className="fx-input" value={f.product_id} onChange={set("product_id")}>
+            {products.map((p) => <option key={p.id} value={p.id}>{p.name} — السعر هلأ {money(p.price)}</option>)}
+          </select>
+        </label>
+        <div className="fx-grid2">
+          <label className="fx-field">السعر الغلط اللي انحسب<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.wrong} onChange={set("wrong")} placeholder="1.50" /></label>
+          <label className="fx-field">السعر الصح<input className="fx-input fx-num" type="number" inputMode="decimal" value={f.right} onChange={set("right")} placeholder="1.70" /></label>
+        </div>
+        <div className="fx-field">من تاريخ<DateInput value={f.from} onChange={(v) => setF({ ...f, from: v })} ariaLabel="من تاريخ" /></div>
+        <div className="fx-field">لتاريخ<DateInput value={f.to} onChange={(v) => setF({ ...f, to: v })} ariaLabel="لتاريخ" /></div>
+        <label className="fx-row" style={{ gap: 8, fontSize: 14 }}><input type="checkbox" checked={f.skip_special} onChange={(e) => setF({ ...f, skip_special: e.target.checked })} /> ما تلمس الزباين اللي إلهم سعر خاص</label>
+        <Err msg={err} />
+        {!pv && <Act className="fx-btn pri block" disabled={f.wrong === "" || f.right === ""} onClick={preview}>شوف شو رح يتغيّر</Act>}
+        {pv && (
+          <>
+            {pv.orders.length === 0 ? <div className="fx-note">ما في فواتير بسعر {f.wrong} لهالمنتج بهالفترة.</div> : (
+              <>
+                <div className="fx-grid2">
+                  <div className="fx-card" style={{ textAlign: "center" }}><small className="fx-muted">فواتير انسلّمت</small><b style={{ display: "block", fontSize: 22 }}>{num(pv.delivered_count)}</b><small className="fx-muted">لـ {num(pv.customers)} زبون</small></div>
+                  <div className="fx-card" style={{ textAlign: "center" }}><small className="fx-muted">الفرق على الزباين</small><b style={{ display: "block", fontSize: 22, color: pv.total_diff > 0 ? "var(--fx-warn)" : "var(--fx-ok)" }}>{money(pv.total_diff)}</b><small className="fx-muted">{pv.total_diff > 0 ? "بيصير دين عليهم" : "بينزل من دينهم"}</small></div>
+                </div>
+                {pv.open_count > 0 && <div className="fx-note">و{num(pv.open_count)} طلب لسا ما انسلّم — بس بيتعدّل سعره.</div>}
+                <div className="fx-list" style={{ maxHeight: 260, overflow: "auto" }}>
+                  {pv.orders.map((o) => (
+                    <div key={o.order_id} className="fx-item">
+                      <span className="t"><b>{o.customer_name}</b><span>#{o.order_id} · {date(String(o.at).slice(0, 10))} · {num(o.qty)} كرتونة{o.delivered ? "" : " · لسا ما انسلّم"}</span></span>
+                      <span className="end"><b className="fx-num">{o.diff > 0 ? "+" : ""}{money(o.diff)}</b></span>
+                    </div>
+                  ))}
+                </div>
+                {pv.special_customers?.length > 0 && <small className="fx-muted">ما لمسنا: {pv.special_customers.join("، ")} — إلهم سعر خاص {f.wrong}. إذا غلط، عدّله من بطاقة الزبون.</small>}
+                <Act className="fx-btn ok block fx-big" onClick={async () => {
+                  setErr("");
+                  try { setDone(await fapi.priceFix({ ...f })); } catch (e) { setErr(e.message); }
+                }}>ثبّت التصحيح على {num(pv.delivered_count + pv.open_count)} فاتورة</Act>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+function ProductSheet({ p, onClose, onFix }) {
   const fx = useFx();
   const [f, setF] = useState({ name: p.name || "", per_carton: p.per_carton || "", price: p.price ?? "", min_stock: p.min_stock || "", active: p.active !== false, sort_order: p.sort_order || 0 });
   const [err, setErr] = useState("");
@@ -192,8 +275,10 @@ function ProductSheet({ p, onClose }) {
             if (file === "remove") await fapi.removeProductImage(saved.id);
             else if (file) await fapi.productImage(saved.id, file);
             await refresh(fx);
-            fx.toast("انحفظ المنتج");
-            onClose();
+            const changed = p.id && saved.old_price != null && Number(saved.old_price) !== Number(saved.price);
+            fx.toast(changed && saved.repriced ? `انحفظ — و${saved.repriced} طلب لسا ما انسلّم أخذ السعر الجديد` : "انحفظ المنتج");
+            if (changed) onFix({ product_id: saved.id, wrong: String(saved.old_price), right: String(saved.price) });
+            else onClose();
           } catch (e) { setErr(e.message); }
         }}>احفظ</Act>
       </div>
