@@ -37,6 +37,9 @@ const rawPool = new Pool({
   max: Number(process.env.DATABASE_POOL_MAX) || 12,
 });
 
+// كل التواريخ بتوقيت الأردن (CURRENT_DATE و ::date) — بدونها بين 12 و3 الفجر بيحسب اليوم اللي قبل
+rawPool.on("connect", (c) => { c.query("SET TIME ZONE 'Asia/Amman'").catch(() => {}); });
+
 const SCHEMA_RE = /^(public|shop_\d+)$/;
 
 export function quoteSchema(schema) {

@@ -175,8 +175,9 @@ router.post("/jard/settle", need("f_money", "edit"), async (req, res) => {
     left = round2(left - give);
     out.push([t, round2(give)]);
   });
-  let required = 0;
-  for (const [t, give] of out) required += (await settleTrip(t, give, req.user)).required;
+  let required = 0, done = 0;
+  for (const [t, give] of out) { const r = await settleTrip(t, give, req.user); if (!r.skipped) { done++; required += r.required; } }
+  if (!done) return bad(res, "التسوية انسجّلت من قبل — حدّث الصفحة.");
   required = round2(required);
   const diff = round2(required - handed);
   const name = trips[0].driver_name || "السائق";

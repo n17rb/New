@@ -122,6 +122,7 @@ export function useLoad(fn, deps = []) {
 // زر بيعمل إجراء وبيمنع الضغط المكرر
 export function Act({ onClick, children, className = "fx-btn", disabled, ...rest }) {
   const [busy, setBusy] = useState(false);
+  const lock = useRef(false); // كبستين ورا بعض بسرعة (قبل ما الزر ينطفي) = وحدة بس
   const fx = useFx();
   return (
     <button
@@ -129,12 +130,15 @@ export function Act({ onClick, children, className = "fx-btn", disabled, ...rest
       className={className}
       disabled={disabled || busy}
       onClick={async (e) => {
+        if (lock.current) return;
+        lock.current = true;
         setBusy(true);
         try {
           await onClick?.(e);
         } catch (err) {
           fx?.toast(err.message);
         } finally {
+          lock.current = false;
           setBusy(false);
         }
       }}

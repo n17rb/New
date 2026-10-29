@@ -352,7 +352,7 @@ function sizeLabel(name = "") {
 }
 
 // اختيار المنتجات بالصور، والكمية بأزرار سريعة (المصانع بتطلب مئات الكراتين)
-const QUICK = [50, 100, 200, 300, 500];
+const QUICK = [10, 20, 50, 100, 200, 500];
 export function ProductPicker({ products, items, setItems, customerId, noBonus = false }) {
   const fx = useFx();
   const canBonus = fx.canAction("give_bonus");
@@ -392,9 +392,9 @@ export function ProductPicker({ products, items, setItems, customerId, noBonus =
               <ProductArt p={p} size={44} />
               <b className="fx-grow">{p.name}</b>
               <div className="fx-stepper">
-                <button type="button" onClick={() => setQty(p.id, Math.max(0, q - 10))} aria-label="ناقص ١٠" dir="ltr">−10</button>
+                <button type="button" onClick={() => setQty(p.id, Math.max(0, q - 1))} aria-label="ناقص واحد" dir="ltr">−</button>
                 <input className="fx-input" type="number" inputMode="numeric" min="1" value={it.qty} placeholder="0" onChange={(e) => setQty(p.id, e.target.value)} aria-label={`كراتين ${p.name}`} />
-                <button type="button" onClick={() => setQty(p.id, q + 10)} aria-label="زايد ١٠" dir="ltr">+10</button>
+                <button type="button" onClick={() => setQty(p.id, q + 1)} aria-label="زايد واحد" dir="ltr">+</button>
               </div>
             </div>
             <div className="fx-chips">{QUICK.map((n) => <button key={n} type="button" className={`fx-chip ${q === n ? "on" : ""}`} onClick={() => setQty(p.id, n)}>{n}</button>)}</div>
