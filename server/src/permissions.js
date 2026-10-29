@@ -117,7 +117,7 @@ export const FACTORY_TEMPLATES = {
   driver: {
     label: "سائق",
     sections: F({ f_drive: "edit" }),
-    actions: { give_credit: true },
+    actions: { give_credit: true, give_bonus: true },
   },
   warehouse: {
     label: "تحميل السيارات والمستودع",

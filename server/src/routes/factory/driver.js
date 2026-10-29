@@ -245,6 +245,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   let total = 0;
   const lines = [];
   const bonusOk = canAction(req.user, "give_bonus");
+  const extraBonus = []; // بونص أعطاه السائق فوق القاعدة — بيوصل للإدارة
   for (const it of o.items) {
     const x = byItem.get(it.id) || {};
     const dq = x.delivered_qty == null ? it.qty : Math.round(Number(x.delivered_qty));
@@ -256,6 +257,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
     if (!(dq >= 0) || dq > 100000) return bad(res, `كمية ${it.name} غير صحيحة.`);
     if (!(db >= 0) || db > 100000) return bad(res, `بونص ${it.name} غير صحيح.`);
     if (db > bonus && !bonusOk) db = bonus; // بونص زيادة بس بصلاحية
+    if (db > bonus) extraBonus.push(`${db - bonus} ${it.name}`);
     if (dmg > Math.max(0, it.qty + bonus - dq - db)) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
     // السعر وقت التسليم = سعر اليوم (سعر الزبون الخاص أو سعر المنتج)، مش السعر وقت تسجيل الطلب
     const price = sale ? Number(it.price) : await priceFor(o.customer_id, it.product_id);
@@ -275,6 +277,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
     const bn = x.bonus !== undefined && bonusOk ? freeB : await bonusFor(o.customer_id, p.id, q);
     total += q * price;
     added.push({ product_id: p.id, name: p.name, qty: q, price, bonus: bn, manual: x.bonus !== undefined && bonusOk });
+    if (x.bonus !== undefined && bonusOk && bn > 0) extraBonus.push(`${bn} ${p.name}`);
   }
   // استبدال تالف: أخذنا من الزبون كراتين تالفة وأعطيناه بدالها جديد (ما بينحسب بالفاتورة)
   const exchanges = [];
@@ -382,6 +385,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   } else if (b.lat && !c.lat) {
     await query("UPDATE f_customers SET lat = $1, lng = $2 WHERE id = $3", [Number(b.lat), Number(b.lng), c.id]);
   }
+  if (extraBonus.length) await alert({ level: "info", kind: "bonus_given", ref: o.id, title: `🎁 ${t.driver_name || "السائق"} أعطى بونص لـ ${c.name}`, body: `${extraBonus.join("، ")} ببلاش (فوق قاعدة البونص) — فاتورة #${o.id}.` });
   if (cliq > 0) await alert({ level: "info", kind: "cliq", ref: o.id, title: `📲 كليك ${cliq.toFixed(2)} د.أ من ${c.name}`, body: `صوّر الوصل ${t.driver_name || "السائق"} — تأكد إنها وصلت الحساب. الصورة: ${b.cliq_photo}` });
   if (debt > 0 && !overLimit) await alert({ level: "warn", kind: "new_debt", ref: c.id, title: `💳 ${c.name} دفع ${cash.toFixed(2)} من ${total.toFixed(2)}`, body: `صار عليه دين ${debt.toFixed(2)} د.أ — رصيده الكلي ${balance.toFixed(2)}. مع ${t.driver_name || "السائق"}.` });
   if (overLimit) await alert({ level: "crit", kind: "credit", ref: c.id, title: `دين فوق السقف — ${c.name}`, body: `صار عليه ${balance.toFixed(2)} د.أ بعد تسليم طلب #${o.id} مع ${t.driver_name || "السائق"}.` });
