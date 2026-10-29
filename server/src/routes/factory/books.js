@@ -90,7 +90,8 @@ router.get("/books/partners/:id", view, async (req, res) => {
      WHERE l.partner_id = $1 ORDER BY l.doc_date DESC, l.id DESC LIMIT 500`,
     [p.id]
   );
-  res.json({ partner: { ...p, balance: Number(p.balance) }, entries: l.rows.map((x) => ({ ...x, amount: Number(x.amount), balance_after: Number(x.balance_after) })) });
+  const ag = await query("SELECT a.*, a.doc_date::text AS doc_date FROM f_agreements a WHERE a.partner_id = $1 ORDER BY a.doc_date DESC, a.id DESC", [p.id]);
+  res.json({ partner: { ...p, balance: Number(p.balance) }, entries: l.rows.map((x) => ({ ...x, amount: Number(x.amount), balance_after: Number(x.balance_after) })), agreements: ag.rows });
 });
 
 router.post("/books/partners/:id/entries", edit, async (req, res) => {
@@ -120,6 +121,120 @@ router.get("/books/partners/:id/message", view, async (req, res) => {
   if (!p) return bad(res, "غير موجودة.", 404);
   const b = await brand();
   res.json({ phone: p.phone, text: `السادة ${p.name} المحترمين،\nرصيد حسابكم عنّا بتاريخ ${jordanDate()}: ${balWord(Number(p.balance))}.\n— ${b.name || "المصنع"}` });
+});
+
+// ---------- الاتفاقيات (بيع / شراء) ----------
+// النماذج الجاهزة. الكلمات بين [ ] بتتبدّل لحالها وقت الطباعة بالأسماء والتاريخ
+const DOTS = "....................";
+export const AGREEMENT_TPL = {
+  sell: `إنه في يوم [اليوم] الموافق [التاريخ] تم الاتفاق بين كل من:
+
+الطرف الأول (البائع): [الطرف الأول]، ويمثله السيد/ [ممثل الطرف الأول].
+الطرف الثاني (المشتري): [الطرف الثاني]، ويمثله السيد/ [ممثل الطرف الثاني].
+
+وقد أقرّ الطرفان بأهليتهما القانونية للتعاقد، واتفقا على ما يلي:
+
+البند الأول: موضوع الاتفاقية
+يلتزم الطرف الأول ببيع وتوريد ${DOTS} للطرف الثاني، حسب المواصفات المتفق عليها.
+
+البند الثاني: الكمية والسعر
+الكمية: ${DOTS}
+السعر: ${DOTS} دينار أردني للوحدة، والمجموع الكلي ${DOTS} دينار أردني.
+
+البند الثالث: التسليم
+يتم التسليم في ${DOTS} خلال ${DOTS} من تاريخ توقيع هذه الاتفاقية، وأجور النقل على ${DOTS}.
+
+البند الرابع: الدفع
+يلتزم الطرف الثاني بدفع الثمن كالتالي: ${DOTS} (نقدًا / شيكات / حوالة بنكية / كليك).
+
+البند الخامس: الجودة والمرتجعات
+يضمن الطرف الأول مطابقة البضاعة للمواصفات، ويحق للطرف الثاني إرجاع أي بضاعة تالفة أو مخالفة خلال ${DOTS} من تاريخ الاستلام.
+
+البند السادس: مدة الاتفاقية
+تسري هذه الاتفاقية من تاريخ توقيعها ولمدة ${DOTS}، وتتجدد تلقائيًا ما لم يُبلغ أحد الطرفين الآخر خطيًا قبل ${DOTS} من انتهائها.
+
+البند السابع: أحكام عامة
+- أي تعديل على هذه الاتفاقية لا يكون نافذًا إلا إذا كان مكتوبًا وموقّعًا من الطرفين.
+- أي خلاف بين الطرفين يُحل وديًا، وإلا تكون محاكم ${DOTS} هي المختصة.
+- حُررت هذه الاتفاقية من نسختين، بيد كل طرف نسخة للعمل بموجبها.`,
+  buy: `إنه في يوم [اليوم] الموافق [التاريخ] تم الاتفاق بين كل من:
+
+الطرف الأول (المشتري): [الطرف الأول]، ويمثله السيد/ [ممثل الطرف الأول].
+الطرف الثاني (البائع): [الطرف الثاني]، ويمثله السيد/ [ممثل الطرف الثاني].
+
+وقد أقرّ الطرفان بأهليتهما القانونية للتعاقد، واتفقا على ما يلي:
+
+البند الأول: موضوع الاتفاقية
+يلتزم الطرف الثاني ببيع وتوريد ${DOTS} للطرف الأول، حسب المواصفات المتفق عليها.
+
+البند الثاني: الكمية والسعر
+الكمية: ${DOTS}
+السعر: ${DOTS} دينار أردني للوحدة، والمجموع الكلي ${DOTS} دينار أردني.
+
+البند الثالث: التسليم
+يلتزم الطرف الثاني بتسليم البضاعة في ${DOTS} خلال ${DOTS} من تاريخ توقيع هذه الاتفاقية، وأجور النقل على ${DOTS}.
+
+البند الرابع: الدفع
+يلتزم الطرف الأول بدفع الثمن كالتالي: ${DOTS} (نقدًا / شيكات / حوالة بنكية / كليك).
+
+البند الخامس: الجودة والكفالة
+يضمن الطرف الثاني مطابقة البضاعة للمواصفات وخلوّها من العيوب، ويحق للطرف الأول إرجاع أي بضاعة تالفة أو مخالفة خلال ${DOTS} من تاريخ الاستلام على حساب الطرف الثاني.
+
+البند السادس: مدة الاتفاقية
+تسري هذه الاتفاقية من تاريخ توقيعها ولمدة ${DOTS}، وتتجدد تلقائيًا ما لم يُبلغ أحد الطرفين الآخر خطيًا قبل ${DOTS} من انتهائها.
+
+البند السابع: أحكام عامة
+- أي تعديل على هذه الاتفاقية لا يكون نافذًا إلا إذا كان مكتوبًا وموقّعًا من الطرفين.
+- أي خلاف بين الطرفين يُحل وديًا، وإلا تكون محاكم ${DOTS} هي المختصة.
+- حُررت هذه الاتفاقية من نسختين، بيد كل طرف نسخة للعمل بموجبها.`,
+};
+const AG_KIND = (k) => (k === "buy" ? "buy" : "sell");
+
+router.get("/books/agreement-templates", view, async (req, res) => {
+  const r = await query("SELECT kind, body FROM f_agreement_templates");
+  const saved = Object.fromEntries(r.rows.map((x) => [x.kind, x.body]));
+  res.json({ sell: saved.sell || AGREEMENT_TPL.sell, buy: saved.buy || AGREEMENT_TPL.buy, defaults: AGREEMENT_TPL, custom: { sell: !!saved.sell, buy: !!saved.buy } });
+});
+router.put("/books/agreement-templates/:kind", edit, async (req, res) => {
+  const kind = AG_KIND(req.params.kind);
+  const body = str(req.body?.body, 30000);
+  if (!body || body === AGREEMENT_TPL[kind]) await query("DELETE FROM f_agreement_templates WHERE kind = $1", [kind]);
+  else await query("INSERT INTO f_agreement_templates (kind, body) VALUES ($1,$2) ON CONFLICT (kind) DO UPDATE SET body = EXCLUDED.body, updated_at = now()", [kind, body]);
+  res.json({ ok: true });
+});
+function agFields(b) {
+  return {
+    kind: AG_KIND(b.kind), title: str(b.title, 120), doc_date: isDate(b.doc_date) ? b.doc_date : jordanDate(),
+    party1: str(b.party1, 160), party1_rep: str(b.party1_rep, 120) || null, party2: str(b.party2, 160), party2_rep: str(b.party2_rep, 120) || null,
+    body: str(b.body, 30000), file_url: b.file_url ? str(b.file_url, 500) : null,
+  };
+}
+router.post("/books/partners/:id/agreements", edit, async (req, res) => {
+  const f = agFields(req.body || {});
+  if (!f.party1 || !f.party2) return bad(res, "اكتب اسم الطرف الأول والطرف الثاني.");
+  if (!f.body) return bad(res, "نص الاتفاقية فاضي.");
+  const r = await query(
+    `INSERT INTO f_agreements (partner_id, kind, title, doc_date, party1, party1_rep, party2, party2_rep, body, file_url, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *, doc_date::text AS doc_date`,
+    [req.params.id, f.kind, f.title || (f.kind === "buy" ? "اتفاقية شراء" : "اتفاقية بيع"), f.doc_date, f.party1, f.party1_rep, f.party2, f.party2_rep, f.body, f.file_url, req.user.id]
+  );
+  res.status(201).json(r.rows[0]);
+});
+router.put("/books/agreements/:id", edit, async (req, res) => {
+  const f = agFields(req.body || {});
+  if (!f.party1 || !f.party2) return bad(res, "اكتب اسم الطرف الأول والطرف الثاني.");
+  if (!f.body) return bad(res, "نص الاتفاقية فاضي.");
+  const r = await query(
+    `UPDATE f_agreements SET kind=$1, title=$2, doc_date=$3, party1=$4, party1_rep=$5, party2=$6, party2_rep=$7, body=$8, file_url=COALESCE($9, file_url), updated_at=now()
+     WHERE id=$10 RETURNING *, doc_date::text AS doc_date`,
+    [f.kind, f.title || (f.kind === "buy" ? "اتفاقية شراء" : "اتفاقية بيع"), f.doc_date, f.party1, f.party1_rep, f.party2, f.party2_rep, f.body, f.file_url, req.params.id]
+  );
+  if (!r.rows[0]) return bad(res, "غير موجودة.", 404);
+  res.json(r.rows[0]);
+});
+router.delete("/books/agreements/:id", edit, async (req, res) => {
+  await query("DELETE FROM f_agreements WHERE id = $1", [req.params.id]);
+  res.json({ ok: true });
 });
 
 // ---------- إعادة التدوير ----------

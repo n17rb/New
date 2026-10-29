@@ -1087,3 +1087,22 @@ a.fx-pill { text-decoration: none; }
 .hm-car .t b { font-size: 14.5px; color: #10304d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hm-car .t small { color: var(--fx-muted); font-size: 12.5px; }
 .hm-car .st { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4a6077; white-space: nowrap; }
+
+/* الاتفاقيات مع الشركات */
+.ag-box { background: #f6f9fc; border-radius: 18px; padding: 12px 14px; display: grid; gap: 8px; }
+.ag-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ag-h b { display: inline-flex; align-items: center; gap: 6px; color: #10304d; }
+.ag-row { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 14px; padding: 10px 12px; }
+.ag-row .t { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.ag-row .t b { font-size: 14.5px; color: #10304d; }
+.ag-row .t small { color: var(--fx-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-kind { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px; flex: none; }
+.ag-kind.sell { background: #e8f6ee; color: #14653a; }
+.ag-kind.buy { background: #edf5fd; color: var(--fx-navy); }
+.ag-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ag-kinds button { border: 1.5px solid #e1e9f1; background: #fff; border-radius: 16px; padding: 14px 10px; font: inherit; display: grid; gap: 2px; justify-items: center; cursor: pointer; color: #10304d; }
+.ag-kinds button small { color: var(--fx-muted); font-size: 12px; }
+.ag-kinds button.on { border-color: var(--fx-navy); background: #f2f7fd; box-shadow: 0 0 0 2px rgba(10, 102, 245, .12); }
+.ag-party { display: grid; gap: 6px; background: #f6f9fc; border-radius: 16px; padding: 10px 12px; }
+.ag-party small { color: var(--fx-muted); font-weight: 700; font-size: 12.5px; }
+.ag-text { min-height: 320px; line-height: 1.9; font-size: 14.5px; resize: vertical; white-space: pre-wrap; }
