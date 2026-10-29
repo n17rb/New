@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiPlus, FiPrinter, FiMessageCircle, FiSearch, FiX } from "react-icons/fi";
+import { FiPlus, FiPrinter, FiMessageCircle, FiSearch, FiX, FiFileText, FiEdit2, FiTrash2, FiRotateCcw } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { openPrint } from "../printView.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, DateInput, SignaturePad, Reload, waLink, money, num, date, dateTime, today } from "../ui.jsx";
@@ -133,6 +133,23 @@ function PartnerSheet({ id, edit, onClose }) {
               </div>
             )}
             {p.phone && <button className="fx-btn sky block" onClick={statement}><FiMessageCircle /> ابعتلهم الرصيد على واتساب</button>}
+
+            <div className="ag-box">
+              <div className="ag-h">
+                <b><FiFileText /> الاتفاقيات</b>
+                {edit && <button className="fx-btn sm pri" onClick={() => setSheet({ kind: "agree" })}><FiPlus /> اتفاقية جديدة</button>}
+              </div>
+              {(data.agreements || []).length === 0 && <div className="fx-muted" style={{ fontSize: 13.5 }}>ما في اتفاقيات. اعمل اتفاقية بيع أو شراء جاهزة، وعدّل عليها اللي بدك.</div>}
+              {(data.agreements || []).map((a) => (
+                <div key={a.id} className="ag-row">
+                  <span className={`ag-kind ${a.kind}`}>{a.kind === "buy" ? "شراء" : "بيع"}</span>
+                  <span className="t"><b>{a.title}</b><small>{date(a.doc_date)} · {a.party1} و{a.party2}</small></span>
+                  <button className="fx-icon-btn sm" aria-label="اطبع" onClick={() => printAgreement(fx, a)}><FiPrinter /></button>
+                  {edit && <button className="fx-icon-btn sm" aria-label="عدّل" onClick={() => setSheet({ kind: "agree", a })}><FiEdit2 /></button>}
+                </div>
+              ))}
+            </div>
+
             <b>الحركة</b>
             {data.entries.length === 0 && <div className="fx-muted">ما في حركة.</div>}
             <div className="fx-list">
@@ -158,9 +175,132 @@ function PartnerSheet({ id, edit, onClose }) {
       {sheet?.kind === "edit" && <PartnerEdit p={p} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {sheet && KINDS[sheet.kind] && <EntrySheet p={p} kind={sheet.kind} onClose={() => setSheet(null)} onDone={(r) => { setSheet(null); reload(); if (r?.message) setMsg({ text: r.message, phone: r.phone }); }} />}
       {sheet?.kind === "file" && <FileSheet e={sheet.e} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
+      {sheet?.kind === "agree" && <AgreementSheet p={p} a={sheet.a} onClose={() => setSheet(null)} onDone={() => { setSheet(null); reload(); }} />}
       {msg && <MsgSheet m={msg} onClose={() => setMsg(null)} />}
     </Sheet>
   );
+}
+
+// ---------- الاتفاقيات ----------
+const AG_TOKENS = ["[الطرف الأول]", "[ممثل الطرف الأول]", "[الطرف الثاني]", "[ممثل الطرف الثاني]", "[التاريخ]", "[اليوم]"];
+const agDate = (d) => { const [y, m, dd] = String(d || "").split("-"); return y ? `${Number(dd)}/${Number(m)}/${y}` : ""; };
+const agDay = (d) => { try { return new Date(`${d}T12:00:00`).toLocaleDateString("ar-JO", { weekday: "long" }); } catch { return ""; } };
+function agFill(a) {
+  const map = {
+    "[الطرف الأول]": a.party1, "[ممثل الطرف الأول]": a.party1_rep || "....................",
+    "[الطرف الثاني]": a.party2, "[ممثل الطرف الثاني]": a.party2_rep || "....................",
+    "[التاريخ]": agDate(a.doc_date), "[اليوم]": agDay(a.doc_date),
+  };
+  return String(a.body || "").replace(/\[(الطرف الأول|ممثل الطرف الأول|الطرف الثاني|ممثل الطرف الثاني|التاريخ|اليوم)\]/g, (m) => map[m] ?? m);
+}
+
+function AgreementSheet({ p, a, onClose, onDone }) {
+  const fx = useFx();
+  const ourName = fx.shop?.brand?.name || fx.boot.factory?.name || fx.shop?.name || "";
+  const { data: tpl } = useLoad(() => fapi.agreementTemplates(), []);
+  const [f, setF] = useState(() => a ? { ...a, party1_rep: a.party1_rep || "", party2_rep: a.party2_rep || "" } : {
+    kind: p.kind === "supplier" ? "buy" : "sell", title: "", doc_date: today(),
+    party1: ourName, party1_rep: fx.isOwner ? fx.user.full_name || "" : "", party2: p.name, party2_rep: p.contact || "", body: "",
+  });
+  const [asDefault, setAsDefault] = useState(false);
+  const [err, setErr] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  // أول ما يوصل النموذج: بنعبّي النص (بس للاتفاقية الجديدة)
+  const body = f.body || (!a && tpl ? tpl[f.kind] : "");
+  const pickKind = (k) => setF({ ...f, kind: k, body: tpl ? tpl[k] : "" });
+  const insert = (t) => {
+    const el = document.getElementById("ag-body");
+    const cur = body;
+    const at = el?.selectionStart ?? cur.length;
+    setF({ ...f, body: cur.slice(0, at) + t + cur.slice(el?.selectionEnd ?? at) });
+    setTimeout(() => { el?.focus(); el?.setSelectionRange(at + t.length, at + t.length); }, 0);
+  };
+  async function save(andPrint) {
+    setErr("");
+    const b = { ...f, body };
+    try {
+      const r = a ? await fapi.editAgreement(a.id, b) : await fapi.addAgreement(p.id, b);
+      if (asDefault) await fapi.saveAgreementTemplate(f.kind, body);
+      fx.toast("انحفظت الاتفاقية");
+      if (andPrint) printAgreement(fx, { ...r, body });
+      onDone();
+    } catch (e) { setErr(e.message); }
+  }
+  return (
+    <Sheet title={a ? "تعديل الاتفاقية" : "اتفاقية جديدة"} onClose={onClose}>
+      <div className="fx-stack">
+        {!a && (
+          <div className="ag-kinds">
+            <button className={f.kind === "sell" ? "on" : ""} onClick={() => pickKind("sell")}><b>اتفاقية بيع</b><small>إحنا بنبيعهم</small></button>
+            <button className={f.kind === "buy" ? "on" : ""} onClick={() => pickKind("buy")}><b>اتفاقية شراء</b><small>إحنا بنشتري منهم</small></button>
+          </div>
+        )}
+        <div className="fx-field">التاريخ<DateInput value={f.doc_date} onChange={(v) => setF({ ...f, doc_date: v })} ariaLabel="تاريخ الاتفاقية" /></div>
+        <div className="ag-party">
+          <small>الطرف الأول ({f.kind === "buy" ? "المشتري" : "البائع"}) — إحنا</small>
+          <input className="fx-input" value={f.party1} onChange={set("party1")} placeholder="اسم المصنع / الشركة" />
+          <input className="fx-input" value={f.party1_rep} onChange={set("party1_rep")} placeholder="يمثّله (اسم الشخص)" />
+        </div>
+        <div className="ag-party">
+          <small>الطرف الثاني ({f.kind === "buy" ? "البائع" : "المشتري"})</small>
+          <input className="fx-input" value={f.party2} onChange={set("party2")} placeholder="اسم الشركة" />
+          <input className="fx-input" value={f.party2_rep} onChange={set("party2_rep")} placeholder="يمثّله (اسم الشخص)" />
+        </div>
+        <label className="fx-field">عنوان الاتفاقية (اختياري)<input className="fx-input" value={f.title} onChange={set("title")} placeholder={f.kind === "buy" ? "اتفاقية شراء" : "اتفاقية بيع"} /></label>
+
+        <div className="fx-field">
+          <div className="fx-row" style={{ justifyContent: "space-between" }}>
+            <span>نص الاتفاقية</span>
+            {tpl && <button type="button" className="fx-link" onClick={() => setF({ ...f, body: tpl[f.kind] })}><FiRotateCcw /> رجّع النموذج</button>}
+          </div>
+          {!tpl && !a ? <Loading /> : (
+            <textarea id="ag-body" className="fx-input ag-text" value={body} onChange={(e) => setF({ ...f, body: e.target.value })} rows={16} />
+          )}
+          <small className="fx-muted">عدّل اللي بدك وعبّي النقط. الكلمات بين [ ] بتتبدّل لحالها بالأسماء والتاريخ وقت الطباعة:</small>
+          <div className="fx-chips">{AG_TOKENS.map((t) => <button key={t} type="button" className="fx-chip" onClick={() => insert(t)}>{t}</button>)}</div>
+        </div>
+        <label className="fx-row" style={{ gap: 8, fontSize: 14 }}><input type="checkbox" checked={asDefault} onChange={(e) => setAsDefault(e.target.checked)} /> خلّي هالنص هو النموذج لاتفاقيات {f.kind === "buy" ? "الشراء" : "البيع"} الجاية</label>
+        <Err msg={err} />
+        <div className="fx-grid2">
+          <Act className="fx-btn block" disabled={!body.trim()} onClick={() => save(false)}>حفظ</Act>
+          <Act className="fx-btn pri block" disabled={!body.trim()} onClick={() => save(true)}><FiPrinter /> حفظ واطبع</Act>
+        </div>
+        {a && (confirmDel
+          ? <div className="fx-row" style={{ justifyContent: "center", gap: 10 }}><span>متأكد؟</span><Act className="fx-btn danger sm" onClick={async () => { await fapi.delAgreement(a.id); fx.toast("انحذفت"); onDone(); }}>احذف</Act><button className="fx-btn sm" onClick={() => setConfirmDel(false)}>لا</button></div>
+          : <button className="fx-link" style={{ justifySelf: "center", color: "var(--fx-crit)" }} onClick={() => setConfirmDel(true)}><FiTrash2 /> احذف الاتفاقية</button>)}
+      </div>
+    </Sheet>
+  );
+}
+
+function printAgreement(fx, a) {
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const b = fx.shop?.brand || {};
+  const buy = a.kind === "buy";
+  const text = agFill(a);
+  const paras = text.split(/\n/).map((ln) => {
+    const t = ln.trim();
+    if (!t) return '<div class="gap"></div>';
+    if (/^البند\s/.test(t)) return `<h3>${esc(t)}</h3>`;
+    if (/^[-•]\s*/.test(t)) return `<p class="li">${esc(t.replace(/^[-•]\s*/, ""))}</p>`;
+    return `<p>${esc(t)}</p>`;
+  }).join("");
+  const box = (role, name, rep) => `<div class="pt"><div class="role">${role}</div><div>${esc(name)}</div><div class="ln">الاسم: ${esc(rep || "")}</div><div class="ln">التوقيع:</div><div class="ln">الختم:</div></div>`;
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(a.title)} — ${esc(a.party2)}</title>
+<style>@page{size:A4;margin:18mm 16mm}body{font-family:"Noto Naskh Arabic","Traditional Arabic",Tahoma,system-ui,sans-serif;color:#111;margin:20px;line-height:1.9;font-size:15px}
+.top{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0456a2;padding-bottom:10px;margin-bottom:6px}.top img{max-height:64px}.top .nm{font-weight:800;font-size:18px}.top small{color:#555}
+h1{text-align:center;font-size:24px;margin:18px 0 4px}.meta{text-align:center;color:#555;font-size:13px;margin-bottom:14px}
+h3{font-size:15.5px;margin:12px 0 2px;color:#0b3d6e}p{margin:0}p.li{padding-inline-start:16px;position:relative}p.li:before{content:"•";position:absolute;inset-inline-start:2px}.gap{height:8px}
+.sig{display:flex;gap:24px;margin-top:36px;break-inside:avoid}.pt{flex:1;border:1px solid #bbb;border-radius:10px;padding:12px 14px;font-size:14px}.pt .role{font-weight:800;margin-bottom:4px;color:#0b3d6e}.pt .ln{border-bottom:1px dotted #999;padding:14px 0 2px}
+@media print{button{display:none}}</style></head><body>
+<div class="top"><div>${b.logo ? `<img src="${esc(b.logo)}" alt="">` : `<div class="nm">${esc(a.party1)}</div>`}</div><div style="text-align:end"><small>${esc(b.phone || "")}</small></div></div>
+<h1>${esc(a.title || (buy ? "اتفاقية شراء" : "اتفاقية بيع"))}</h1>
+<div class="meta">التاريخ: ${esc(agDate(a.doc_date))}</div>
+${paras}
+<div class="sig">${box(`الطرف الأول (${buy ? "المشتري" : "البائع"})`, a.party1, a.party1_rep)}${box(`الطرف الثاني (${buy ? "البائع" : "المشتري"})`, a.party2, a.party2_rep)}</div>
+</body></html>`;
+  openPrint(html);
 }
 
 function MsgSheet({ m, onClose }) {

@@ -1250,6 +1250,30 @@ CREATE TABLE IF NOT EXISTS f_cashbook (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- اتفاقيات البيع والشراء مع الشركات (نص قابل للتعديل، والأسماء والتاريخ بيتعبّوا لحالهم بالطباعة)
+CREATE TABLE IF NOT EXISTS f_agreements (
+  id SERIAL PRIMARY KEY,
+  partner_id INTEGER REFERENCES f_partners(id) ON DELETE CASCADE,
+  kind VARCHAR(6) NOT NULL CHECK (kind IN ('sell','buy')),
+  title VARCHAR(120) NOT NULL,
+  doc_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  party1 VARCHAR(160) NOT NULL,
+  party1_rep VARCHAR(120),
+  party2 VARCHAR(160) NOT NULL,
+  party2_rep VARCHAR(120),
+  body TEXT NOT NULL,
+  file_url TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_f_agreements_partner ON f_agreements(partner_id, doc_date DESC);
+CREATE TABLE IF NOT EXISTS f_agreement_templates (
+  kind VARCHAR(6) PRIMARY KEY CHECK (kind IN ('sell','buy')),
+  body TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS f_handover (
   id SERIAL PRIMARY KEY,
   from_user INTEGER REFERENCES users(id) ON DELETE SET NULL,
