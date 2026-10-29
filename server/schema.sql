@@ -1350,3 +1350,12 @@ ALTER TABLE coupon_sales ADD COLUMN IF NOT EXISTS trip_id INTEGER REFERENCES tri
 
 -- طريقة ترتيب الرحلة: area = خلّص كل منطقة قبل ما تطلع منها، loop = دائرة بأقصر طريق
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS route_style VARCHAR(10) NOT NULL DEFAULT 'area';
+
+-- الطلبات اللي لسا ما انسلّمت دايمًا بسعر اليوم (سعر الزبون الخاص أو سعر المنتج)
+UPDATE f_order_items i
+SET price = COALESCE((SELECT cp.price FROM f_customer_prices cp WHERE cp.customer_id = o.customer_id AND cp.product_id = i.product_id), pr.price)
+FROM f_orders o, f_products pr
+WHERE o.id = i.order_id AND pr.id = i.product_id AND o.status IN ('new','assigned','onway','delayed')
+  AND i.price <> COALESCE((SELECT cp.price FROM f_customer_prices cp WHERE cp.customer_id = o.customer_id AND cp.product_id = i.product_id), pr.price);
+UPDATE f_orders o SET total = s.t FROM (SELECT order_id, COALESCE(SUM(qty * price),0) AS t FROM f_order_items GROUP BY order_id) s
+WHERE s.order_id = o.id AND o.status IN ('new','assigned','onway','delayed') AND o.total <> s.t;
