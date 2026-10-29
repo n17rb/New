@@ -28,6 +28,8 @@ export const fapi = {
 
   // إعدادات
   saveProduct: (p) => (p.id ? put(`/products/${p.id}`, p) : post("/products", p)),
+  priceFixPreview: (q) => get(`/prices/fix-preview?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== "" && v != null)).toString()}`),
+  priceFix: (b) => post("/prices/fix", b),
   productImage: (id, file) => {
     const form = new FormData();
     form.append("photo", file);

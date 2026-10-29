@@ -207,6 +207,17 @@ async function savePrices(client, customerId, prices) {
       await client.query("INSERT INTO f_customer_prices (customer_id, product_id, price) VALUES ($1,$2,$3)", [customerId, p.product_id, v]);
     }
   }
+  // طلبات الزبون اللي لسا ما انسلّمت بتاخذ أسعاره الجديدة
+  const u = await client.query(
+    `UPDATE f_order_items i SET price = COALESCE(cp.price, pr.price)
+     FROM f_orders o, f_products pr LEFT JOIN f_customer_prices cp ON cp.product_id = pr.id AND cp.customer_id = $1
+     WHERE o.id = i.order_id AND pr.id = i.product_id AND o.customer_id = $1 AND o.status IN ('new','assigned','onway','delayed')
+       AND i.price <> COALESCE(cp.price, pr.price)
+     RETURNING i.order_id`,
+    [customerId]
+  );
+  const ids = [...new Set(u.rows.map((x) => x.order_id))];
+  if (ids.length) await client.query("UPDATE f_orders o SET total = (SELECT COALESCE(SUM(qty * price),0) FROM f_order_items WHERE order_id = o.id), updated_at = now() WHERE o.id = ANY($1::int[])", [ids]);
 }
 
 // من الموقع ← المحافظة واللواء والمنطقة (لما تختار موقع الزبون)
