@@ -255,3 +255,5 @@ export function PlaceChips({ items, value, onChange, noun = "طلب" }) {
     </div>
   );
 }
+
+export const placeName = (x) => area(x);

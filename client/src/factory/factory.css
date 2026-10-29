@@ -1141,3 +1141,4 @@ a.fx-pill { text-decoration: none; }
 .sm-chip.on { border-color: var(--fx-navy); color: var(--fx-navy); font-weight: 700; }
 .sm-chip.ok { background: #e8f6ee; border-color: #c9ead6; color: #14653a; }
 .sm-chip.no { opacity: .45; }
+.fx-sel-places { display: block; font-size: 12px; opacity: .85; font-weight: 600; margin-top: 2px; }
