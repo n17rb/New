@@ -223,6 +223,7 @@ export default function Drive() {
               <button className="fx-btn" onClick={() => setSheet({ kind: "cash" })}>حسابي اليوم</button>
             </div>
           )}
+          <NoLocation />
           <button className="fx-link" style={{ justifySelf: "start", color: "var(--fx-crit)" }} onClick={() => setSheet({ kind: "problem" })}><FiAlertTriangle /> صار معي مشكلة (عطل، حادث…)</button>
         </>
       )}
@@ -658,5 +659,32 @@ function PickDebtor({ onClose, onPick }) {
         </div>
       </div>
     </Sheet>
+  );
+}
+
+// تذكير: محلات سجّلتها بدون موقع — لما تمر عند واحد اكبس «أنا عنده هلأ»
+function NoLocation() {
+  const fx = useFx();
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(0);
+  const load = () => fapi.driverNoLocation().then(setList).catch(() => setList([]));
+  useEffect(() => { load(); }, []);
+  if (!list?.length) return null;
+  return (
+    <div className="fx-noloc">
+      <b>📍 {list.length === 1 ? "محل سجّلته بدون موقع" : `${list.length} محلات سجّلتهم بدون موقع`}</b>
+      <small>لما تكون عند المحل اكبس «أنا عنده هلأ» — بدون موقع ما بنقدر نوصله.</small>
+      {list.map((c) => (
+        <div key={c.id} className="row">
+          <span className="t"><b>{c.name}</b><small>{[c.city, c.phone].filter(Boolean).join(" · ")}</small></span>
+          <button className="fx-btn sm pri" disabled={!!busy} onClick={async () => {
+            setBusy(c.id);
+            const loc = await getLocation(12000, 0);
+            if (!loc) { setBusy(0); return fx.toast("شغّل الموقع (GPS) على تلفونك."); }
+            try { await fapi.customerLocation(c.id, loc.lat, loc.lng); fx.toast(`انحفظ موقع ${c.name}`); await load(); } catch (e) { fx.toast(e.message); } finally { setBusy(0); }
+          }}>{busy === c.id ? "لحظة..." : "أنا عنده هلأ"}</button>
+        </div>
+      ))}
+    </div>
   );
 }

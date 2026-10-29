@@ -103,8 +103,12 @@ function CustomerEdit({ c, onClose, onSaved }) {
   const [err, setErr] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
+  // السائق ما بيحفظ زبون بدون موقع (هو عند المحل — كبسة «أنا عنده هلأ» وخلص)
+  const mustLoc = fx.can("f_drive", "edit") && !fx.can("f_customers", "edit") && !fx.can("f_orders", "edit");
+  const noLoc = f.lat === "" || f.lat == null;
   const save = async () => {
     setErr("");
+    if (mustLoc && noLoc) { setErr("لازم تحفظ موقع المحل قبل ما تحفظ الزبون — اكبس «أنا عنده هلأ»."); document.querySelector(".fx-loc-need")?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     try {
       await fapi.saveCustomer({ ...f, id: c?.id, prices: Object.entries(prices).map(([product_id, price]) => ({ product_id: Number(product_id), price })) });
       fx.toast("انحفظ الزبون");
@@ -128,7 +132,8 @@ function CustomerEdit({ c, onClose, onSaved }) {
           <input className="fx-input" inputMode="tel" dir="ltr" value={f.phone} onChange={set("phone")} placeholder="07XXXXXXXX" />
         </label>
 
-        <div className="fx-sf">الموقع
+        <div className={`fx-sf ${mustLoc && noLoc ? "fx-loc-need" : ""}`}><span>الموقع {mustLoc ? <span className="req">(لازم)</span> : null}</span>
+          {mustLoc && noLoc && <small className="fx-loc-why">إنت عند المحل؟ اكبس «أنا عنده هلأ» — بدون موقع ما بينحفظ الزبون.</small>}
           <SimpleLocation f={f} setF={setF} />
         </div>
         <AutoRegion f={f} setF={setF} />
@@ -175,7 +180,7 @@ function CustomerEdit({ c, onClose, onSaved }) {
         </details>
 
         <Err msg={err} />
-        <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}>احفظ الزبون</Act>
+        <Act className="fx-btn pri block fx-big" disabled={!f.name.trim()} onClick={save}>{mustLoc && noLoc ? "حدد الموقع أول" : "احفظ الزبون"}</Act>
       </div>
     </Sheet>
   );

@@ -13,6 +13,9 @@ const router = Router();
 const view = needAny(["f_customers"], ["f_orders"], ["f_dispatch"], ["f_money"], ["f_drive", "edit"]);
 const edit = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"]);
 const editOrFleet = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"], ["f_fleet", "edit"]);
+// السائق (بدون صلاحية الزباين أو الطلبات) لازم يحفظ موقع المحل مع الزبون — هو واقف عنده
+const driverOnly = (u) => can(u, "f_drive", "edit") && !can(u, "f_customers", "edit") && !can(u, "f_orders", "edit");
+const NEED_LOC = "لازم تحفظ موقع المحل قبل ما تحفظ الزبون — اكبس «أنا عنده هلأ».";
 const str = (v, n = 150) => (v == null || v === "" ? null : String(v).trim().slice(0, n));
 
 // الزباين القدام اللي ما إلهم محافظة/لواء: منطلعهم من اسم المنطقة
@@ -230,6 +233,7 @@ router.post("/customers-region", async (req, res) => {
 router.post("/customers", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
   if (!can(req.user, "f_customers", "edit")) Object.assign(c, { pay_terms: "cash", credit_limit: 0 }); // شروط الدفع للإدارة
+  if (driverOnly(req.user) && (c.lat == null || c.lng == null)) return res.status(400).json({ error: NEED_LOC, code: "NEED_LOCATION" });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -269,6 +273,7 @@ router.put("/customers/:id", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
   // السائق/المدخل بيعدّل البيانات (الاسم، التلفون، الموقع، الصورة…) بس مش شروط الدفع ولا السقف ولا الخط ولا الأسعار
   const full = can(req.user, "f_customers", "edit");
+  if (driverOnly(req.user) && (c.lat == null || c.lng == null)) return res.status(400).json({ error: NEED_LOC, code: "NEED_LOCATION" });
   if (!full) {
     const old = (await query("SELECT line_id, pay_terms, credit_limit, seq_no FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
     if (!old) return bad(res, "الزبون غير موجود.", 404);
