@@ -6,9 +6,18 @@ import { Sheet, num } from "./ui.jsx";
 // فلترة حسب المنطقة: المحافظة ← اللواء ← المنطقة، وجنب كل وحدة كم طلب/زبون فيها
 // ============================================================
 const NONE = "غير محدد";
-const gov = (x) => x.governorate || NONE;
-const dist = (x) => x.district || NONE;
-const area = (x) => (x.city || "").trim() || NONE;
+// توحيد الكتابة: «اربد» و«إربد» و«محافظة إربد» = إربد، و«لواء الرمثا» و«الرمثا» = الرمثا
+const GOVS = ["عمّان", "الزرقاء", "إربد", "المفرق", "جرش", "عجلون", "البلقاء", "مادبا", "الكرك", "الطفيلة", "معان", "العقبة"];
+const nk = (s) => String(s || "")
+  .replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي")
+  .replace(/^(محافظه|لواء|قصبه|منطقه|مدينه)\s+/, "").replace(/\s+/g, " ").trim().replace(/^ال(?=..)/, "");
+const GOV_BY_KEY = new Map([...GOVS.map((g) => [nk(g), g]), [nk("العاصمة"), "عمّان"], [nk("عمان"), "عمّان"], [nk("الزرقا"), "الزرقاء"]]);
+const clean = (s) => String(s || "").replace(/^(محافظة|محافظه|لواء|منطقة|منطقه)\s+/, "").replace(/\s+/g, " ").trim();
+const LABELS = new Map(); // أول كتابة شفناها لكل اسم = اللي بتنعرض
+const label = (s) => { const c = clean(s); if (!c) return NONE; const k = nk(c); if (GOV_BY_KEY.has(k)) return GOV_BY_KEY.get(k); if (!LABELS.has(k)) LABELS.set(k, c); return LABELS.get(k); };
+const gov = (x) => { const c = clean(x.governorate); return c ? GOV_BY_KEY.get(nk(c)) || label(c) : NONE; };
+const dist = (x) => (x.district ? label(x.district) : NONE);
+const area = (x) => label((x.city || "").trim() || clean(x.district).replace(/^قصبة\s+/, ""));
 
 export function matchRegion(x, f) {
   if (!f) return true;
@@ -207,5 +216,42 @@ export function AreasFilter({ items, value = [], onChange, noun = "طلب" }) {
         </Sheet>
       )}
     </>
+  );
+}
+
+// ============================================================
+// فلتر الطلبات السريع: صف محافظات، وتحته مناطق المحافظة اللي فتحتها (صريح، الحصن، الرمثا…)
+// كبسة وحدة بتوريك طلبات المكان، وبتقدر تختار أكثر من منطقة
+// ============================================================
+export function matchPlace(x, v) {
+  if (!v?.gov) return true;
+  if (gov(x) !== v.gov) return false;
+  return !v.areas?.length || v.areas.includes(nk(area(x)));
+}
+export function PlaceChips({ items, value, onChange, noun = "طلب" }) {
+  const v = value || { gov: null, areas: [] };
+  const govs = useMemo(() => countBy(items, gov), [items]);
+  const inGov = useMemo(() => (v.gov ? items.filter((x) => gov(x) === v.gov) : []), [items, v.gov]);
+  const areas = useMemo(() => {
+    const m = new Map();
+    for (const x of inGov) { const a = area(x); const k = nk(a); const e = m.get(k) || { k, a, n: 0 }; e.n++; m.set(k, e); }
+    return [...m.values()].sort((a, b) => (a.a === NONE) - (b.a === NONE) || b.n - a.n);
+  }, [inGov]);
+  const pickGov = (g) => onChange(g === v.gov ? { gov: null, areas: [] } : { gov: g, areas: [] });
+  const toggleArea = (k) => onChange({ gov: v.gov, areas: v.areas.includes(k) ? v.areas.filter((x) => x !== k) : [...v.areas, k] });
+  return (
+    <div className="fx-place">
+      <div className="fx-place-row">
+        <button className={`fx-place-chip ${!v.gov ? "on" : ""}`} onClick={() => onChange({ gov: null, areas: [] })}>الكل <i>{num(items.length)}</i></button>
+        {govs.map(([g, n]) => <button key={g} className={`fx-place-chip ${v.gov === g ? "on" : ""}`} onClick={() => pickGov(g)}>{g} <i>{num(n)}</i></button>)}
+      </div>
+      {v.gov && areas.length > 1 && (
+        <div className="fx-place-sub">
+          <button className={`fx-place-chip sm ${!v.areas.length ? "on" : ""}`} onClick={() => onChange({ gov: v.gov, areas: [] })}>كل {v.gov} <i>{num(inGov.length)}</i></button>
+          {areas.map((a) => <button key={a.k} className={`fx-place-chip sm ${v.areas.includes(a.k) ? "on" : ""}`} onClick={() => toggleArea(a.k)}>{a.a} <i>{num(a.n)}</i></button>)}
+        </div>
+      )}
+      {v.gov && <small className="fx-muted">{num(items.filter((x) => matchPlace(x, v)).length)} {noun} {v.areas.length ? `بـ ${areas.filter((a) => v.areas.includes(a.k)).map((a) => a.a).join(" و")}` : `بـ ${v.gov}`}</small>}
+    </div>
   );
 }
