@@ -4,7 +4,7 @@ import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
 import { smartFilter } from "../../utils/fuzzySearch.js";
-import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers, alert } from "./lib.js";
+import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers, alert, once } from "./lib.js";
 
 // ============================================================
 // المصنع: الزباين، أسعارهم الخاصة، كشف الحساب، الدفعات، والرسائل
@@ -323,7 +323,7 @@ router.delete("/customers/:id", need("f_customers", "edit"), async (req, res) =>
 });
 
 // ---------- دفعة من الزبون (كاش، شيك، تحويل) ----------
-router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customers", "edit"], ["f_drive", "edit"]), async (req, res) => {
+router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customers", "edit"], ["f_drive", "edit"]), once(async (req, res) => {
   const amount = round2(req.body?.amount);
   if (!(amount > 0)) return bad(res, "اكتب المبلغ.");
   // السائق قبض دين: كاش بس، وبينضاف على الكاش اللي معه برحلته (بيسلّمه بالتسوية)
@@ -340,8 +340,10 @@ router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customer
   const method = tripId ? (req.body?.method === "cliq" ? "cliq" : "cash") : ["cash", "cheque", "transfer", "cliq"].includes(req.body?.method) ? req.body.method : "cash";
   if (method === "cliq" && !req.body?.photo_url) return bad(res, "صوّر وصل الكليك.");
   if (method === "cheque" && !req.body?.cheque_no) return bad(res, "اكتب رقم الشيك.");
-  const c = (await query("SELECT id, name FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
+  const c = (await query("SELECT id, name, balance FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
   if (!c) return bad(res, "الزبون غير موجود.", 404);
+  // السائق قبض أكثر من الدين؟ غالبًا رقم غلط
+  if (tripId && amount > Math.max(0, Number(c.balance) || 0) + 0.009) return bad(res, `عليه ${Math.max(0, Number(c.balance) || 0).toFixed(2)} بس — تأكد من المبلغ.`);
   const balance = await postLedger(null, {
     customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null, tripId,
     chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300) || (tripId ? (method === "cliq" ? `كليك — صوّره ${req.user.full_name}` : `قبضها ${req.user.full_name}`) : null), userId: req.user.id,
@@ -352,11 +354,11 @@ router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customer
   await logActivity({ userId: req.user.id, action: "F_CUSTOMER_PAYMENT", recordType: "f_customer", recordId: c.id, newValue: { amount, method } });
   await pushManagers({ title: `💵 ${c.name} دفع ${amount.toFixed(2)} د.أ`, body: `${balance > 0.009 ? `باقي عليه ${balance.toFixed(2)}` : "سدّ كل الدين ✓"} · قبضها ${req.user.full_name}.`, url: "/f/debts", tag: `pay-${c.id}`, except: req.user.id });
   res.json({ ok: true, balance, message_id });
-});
+}));
 
 // تعديل رصيد يدوي (بسبب) — للحسابات
 // الإدارة بتسجّل دين على زبون (دين قديم، بضاعة أخذها بدون فاتورة…)
-router.post("/customers/:id/debt", needAny(["f_money", "edit"], ["f_customers", "edit"]), async (req, res) => {
+router.post("/customers/:id/debt", needAny(["f_money", "edit"], ["f_customers", "edit"]), once(async (req, res) => {
   const amount = round2(req.body?.amount);
   if (!(amount > 0)) return bad(res, "اكتب مبلغ الدين.");
   const c = (await query("SELECT id, name, lat FROM f_customers WHERE id = $1 AND active", [req.params.id])).rows[0];
@@ -365,9 +367,9 @@ router.post("/customers/:id/debt", needAny(["f_money", "edit"], ["f_customers", 
   const balance = await postLedger(null, { customerId: c.id, kind: "adjust", amount, note, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CUSTOMER_DEBT", recordType: "f_customer", recordId: c.id, newValue: { amount, note } });
   res.json({ ok: true, balance, no_location: c.lat == null });
-});
+}));
 
-router.post("/customers/:id/adjust", need("f_money", "edit"), async (req, res) => {
+router.post("/customers/:id/adjust", need("f_money", "edit"), once(async (req, res) => {
   const amount = round2(req.body?.amount);
   const note = str(req.body?.note, 300);
   if (!amount) return bad(res, "اكتب المبلغ (موجب يزيد الدين، سالب ينزّله).");
@@ -375,7 +377,7 @@ router.post("/customers/:id/adjust", need("f_money", "edit"), async (req, res) =
   const balance = await postLedger(null, { customerId: Number(req.params.id), kind: "adjust", amount, note, userId: req.user.id });
   await logActivity({ userId: req.user.id, action: "F_CUSTOMER_ADJUST", recordType: "f_customer", recordId: Number(req.params.id), newValue: { amount, note } });
   res.json({ ok: true, balance });
-});
+}));
 
 // ---------- رابط المتابعة للزبون ----------
 router.post("/customers/:id/track-link", view, async (req, res) => {

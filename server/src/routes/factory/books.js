@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
-import { need, needAny, bad, round2, jordanDate, pushTo, brand } from "./lib.js";
+import { need, needAny, bad, round2, jordanDate, pushTo, brand, once } from "./lib.js";
 
 // ============================================================
 // الدفاتر: الشركات (موردين ومشترين كبار) — مين بدّه منّا ومين علينا، بفواتير رسمية وملفاتها
@@ -94,7 +94,7 @@ router.get("/books/partners/:id", view, async (req, res) => {
   res.json({ partner: { ...p, balance: Number(p.balance) }, entries: l.rows.map((x) => ({ ...x, amount: Number(x.amount), balance_after: Number(x.balance_after) })), agreements: ag.rows });
 });
 
-router.post("/books/partners/:id/entries", edit, async (req, res) => {
+router.post("/books/partners/:id/entries", edit, once(async (req, res) => {
   const b = req.body || {};
   if (!SIGN[b.kind]) return bad(res, "اختار نوع الحركة.");
   let amount = round2(b.amount);
@@ -106,7 +106,7 @@ router.post("/books/partners/:id/entries", edit, async (req, res) => {
   const { entry, partner } = await addEntry(req.params.id, { ...b, amount, items }, req.user);
   await logActivity({ userId: req.user.id, action: "F_PARTNER_ENTRY", recordType: "f_partner", recordId: partner.id, newValue: { kind: b.kind, amount } }).catch(() => {});
   res.status(201).json({ entry: { ...entry, amount: Number(entry.amount) }, balance: Number(partner.balance), message: await partnerMsg(partner, { ...entry, doc_date: isDate(b.doc_date) ? b.doc_date : jordanDate(), amount: Number(entry.amount) }, Number(partner.balance)), phone: partner.phone });
-});
+}));
 
 // إرفاق الفاتورة المختومة (صورة/PDF) بعد الطباعة والختم
 router.post("/books/entries/:id/file", edit, async (req, res) => {
@@ -248,7 +248,7 @@ router.get("/books/recycle", view, async (req, res) => {
   }
   res.json({ rows, materials: Object.values(mats).map((m) => ({ ...m, left_kg: round2(m.in_kg - m.sold_kg), amount: round2(m.amount), received: round2(m.received), due: round2(m.amount - m.received) })) });
 });
-router.post("/books/recycle", edit, async (req, res) => {
+router.post("/books/recycle", edit, once(async (req, res) => {
   const b = req.body || {};
   const material = str(b.material, 30);
   const kind = b.kind === "sale" ? "sale" : "in";
@@ -267,8 +267,8 @@ router.post("/books/recycle", edit, async (req, res) => {
     if (received > 0) await addEntry(b.partner_id, { kind: "received", amount: received, method: "كاش", note: `ثمن ${material}` }, req.user);
   }
   res.status(201).json(r.rows[0]);
-});
-router.post("/books/recycle/:id/receive", edit, async (req, res) => {
+}));
+router.post("/books/recycle/:id/receive", edit, once(async (req, res) => {
   const x = (await query("SELECT * FROM f_recycle WHERE id = $1 AND kind = 'sale'", [req.params.id])).rows[0];
   if (!x) return bad(res, "غير موجود.", 404);
   const amt = round2(req.body?.amount);
@@ -276,7 +276,7 @@ router.post("/books/recycle/:id/receive", edit, async (req, res) => {
   await query("UPDATE f_recycle SET received = received + $1 WHERE id = $2", [amt, x.id]);
   if (x.partner_id) await addEntry(x.partner_id, { kind: "received", amount: amt, method: "كاش", note: `ثمن ${x.material}` }, req.user);
   res.json({ ok: true });
-});
+}));
 
 // ---------- الصندوق: دخل وصرف عام (مبيعات، بيع أرض، إيجار، رواتب…) ----------
 router.get("/books/cash", view, async (req, res) => {
@@ -290,7 +290,7 @@ router.get("/books/cash", view, async (req, res) => {
   const cats = (await query("SELECT kind, category, COUNT(*)::int AS n FROM f_cashbook GROUP BY kind, category ORDER BY n DESC LIMIT 40")).rows;
   res.json({ from, to, rows, in: round2(rows.filter((x) => x.kind === "in").reduce((a, x) => a + x.amount, 0)), out: round2(rows.filter((x) => x.kind === "out").reduce((a, x) => a + x.amount, 0)), categories: cats });
 });
-router.post("/books/cash", edit, async (req, res) => {
+router.post("/books/cash", edit, once(async (req, res) => {
   const b = req.body || {};
   const kind = b.kind === "in" ? "in" : "out";
   const category = str(b.category, 60);
@@ -301,7 +301,7 @@ router.post("/books/cash", edit, async (req, res) => {
     [kind, category, amount, isDate(b.doc_date) ? b.doc_date : jordanDate(), str(b.note, 500) || null, b.file_url || null, req.user.id]
   );
   res.status(201).json(r.rows[0]);
-});
+}));
 router.delete("/books/cash/:id", edit, async (req, res) => {
   await query("DELETE FROM f_cashbook WHERE id = $1 AND created_at > now() - interval '1 day'", [req.params.id]);
   res.json({ ok: true });
@@ -377,7 +377,7 @@ router.put("/books/meters/:id", edit, async (req, res) => {
   const r = await query("UPDATE f_meters SET name = $1, number = $2, site_id = $3, notes = $4, active = $5, line_id = $7 WHERE id = $6 RETURNING *", [str(b.name, 80) || "عداد", str(b.number, 40) || null, Number(b.site_id) || null, str(b.notes, 300) || null, b.active !== false, req.params.id, Number(b.line_id) || null]);
   res.json(r.rows[0] || {});
 });
-router.post("/books/meters/:id/entries", edit, async (req, res) => {
+router.post("/books/meters/:id/entries", edit, once(async (req, res) => {
   const m = (await query("SELECT * FROM f_meters WHERE id = $1", [req.params.id])).rows[0];
   if (!m) return bad(res, "العداد غير موجود.", 404);
   const b = req.body || {};
@@ -399,7 +399,7 @@ router.post("/books/meters/:id/entries", edit, async (req, res) => {
     [m.id, isDate(b.doc_date) ? b.doc_date : jordanDate(), reading, prev, consumption, unitPrice, amount, num(b.liters), str(b.bill_no, 40) || null, !!b.paid, b.photo_url || null, str(b.note, 300) || null, req.user.id]
   );
   res.status(201).json({ ...r.rows[0], amount, consumption });
-});
+}));
 router.post("/books/meter-entries/:id/paid", edit, async (req, res) => {
   await query("UPDATE f_meter_entries SET paid = true, paid_at = now() WHERE id = $1", [req.params.id]);
   res.json({ ok: true });

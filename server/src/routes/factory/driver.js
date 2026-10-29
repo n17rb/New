@@ -74,6 +74,9 @@ export async function confirmLoad(tripId, userId, extra = []) {
   const t = (await query("SELECT * FROM f_trips WHERE id = $1", [tripId])).rows[0];
   if (!t) throw new Error("الرحلة غير موجودة.");
   if (t.load_confirmed_at) return;
+  // بنحجز التأكيد أول: لو السائق وأمين المستودع أكّدوا بنفس اللحظة، الحمولة بتنسجّل مرة وحدة
+  const claim = await query("UPDATE f_trips SET load_confirmed_at = now(), load_confirmed_by = $1 WHERE id = $2 AND load_confirmed_at IS NULL RETURNING id", [userId, tripId]);
+  if (!claim.rows.length) return;
   const items = (await query(
     `SELECT i.product_id, SUM(i.qty + i.bonus_qty)::int AS qty FROM f_orders o JOIN f_order_items i ON i.order_id = o.id
      WHERE o.trip_id = $1 AND o.status IN ('assigned','onway','delayed') GROUP BY i.product_id`,
@@ -90,7 +93,7 @@ export async function confirmLoad(tripId, userId, extra = []) {
       extraTotal += q;
     }
   }
-  await query("UPDATE f_trips SET load_confirmed_at = now(), load_confirmed_by = $1, extra_cartons = $2 WHERE id = $3", [userId, extraTotal, tripId]);
+  await query("UPDATE f_trips SET extra_cartons = $1 WHERE id = $2", [extraTotal, tripId]);
 }
 
 // السائق بيوقّع على استلام الحمولة — أو بيبلّغ إنه في فرق
@@ -254,8 +257,10 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
     if (!(db >= 0) || db > 100000) return bad(res, `بونص ${it.name} غير صحيح.`);
     if (db > bonus && !bonusOk) db = bonus; // بونص زيادة بس بصلاحية
     if (dmg > Math.max(0, it.qty + bonus - dq - db)) return bad(res, `التالف من ${it.name} أكثر من الراجع.`);
-    total += dq * it.price; // البونص ببلاش: ما بينحسب بالفاتورة
-    lines.push({ ...it, dq, dmg, db });
+    // السعر وقت التسليم = سعر اليوم (سعر الزبون الخاص أو سعر المنتج)، مش السعر وقت تسجيل الطلب
+    const price = sale ? Number(it.price) : await priceFor(o.customer_id, it.product_id);
+    total += dq * price; // البونص ببلاش: ما بينحسب بالفاتورة
+    lines.push({ ...it, price, dq, dmg, db });
   }
   // منتج ما كان بالطلب وأخذه الزبون من السيارة
   const added = [];
@@ -289,6 +294,9 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   const c = (await query("SELECT * FROM f_customers WHERE id = $1", [o.customer_id])).rows[0];
   // موقع الزبون مش محفوظ؟ لازم ينحفظ مع أول فاتورة (من موقع السائق عنده)
   if (c.lat == null && !(Number(b.lat) && Number(b.lng))) return res.status(400).json({ error: "موقع الزبون مش محفوظ — شغّل الموقع على تلفونك واحفظه قبل الفاتورة.", code: "NEED_LOCATION" });
+  // رقم غلط بالكاش (صفر زيادة مثلًا)؟ المبلغ ما بيصير أكثر من الفاتورة + دينه القديم
+  const maxPay = round2(total + Math.max(0, Number(c.balance) || 0));
+  if (round2(cash + cliq) > maxPay + 0.009) return bad(res, `المبلغ ${round2(cash + cliq).toFixed(2)} أكثر من الفاتورة ودينه القديم (${maxPay.toFixed(2)}) — تأكد من الرقم.`);
   const newBal = round2(Number(c.balance) + debt);
   let overLimit = false;
   if (debt > 0) {
@@ -320,7 +328,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
       await client.query("INSERT INTO f_order_items (order_id, product_id, qty, price, delivered_qty, bonus_qty, delivered_bonus, bonus_manual) VALUES ($1,$2,$3,$4,$3,$5,$5,$6)", [o.id, a.product_id, a.qty, a.price, a.bonus, a.manual]);
     }
     for (const l of lines) {
-      await client.query("UPDATE f_order_items SET delivered_qty = $1, damaged_qty = $2, delivered_bonus = $3 WHERE id = $4", [l.dq, l.dmg, l.db, l.id]);
+      await client.query("UPDATE f_order_items SET delivered_qty = $1, damaged_qty = $2, delivered_bonus = $3, price = $4 WHERE id = $5", [l.dq, l.dmg, l.db, l.price, l.id]);
       if (l.dmg > 0) {
         await client.query(
           "INSERT INTO f_stock_moves (product_id, kind, qty, damage_source, trip_id, vehicle_id, reason, photo_url, created_by) VALUES ($1,'damage',$2,'vehicle',$3,$4,$5,$6,$7)",
@@ -694,6 +702,9 @@ router.post("/driver/sales/:id/sell", drive, once(async (req, res) => {
   if (!(cash >= 0)) return bad(res, "المبلغ غير صحيح.");
   if (cliqS > 0 && !b.cliq_photo) return bad(res, "صوّر وصل الكليك من تلفون الزبون.");
   const debt = round2(total - cash - cliqS);
+  // رقم غلط بالكاش (صفر زيادة مثلًا)؟ المبلغ ما بيصير أكثر من الفاتورة + دينه القديم
+  const maxPayS = round2(total + Math.max(0, Number(c.balance) || 0));
+  if (round2(cash + cliqS) > maxPayS + 0.009) return bad(res, `المبلغ ${round2(cash + cliqS).toFixed(2)} أكثر من الفاتورة ودينه القديم (${maxPayS.toFixed(2)}) — تأكد من الرقم.`);
   if (debt > 0) {
     if (!canAction(req.user, "give_credit")) return bad(res, "ما عندك صلاحية تبيع بالدين — خذ المبلغ كامل.");
     const newBal = round2(Number(c.balance) + debt);

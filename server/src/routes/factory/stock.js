@@ -236,6 +236,9 @@ router.post("/stock/trips/:id/returns", editStock, async (req, res) => {
   if (!t) return bad(res, "الرحلة غير موجودة.", 404);
   if (t.status !== "returned" && t.status !== "closed") return bad(res, "السيارة لسا ما رجعت.");
   if (t.returns_received_at) return bad(res, "المرتجع انستلم من قبل.");
+  // بنحجز الاستلام أول: لو انكبس مرتين بنفس اللحظة، المرتجع ما بيدخل المستودع مرتين
+  const claim = await query("UPDATE f_trips SET returns_received_at = now(), returns_received_by = $1 WHERE id = $2 AND returns_received_at IS NULL RETURNING id", [req.user.id, t.id]);
+  if (!claim.rows.length) return bad(res, "المرتجع انستلم من قبل.");
   const expected = expectedReturns(t);
   const got = new Map((req.body?.items || []).map((i) => [Number(i.product_id), Math.max(0, Math.round(Number(i.qty) || 0))]));
   const short = [];
@@ -264,7 +267,6 @@ router.post("/stock/trips/:id/returns", editStock, async (req, res) => {
     )).rows[0];
     if (good > 0) salvageNew.push({ id: sv2.id, name: e.name, good });
   }
-  await query("UPDATE f_trips SET returns_received_at = now(), returns_received_by = $1 WHERE id = $2", [req.user.id, t.id]);
   // الإنتاج بيوصله إشعار: في تالف صالح بانتظارك تأكّد استلامه
   if (salvageNew.length) {
     const prod = (await query("SELECT id, role, permissions FROM users WHERE status = 'active'")).rows.filter((u) => u.role !== "super_admin" && can(u, "f_production", "edit"));

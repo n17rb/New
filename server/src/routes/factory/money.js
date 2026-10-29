@@ -22,10 +22,12 @@ router.get("/money/settlements", viewMoney, async (req, res) => {
 export async function settleTrip(t, handed, user) {
   const required = round2(t.cash_due);
   const diff = round2(required - handed);
-  await query(
-    "UPDATE f_trips SET required_cash = $1, handed_cash = $2, cash_diff = $3, settled_by = $4, settled_at = now() WHERE id = $5",
+  // «AND settled_at IS NULL»: لو انكبس زر التسوية مرتين بنفس اللحظة، بتنسجّل مرة وحدة بس
+  const u = await query(
+    "UPDATE f_trips SET required_cash = $1, handed_cash = $2, cash_diff = $3, settled_by = $4, settled_at = now() WHERE id = $5 AND settled_at IS NULL RETURNING id",
     [required, handed, diff, user.id, t.id]
   );
+  if (!u.rows.length) return { required: 0, handed: 0, diff: 0, skipped: true };
   if (diff !== 0 && t.driver_id) {
     await query(
       "INSERT INTO f_driver_ledger (driver_id, kind, amount, trip_id, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)",
@@ -44,7 +46,8 @@ router.post("/money/trips/:id/cash", editMoney, async (req, res) => {
   if (t.settled_at) return bad(res, "الكاش انستلم من قبل.");
   const handed = round2(req.body?.handed);
   if (!(handed >= 0)) return bad(res, "اكتب المبلغ اللي استلمته.");
-  const { required, diff } = await settleTrip(t, handed, req.user);
+  const { required, diff, skipped } = await settleTrip(t, handed, req.user);
+  if (skipped) return bad(res, "الكاش انستلم من قبل.");
   if (diff > 0) await alert({ level: "crit", kind: "cash_short", ref: t.id, title: `نقص ${diff.toFixed(2)} د.أ بكاش ${t.driver_name || "السائق"}`, body: `المحصّل ${t.collected.toFixed(2)} − مصاريف ${t.expenses_total.toFixed(2)} = ${required.toFixed(2)}، والمسلّم ${handed.toFixed(2)}. انسجّل عهدة.` });
   else await alert({ level: "ok", kind: "cash_ok", ref: t.id, title: `${t.driver_name || "السائق"} سلّم ${handed.toFixed(2)} د.أ`, body: `المحصّل ${t.collected.toFixed(2)} − مصاريف ${t.expenses_total.toFixed(2)}.${diff < 0 ? ` زيادة ${(-diff).toFixed(2)}.` : " مطابق."}` });
   res.json({ ok: true, required, handed, diff });
