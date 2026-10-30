@@ -1213,3 +1213,7 @@ a.fx-pill { text-decoration: none; }
 .sum-sub b { color: #a32020; }
 .fx-place-chip.edit { background: transparent; border-style: dashed; color: var(--fx-navy); }
 .fx-place-chip.ghost { background: #f6f9fc; color: #6b7f95; }
+
+/* المصانع بالمزيد: بدون سحب — اثنين بكل صف، والأخير لحاله بالنص */
+.fx-plants { flex-wrap: wrap; justify-content: center; overflow: visible; scroll-snap-type: none; margin: 0; padding: 2px 0 4px; }
+.fx-plants > .fx-plant-card, .fx-plants > .fx-tile { flex: 0 0 calc(50% - 5px); scroll-snap-align: none; }
