@@ -11,6 +11,7 @@ import { need, needAny, bad, round2, jordanDate, pushTo, brand, once } from "./l
 const router = Router();
 const view = needAny(["f_money"], ["f_home"]);
 const edit = need("f_money", "edit");
+const editCash = needAny(["f_money", "edit"], ["f_home"]); // الإدارة بتسجّل مصاريف وضيافة بنفسها زي المحاسب
 const str = (v, n) => (v == null ? "" : String(v).trim().slice(0, n));
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
 const money = (n) => Number(n || 0).toFixed(2);
@@ -290,7 +291,7 @@ router.get("/books/cash", view, async (req, res) => {
   const cats = (await query("SELECT kind, category, COUNT(*)::int AS n FROM f_cashbook GROUP BY kind, category ORDER BY n DESC LIMIT 40")).rows;
   res.json({ from, to, rows, in: round2(rows.filter((x) => x.kind === "in").reduce((a, x) => a + x.amount, 0)), out: round2(rows.filter((x) => x.kind === "out").reduce((a, x) => a + x.amount, 0)), categories: cats });
 });
-router.post("/books/cash", edit, once(async (req, res) => {
+router.post("/books/cash", editCash, once(async (req, res) => {
   const b = req.body || {};
   const kind = b.kind === "in" ? "in" : "out";
   const category = str(b.category, 60);
@@ -302,7 +303,7 @@ router.post("/books/cash", edit, once(async (req, res) => {
   );
   res.status(201).json(r.rows[0]);
 }));
-router.delete("/books/cash/:id", edit, async (req, res) => {
+router.delete("/books/cash/:id", editCash, async (req, res) => {
   await query("DELETE FROM f_cashbook WHERE id = $1 AND created_at > now() - interval '1 day'", [req.params.id]);
   res.json({ ok: true });
 });
