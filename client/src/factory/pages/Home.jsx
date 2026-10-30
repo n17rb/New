@@ -84,7 +84,10 @@ export default function Home() {
             <section className="fx-card fx-stack" style={{ gap: 12 }}>
               <div className="fx-row" style={{ justifyContent: "space-between" }}>
                 <b>إنتاج اليوم</b>
-                <span className="fx-num" style={{ fontWeight: 800, color: "var(--fx-navy)" }}>{num(h.production)} <small className="fx-muted" style={{ fontWeight: 500 }}>كرتونة</small></span>
+                <span className="fx-row" style={{ gap: 10 }}>
+                  <span className="fx-num" style={{ fontWeight: 800, color: "var(--fx-navy)" }}>{num(h.production)} <small className="fx-muted" style={{ fontWeight: 500 }}>كرتونة</small></span>
+                  <button className="fx-link" onClick={() => nav("/f/stock?tab=plog")}>التفاصيل</button>
+                </span>
               </div>
               {h.production_by_line.map((l) => {
                 const max = Math.max(1, ...h.production_by_line.map((x) => x.n));

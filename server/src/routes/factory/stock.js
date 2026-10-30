@@ -91,6 +91,35 @@ router.get("/stock/moves", viewStock, async (req, res) => {
   res.json(r.rows);
 });
 
+// ---------- سجل الإنتاج المفصّل: لكل مصنع، كل منتج، كل وردية، وكل تسجيل ----------
+router.get("/stock/production-log", viewStock, async (req, res) => {
+  const isD = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+  const to = isD(req.query.to) ? req.query.to : jordanDate();
+  const from = isD(req.query.from) ? req.query.from : to;
+  const W = "m.kind = 'production' AND (m.created_at AT TIME ZONE 'Asia/Amman')::date BETWEEN $1 AND $2";
+  const [lines, byProd, byShift, entries, days] = await Promise.all([
+    query("SELECT id, name, photo_url FROM f_plines WHERE active ORDER BY id"),
+    query(`SELECT m.line_id, p.id AS product_id, p.name, p.image_url, p.per_carton, SUM(m.qty)::int AS n FROM f_stock_moves m JOIN f_products p ON p.id = m.product_id WHERE ${W} GROUP BY m.line_id, p.id ORDER BY n DESC`, [from, to]),
+    query(`SELECT m.line_id, COALESCE(m.shift, 'بدون') AS shift, SUM(m.qty)::int AS n FROM f_stock_moves m WHERE ${W} GROUP BY m.line_id, m.shift`, [from, to]),
+    query(`SELECT m.id, m.line_id, m.qty, m.shift, m.created_at, p.name AS product_name, u.full_name AS by_name, mc.name AS machine_name
+           FROM f_stock_moves m JOIN f_products p ON p.id = m.product_id LEFT JOIN users u ON u.id = m.created_by LEFT JOIN f_machines mc ON mc.id = m.machine_id
+           WHERE ${W} ORDER BY m.id DESC LIMIT 300`, [from, to]),
+    query(`SELECT to_char((m.created_at AT TIME ZONE 'Asia/Amman')::date, 'YYYY-MM-DD') AS d, SUM(m.qty)::int AS n FROM f_stock_moves m WHERE ${W} GROUP BY 1 ORDER BY 1`, [from, to]),
+  ]);
+  const pack = (id) => ({
+    products: byProd.rows.filter((x) => (x.line_id || 0) === id).map(({ line_id, ...x }) => x),
+    shifts: byShift.rows.filter((x) => (x.line_id || 0) === id).map(({ line_id, ...x }) => x),
+    entries: entries.rows.filter((x) => (x.line_id || 0) === id),
+  });
+  const out = lines.rows.map((l) => { const p = pack(l.id); return { ...l, n: p.products.reduce((a, x) => a + x.n, 0), ...p }; });
+  const none = pack(0);
+  if (none.products.length) out.push({ id: 0, name: "بدون مصنع محدد", n: none.products.reduce((a, x) => a + x.n, 0), ...none });
+  // المجموع لكل منتج بكل المصانع
+  const totals = new Map();
+  for (const x of byProd.rows) { const t = totals.get(x.product_id) || { product_id: x.product_id, name: x.name, image_url: x.image_url, n: 0 }; t.n += x.n; totals.set(x.product_id, t); }
+  res.json({ from, to, total: out.reduce((a, l) => a + l.n, 0), lines: out, products: [...totals.values()].sort((a, b) => b.n - a.n), days: days.rows });
+});
+
 // ---------- الإنتاج ----------
 router.post("/stock/production", editProd, async (req, res) => {
   const pid = Number(req.body?.product_id);
