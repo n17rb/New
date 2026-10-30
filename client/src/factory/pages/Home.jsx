@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { lazy, Suspense, useEffect, useState } from "react";
 const LiveMap = lazy(() => import("./Live.jsx").then((m) => ({ default: m.LiveMap })));
+const CashSheet = lazy(() => import("./Books.jsx").then((m) => ({ default: m.CashSheet })));
 import { FiCheckCircle, FiChevronLeft, FiChevronDown, FiTruck, FiMaximize2 } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
@@ -40,6 +41,7 @@ export default function Home() {
   const nav = useNavigate();
   const { data: h, error, reload } = useLoad(() => fapi.home(), []);
   const [carsOpen, setCarsOpen] = useState(false);
+  const [cash, setCash] = useState(null);
   const b = fx.boot;
   const needsSetup = fx.isOwner && !b.setup_done && (b.counts.products === 0 || b.counts.vehicles === 0 || b.counts.customers === 0);
 
@@ -54,6 +56,13 @@ export default function Home() {
       </div>
 
       <PushCard />
+      {fx.can("f_home") && (
+        <div className="hm-quick">
+          <button onClick={() => setCash("out")}><span>−</span> مصروف أو ضيافة</button>
+          <button onClick={() => setCash("in")}><span>+</span> دخل للصندوق</button>
+        </div>
+      )}
+      {cash && <Suspense fallback={null}><CashSheet kind={cash} cats={[]} onClose={() => setCash(null)} onDone={() => { setCash(null); fx.toast("انسجّل بالصندوق"); }} /></Suspense>}
       {needsSetup && (
         <button className="fx-card soft fx-row" style={{ textAlign: "start", font: "inherit", cursor: "pointer", border: 0 }} onClick={() => nav("/f/setup")}>
           <FiCheckCircle style={{ width: 26, height: 26, color: "var(--fx-navy)" }} />

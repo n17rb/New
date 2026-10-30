@@ -418,7 +418,7 @@ ${e.note ? `<p style="font-size:13px">ملاحظات: ${esc(e.note)}</p>` : ""}
 const CASH_CATS = { in: ["مبيعات مباشرة", "بيع أرض/أصول", "قرض", "رأس مال", "دخل ثاني"], out: ["ضيافة", "إيجار", "رواتب", "كهربا", "مي", "ضرايب ورسوم", "صيانة", "مصاريف مكتب", "مصاريف ثانية"] };
 function Cash() {
   const fx = useFx();
-  const edit = fx.can("f_money", "edit");
+  const edit = fx.can("f_money", "edit") || fx.can("f_home");
   const [from, setFrom] = useState(() => today().slice(0, 8) + "01");
   const [to, setTo] = useState(today());
   const { data, error, reload } = useLoad(() => fapi.cashbook({ from, to }), [from, to]);
@@ -460,7 +460,7 @@ function Cash() {
     </div>
   );
 }
-function CashSheet({ kind, cats, onClose, onDone }) {
+export function CashSheet({ kind, cats, onClose, onDone }) {
   const fx = useFx();
   const used = cats.filter((c) => c.kind === kind).map((c) => c.category);
   const opts = [...new Set([...CASH_CATS[kind], ...used])].slice(0, 16);

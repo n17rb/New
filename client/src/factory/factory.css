@@ -1217,3 +1217,9 @@ a.fx-pill { text-decoration: none; }
 /* المصانع بالمزيد: بدون سحب — اثنين بكل صف، والأخير لحاله بالنص */
 .fx-plants { flex-wrap: wrap; justify-content: center; overflow: visible; scroll-snap-type: none; margin: 0; padding: 2px 0 4px; }
 .fx-plants > .fx-plant-card, .fx-plants > .fx-tile { flex: 0 0 calc(50% - 5px); scroll-snap-align: none; }
+
+/* الرئيسية: تسجيل مصروف بسرعة */
+.hm-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hm-quick button { border: 0; border-radius: 16px; background: #fff; box-shadow: 0 1px 8px rgba(16, 48, 77, .06); padding: 14px 10px; font: inherit; font-weight: 700; font-size: 14.5px; color: #10304d; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+.hm-quick button span { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; font-weight: 800; background: #fdecec; color: #c43d3d; }
+.hm-quick button + button span { background: #e8f6ee; color: #1f9d55; }
