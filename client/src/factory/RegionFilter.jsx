@@ -16,7 +16,13 @@ const GOV_BY_KEY = new Map([...GOVS.map((g) => [nk(g), g]), [nk("العاصمة"
 const clean = (s) => String(s || "").replace(/^(محافظة|محافظه|لواء|منطقة|منطقه)\s+/, "").replace(/\s+/g, " ").trim();
 const LABELS = new Map(); // أول كتابة شفناها لكل اسم = اللي بتنعرض
 const label = (s) => { const c = clean(s); if (!c) return NONE; const k = nk(c); if (GOV_BY_KEY.has(k)) return GOV_BY_KEY.get(k); if (!LABELS.has(k)) LABELS.set(k, c); return LABELS.get(k); };
-const gov = (x) => { const c = clean(x.governorate); return c ? GOV_BY_KEY.get(nk(c)) || label(c) : NONE; };
+// مناطق بنعاملها كأنها محافظة لحالها (الرمثا: لواء بإربد، بس شغلها كبير فإلها مناطقها)
+const OWN = ["الرمثا"];
+const OWN_KEYS = new Set(OWN.map(nk));
+const gov = (x) => {
+  for (const f of [x.district, x.city]) { const k = nk(clean(f).replace(/^قصبة\s+/, "")); if (OWN_KEYS.has(k)) return OWN.find((o) => nk(o) === k); }
+  const c = clean(x.governorate); return c ? GOV_BY_KEY.get(nk(c)) || label(c) : NONE;
+};
 const dist = (x) => (x.district ? label(x.district) : NONE);
 const area = (x) => label((x.city || "").trim() || clean(x.district).replace(/^قصبة\s+/, ""));
 
@@ -238,7 +244,7 @@ export function matchPlace(x, v, lines = []) {
   if (v.zones?.length) return v.zones.includes(zoneOf(x, zonesFor(lines, v.gov)));
   return !v.areas?.length || v.areas.includes(nk(area(x)));
 }
-const FIXED_GOVS = ["إربد", "جرش", "عجلون", "المفرق"]; // المحافظات الثابتة — بتطلع دايمًا حتى لو ما فيها طلبات
+const FIXED_GOVS = ["إربد", "الرمثا", "جرش", "عجلون", "المفرق"]; // المحافظات الثابتة — بتطلع دايمًا حتى لو ما فيها طلبات
 export function PlaceChips({ items, value, onChange, noun = "طلب", lines = [], onEditZones }) {
   const v = { gov: null, areas: [], zones: [], lines: [], ...(value || {}) };
   const govs = useMemo(() => {
