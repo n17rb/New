@@ -1211,3 +1211,5 @@ a.fx-pill { text-decoration: none; }
 .sum-sub { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
 .sum-sub span { background: #fdf2f2; color: #8a3a3a; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; }
 .sum-sub b { color: #a32020; }
+.fx-place-chip.edit { background: transparent; border-style: dashed; color: var(--fx-navy); }
+.fx-place-chip.ghost { background: #f6f9fc; color: #6b7f95; }

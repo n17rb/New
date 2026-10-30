@@ -3,13 +3,14 @@ import { query, logActivity } from "../../db.js";
 import { uploadSingleImage, saveCompressedImage } from "../../middleware/upload.js";
 import { can } from "../../permissions.js";
 import { CITIES, GOVERNORATES } from "../../utils/factoryGeo.js";
-import { need, bad, brand, settings, factoryPoint, round2, checkVehicleDocs } from "./lib.js";
+import { need, needAny, bad, brand, settings, factoryPoint, round2, checkVehicleDocs } from "./lib.js";
 
 // ============================================================
 // المصنع: الإعدادات الأساسية — المنتجات، السيارات، الخطوط، المكنات، المواد الخام، هوية المصنع
 // ============================================================
 const router = Router();
 const edit = need("f_fleet", "edit");
+const editLines = needAny(["f_fleet", "edit"], ["f_dispatch", "edit"]); // المناطق والقوائم: الإدارة ومسؤول الحركة
 const str = (v, n = 100) => (v == null || v === "" ? null : String(v).trim().slice(0, n));
 const int = (v, d = 0) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : d);
 
@@ -188,18 +189,18 @@ function cleanLine(b) {
   const days = Array.isArray(b.days) ? b.days.filter((d) => d >= 0 && d <= 6).join(",") : str(b.days, 20);
   return { name, governorate: str(b.governorate, 60), vehicle_id: b.vehicle_id ? Number(b.vehicle_id) : null, days: days || null };
 }
-router.post("/lines", edit, async (req, res) => {
+router.post("/lines", editLines, async (req, res) => {
   let l; try { l = cleanLine(req.body || {}); } catch (e) { return bad(res, e.message); }
   const r = await query("INSERT INTO f_lines (name, governorate, vehicle_id, days) VALUES ($1,$2,$3,$4) RETURNING *", [l.name, l.governorate, l.vehicle_id, l.days]);
   res.status(201).json(r.rows[0]);
 });
-router.put("/lines/:id", edit, async (req, res) => {
+router.put("/lines/:id", editLines, async (req, res) => {
   let l; try { l = cleanLine(req.body || {}); } catch (e) { return bad(res, e.message); }
   const r = await query("UPDATE f_lines SET name=$1, governorate=$2, vehicle_id=$3, days=$4 WHERE id=$5 RETURNING *", [l.name, l.governorate, l.vehicle_id, l.days, req.params.id]);
   if (!r.rows[0]) return bad(res, "الخط غير موجود.", 404);
   res.json(r.rows[0]);
 });
-router.delete("/lines/:id", edit, async (req, res) => {
+router.delete("/lines/:id", editLines, async (req, res) => {
   await query("UPDATE f_lines SET active = false WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
