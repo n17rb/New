@@ -18,12 +18,18 @@ router.get("/packages", async (req, res) => {
   res.json(result.rows);
 });
 
+export function packageLabel(coupons, bonus = 0) {
+  const n = Number(coupons) || 0;
+  const w = n === 1 ? "كوبون واحد" : n === 2 ? "كوبونين" : n >= 3 && n <= 10 ? `${n} كوبونات` : `${n} كوبون`;
+  return bonus > 0 ? `${w} + ${bonus} هدية` : w;
+}
+
 function cleanPackage(body) {
-  const name = String(body?.name || "").trim().slice(0, 100);
   const coupons = Math.floor(Number(body?.coupons));
   const bonus = Math.max(0, Math.floor(Number(body?.bonus_coupons) || 0));
   const price = round2(body?.price);
-  if (!name) return { error: "اكتب اسم الباقة." };
+  // ما في اسم للباقة — بتنعرف بعدد كوبوناتها («١٠ كوبونات + ٢ هدية»)
+  const name = packageLabel(coupons, bonus);
   if (!Number.isInteger(coupons) || coupons <= 0 || coupons > 1000) return { error: "عدد الكوبونات لازم يكون بين 1 و 1000." };
   if (!Number.isFinite(price) || price < 0) return { error: "السعر غير صحيح." };
   return {

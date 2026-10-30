@@ -106,7 +106,7 @@ export function SellPackageSheet({ open, stop, onClose, onSaved }) {
     setError("");
     try {
       const r = await api.sellPackageInTrip(stop.id, { package_id: pkg.id, paid_amount: paidNum });
-      onSaved?.(`✅ انباعت ${pkg.name} — صار معه ${r.coupon_balance} كوبون`);
+      onSaved?.(`✅ انباعت الباقة — صار معه ${r.coupon_balance} كوبون`);
       onClose();
     } catch (e) {
       setError(e.message);
@@ -132,10 +132,8 @@ export function SellPackageSheet({ open, stop, onClose, onSaved }) {
       <div className="pk-list">
         {(packages || []).map((p) => (
           <button key={p.id} type="button" className={`pk-card${pick === p.id ? " on" : ""}`} onClick={() => setPick(p.id)}>
-            <span className="pk-name">{p.name}</span>
-            <span className="pk-c tabular-num">
-              {p.coupons} كوبون{p.bonus_coupons > 0 && <em> + {p.bonus_coupons} هدية</em>}
-            </span>
+            <span className="pk-name tabular-num">{p.coupons} كوبون</span>
+            {p.bonus_coupons > 0 && <span className="pk-c tabular-num"><em>+ {p.bonus_coupons} هدية</em></span>}
             <span className="pk-price tabular-num">{Number(p.price).toFixed(2)} <small>JD</small></span>
           </button>
         ))}

@@ -14,7 +14,6 @@ function lowBalanceLink(c) {
 }
 
 function PackageForm({ initial, onCancel, onSaved }) {
-  const [name, setName] = useState(initial?.name || "");
   const [coupons, setCoupons] = useState(initial?.coupons ?? "");
   const [bonus, setBonus] = useState(initial?.bonus_coupons ?? 0);
   const [price, setPrice] = useState(initial?.price != null ? String(Number(initial.price)) : "");
@@ -37,7 +36,7 @@ function PackageForm({ initial, onCancel, onSaved }) {
     setSaving(true);
     setError("");
     try {
-      const body = { name, coupons: Number(coupons), bonus_coupons: Number(bonus) || 0, price: Number(price), description, status: initial?.status || "active" };
+      const body = { coupons: Number(coupons), bonus_coupons: Number(bonus) || 0, price: Number(price), description, status: initial?.status || "active" };
       const saved = initial ? await api.updateCouponPackage(initial.id, body) : await api.createCouponPackage(body);
       if (image) await api.uploadCouponPackageImage(saved.id, image);
       onSaved();
@@ -57,10 +56,6 @@ function PackageForm({ initial, onCancel, onSaved }) {
         <input type="file" accept="image/*" onChange={pick} style={{ display: "none" }} />
       </label>
 
-      <div className="field">
-        <label htmlFor="pk-name">اسم الباقة</label>
-        <input id="pk-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: باقة التوفير" />
-      </div>
       <div className="field-row">
         <div className="field">
           <label htmlFor="pk-c">عدد الكوبونات</label>
@@ -84,7 +79,7 @@ function PackageForm({ initial, onCancel, onSaved }) {
         <label htmlFor="pk-d">وصف قصير (اختياري)</label>
         <input id="pk-d" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="مثلاً: الأوفر للعائلات" />
       </div>
-      <button className="btn-primary" style={{ marginBottom: 8 }} disabled={saving || !name || !coupons || price === ""} onClick={save}>
+      <button className="btn-primary" style={{ marginBottom: 8 }} disabled={saving || !coupons || price === ""} onClick={save}>
         {saving ? "جاري الحفظ..." : initial ? "حفظ التعديل" : "إضافة الباقة"}
       </button>
       <button className="btn-secondary" onClick={onCancel}>إلغاء</button>

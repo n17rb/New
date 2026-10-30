@@ -1378,3 +1378,13 @@ ALTER TABLE f_stock_moves ADD CONSTRAINT f_stock_moves_kind_check CHECK (kind IN
 
 -- تفاصيل الصرفيات لكل يوم: [{name, amount}] — والمجموع بينحفظ بـ expense_amount
 ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS expense_items JSONB;
+
+-- الباقات بدون أسماء: الاسم = عدد الكوبونات (+ الهدية)
+UPDATE coupon_packages SET name = (
+  CASE WHEN coupons = 1 THEN 'كوبون واحد' WHEN coupons = 2 THEN 'كوبونين'
+       WHEN coupons BETWEEN 3 AND 10 THEN coupons || ' كوبونات' ELSE coupons || ' كوبون' END
+  || CASE WHEN bonus_coupons > 0 THEN ' + ' || bonus_coupons || ' هدية' ELSE '' END)
+WHERE name IS DISTINCT FROM (
+  CASE WHEN coupons = 1 THEN 'كوبون واحد' WHEN coupons = 2 THEN 'كوبونين'
+       WHEN coupons BETWEEN 3 AND 10 THEN coupons || ' كوبونات' ELSE coupons || ' كوبون' END
+  || CASE WHEN bonus_coupons > 0 THEN ' + ' || bonus_coupons || ' هدية' ELSE '' END);
