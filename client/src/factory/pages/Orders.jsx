@@ -3,7 +3,7 @@ import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, Fi
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today, DateInput } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
-import { PlaceChips, matchPlace, placeName } from "../RegionFilter.jsx";
+import { PlaceChips, matchPlace, placeName, ZonesEditor, zonesFor } from "../RegionFilter.jsx";
 import { FiGift } from "react-icons/fi";
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
@@ -20,10 +20,10 @@ export default function Orders() {
   const [msgs, setMsgs] = useState(null);
 
   // المناطق اللي اختارها (بتنحفظ على هالتلفون)
-  const [region, setRegionS] = useState(() => { try { const v = JSON.parse(localStorage.getItem("fx-orders-place") || "null"); return v && typeof v === "object" ? { gov: v.gov || null, areas: Array.isArray(v.areas) ? v.areas : [], lines: Array.isArray(v.lines) ? v.lines : [] } : { gov: null, areas: [], lines: [] }; } catch { return { gov: null, areas: [], lines: [] }; } });
+  const [region, setRegionS] = useState(() => { try { const v = JSON.parse(localStorage.getItem("fx-orders-place") || "null"); return v && typeof v === "object" ? { gov: v.gov || null, areas: Array.isArray(v.areas) ? v.areas : [], lines: Array.isArray(v.lines) ? v.lines : [], zones: Array.isArray(v.zones) ? v.zones : [] } : { gov: null, areas: [], lines: [], zones: [] }; } catch { return { gov: null, areas: [], lines: [], zones: [] }; } });
   const setRegion = (v) => { setRegionS(v); try { localStorage.setItem("fx-orders-place", JSON.stringify(v)); } catch { /* */ } };
   const all = data || [];
-  const open = all.filter((o) => matchPlace(o, region));
+  const open = all.filter((o) => matchPlace(o, region, fx.boot.lines || []));
   const free = open.filter((o) => !o.trip_id && ["new", "delayed"].includes(o.status));
   const assigned = open.filter((o) => o.trip_id);
   const canList = fx.can("f_customers", "edit") || fx.can("f_dispatch", "edit");
@@ -84,7 +84,7 @@ export default function Orders() {
 
           {editOrders && <PostponeCard onDone={reload} />}
 
-          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => setRegion(r)} noun="طلب" lines={fx.boot.lines || []} />}
+          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => setRegion(r)} noun="طلب" lines={fx.boot.lines || []} onEditZones={canList ? (g) => setSheet({ kind: "zones", g }) : undefined} />}
 
           {cur === "free" && (
             <>
@@ -131,7 +131,7 @@ export default function Orders() {
             <div className="fx-clist">
               {!done && <Loading />}
               {done && done.length === 0 && <div className="fx-empty-soft">ما خلص إشي آخر ٣ أيام.</div>}
-              {done?.filter((o) => matchPlace(o, region)).map((o) => (
+              {done?.filter((o) => matchPlace(o, region, fx.boot.lines || [])).map((o) => (
                 <div key={o.id} className="fx-crow">
                   <button className="fx-plain fx-crow-main" onClick={() => setSheet({ kind: "info", o })}>
                     <span className="t">
@@ -152,13 +152,14 @@ export default function Orders() {
         <div className="fx-selbar">
           <span className="fx-grow"><b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة{selPlaces.length > 1 && <small className="fx-sel-places">{selPlaces.map(([k, n]) => `${n} ${k}`).join(" · ")}</small>}</span>
           <button className="fx-btn sm" onClick={() => setSel([])}>إلغاء</button>
-          {canList && <button className="fx-btn sm" onClick={() => setSheet({ kind: "list" })}><FiList /> قائمة</button>}
+          {canList && <button className="fx-btn sm" onClick={() => setSheet({ kind: "list" })}><FiList /> منطقة</button>}
           <button className="fx-btn pri" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}><FiTruck /> حطها على سيارة</button>
         </div>
       )}
 
       {sheet?.kind === "carops" && <CarOrderOps o={sheet.o} g={sheet.g} onClose={() => setSheet(null)} onMove={() => setSheet({ kind: "move", o: sheet.o })} onDone={() => { setSheet(null); reload(); }} />}
-      {sheet?.kind === "list" && <ListSheet orders={all.filter((o) => sel.includes(o.id))} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await fx.reloadBoot?.(); reload(); }} />}
+      {sheet?.kind === "zones" && <ZonesEditor gov={sheet.g} onClose={() => setSheet(null)} />}
+      {sheet?.kind === "list" && <ListSheet gov={region.gov} orders={all.filter((o) => sel.includes(o.id))} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await fx.reloadBoot?.(); reload(); }} />}
       {sheet?.kind === "new" && <OrderSheet onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "edit" && <OrderSheet order={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "info" && ["delivered", "failed"].includes(sheet.o.status) && <StopSheet o={sheet.o} onClose={() => setSheet(null)} />}
@@ -725,9 +726,11 @@ function PostponeCard({ onDone }) {
 }
 
 // حط زباين الطلبات المحددة بقائمة (مثلًا «صريح وعجلون») — أو اعمل قائمة جديدة
-function ListSheet({ orders, onClose, onDone }) {
+function ListSheet({ gov, orders, onClose, onDone }) {
   const fx = useFx();
-  const lines = fx.boot.lines || [];
+  const all = fx.boot.lines || [];
+  const mine = gov ? zonesFor(all, gov) : [];
+  const lines = gov ? [...mine, ...all.filter((l) => !mine.includes(l))] : all;
   const custIds = [...new Set(orders.map((o) => o.customer_id))];
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
@@ -736,11 +739,11 @@ function ListSheet({ orders, onClose, onDone }) {
     try { const r = await fapi.setCustomersLine({ customer_ids: custIds, ...b }); fx.toast(r.line ? `انحطّوا بقائمة ${r.line.name}` : "انشالوا من القائمة"); await onDone(); } catch (e) { setErr(e.message); }
   };
   return (
-    <Sheet title={`حط ${custIds.length} ${custIds.length === 1 ? "زبون" : "زباين"} بقائمة`} onClose={onClose}>
+    <Sheet title={`حط ${custIds.length} ${custIds.length === 1 ? "زبون" : "زباين"} بمنطقة`} onClose={onClose}>
       <div className="fx-stack">
-        <div className="fx-note sky">القائمة زي الخط: بتجمع زباين مع بعض (مثلًا «صريح وعجلون»). بعدها بتكبس على القائمة فوق الطلبات وبتطلعلك طلباتهم بس.</div>
+        <div className="fx-note sky">{gov ? `اختار وين هالزباين بـ${gov} (وسط ${gov}، أطراف ${gov}، صريح…). بعدها بتكبس على المنطقة وبتطلعلك طلباتها بس.` : "القائمة بتجمع زباين مع بعض (مثلًا «صريح وعجلون»). بعدها بتكبس عليها وبتطلعلك طلباتهم بس."}</div>
         <div className="fx-chips">{orders.slice(0, 12).map((o) => <span key={o.id} className="fx-chip">{o.customer_name}</span>)}{orders.length > 12 && <span className="fx-chip">+{orders.length - 12}</span>}</div>
-        {lines.length > 0 && <b>اختار قائمة</b>}
+        {lines.length > 0 && <b>{gov && mine.length ? `مناطق ${gov}` : "اختار منطقة أو قائمة"}</b>}
         <div className="fx-list">
           {lines.map((l) => (
             <Act key={l.id} className="fx-item" onClick={() => go({ line_id: l.id })}>
@@ -749,13 +752,13 @@ function ListSheet({ orders, onClose, onDone }) {
             </Act>
           ))}
         </div>
-        <b>أو قائمة جديدة</b>
+        <b>{gov ? `أو منطقة جديدة بـ${gov}` : "أو قائمة جديدة"}</b>
         <div className="fx-row" style={{ flexWrap: "nowrap" }}>
-          <input className="fx-input fx-grow" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلًا: صريح وعجلون" />
-          <Act className="fx-btn pri" disabled={!name.trim()} onClick={() => go({ new_name: name.trim() })}>اعملها</Act>
+          <input className="fx-input fx-grow" value={name} onChange={(e) => setName(e.target.value)} placeholder={gov ? `مثلًا: وسط ${gov}` : "مثلًا: صريح وعجلون"} />
+          <Act className="fx-btn pri" disabled={!name.trim()} onClick={() => go({ new_name: name.trim(), governorate: gov || undefined })}>اعملها</Act>
         </div>
         <Err msg={err} />
-        <Act className="fx-link" style={{ justifySelf: "center" }} onClick={() => go({ line_id: null })}>شيلهم من أي قائمة</Act>
+        <Act className="fx-link" style={{ justifySelf: "center" }} onClick={() => go({ line_id: null })}>شيلهم من أي منطقة</Act>
       </div>
     </Sheet>
   );

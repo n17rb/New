@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { FiMapPin, FiX, FiChevronLeft, FiArrowRight } from "react-icons/fi";
-import { Sheet, num } from "./ui.jsx";
+import { Sheet, num, useFx } from "./ui.jsx";
+import { fapi } from "./fapi.js";
 
 // ============================================================
 // فلترة حسب المنطقة: المحافظة ← اللواء ← المنطقة، وجنب كل وحدة كم طلب/زبون فيها
@@ -223,15 +224,23 @@ export function AreasFilter({ items, value = [], onChange, noun = "طلب" }) {
 // فلتر الطلبات السريع: صف محافظات، وتحته مناطق المحافظة اللي فتحتها (صريح، الحصن، الرمثا…)
 // كبسة وحدة بتوريك طلبات المكان، وبتقدر تختار أكثر من منطقة
 // ============================================================
-export function matchPlace(x, v) {
+// المنطقة اللي إلها الزبون من «مناطقي» (اللي إنت كاتبها) — بالقائمة نفسها، أو باسم البلد إذا نفس الاسم
+function zoneOf(x, zones) {
+  if (x.line_id && zones.some((z) => z.id === x.line_id)) return x.line_id;
+  const k = nk(area(x));
+  return zones.find((z) => nk(z.name) === k)?.id || 0;
+}
+const zonesFor = (lines, g) => lines.filter((l) => l.governorate && (GOV_BY_KEY.get(nk(clean(l.governorate))) || label(l.governorate)) === g);
+export function matchPlace(x, v, lines = []) {
   if (v?.lines?.length) return v.lines.includes(x.line_id || 0);
   if (!v?.gov) return true;
   if (gov(x) !== v.gov) return false;
+  if (v.zones?.length) return v.zones.includes(zoneOf(x, zonesFor(lines, v.gov)));
   return !v.areas?.length || v.areas.includes(nk(area(x)));
 }
 const FIXED_GOVS = ["إربد", "جرش", "عجلون", "المفرق"]; // المحافظات الثابتة — بتطلع دايمًا حتى لو ما فيها طلبات
-export function PlaceChips({ items, value, onChange, noun = "طلب", lines = [] }) {
-  const v = { gov: null, areas: [], lines: [], ...(value || {}) };
+export function PlaceChips({ items, value, onChange, noun = "طلب", lines = [], onEditZones }) {
+  const v = { gov: null, areas: [], zones: [], lines: [], ...(value || {}) };
   const govs = useMemo(() => {
     const m = new Map(FIXED_GOVS.map((g) => [g, 0]));
     for (const x of items) { const g = gov(x); m.set(g, (m.get(g) || 0) + 1); }
@@ -239,50 +248,96 @@ export function PlaceChips({ items, value, onChange, noun = "طلب", lines = []
     const rest = [...m.entries()].filter(([g, n]) => !FIXED_GOVS.includes(g) && n > 0).sort((a, b) => (a[0] === NONE) - (b[0] === NONE) || b[1] - a[1]);
     return [...fixed, ...rest];
   }, [items]);
-  // القوائم (الخطوط) اللي إلها طلبات، أو كل القوائم
+  // «قوائمي»: القوائم اللي مش تابعة لمحافظة (مثلًا «صريح وعجلون»)
   const lists = useMemo(() => {
     const n = new Map();
     for (const x of items) if (x.line_id) n.set(x.line_id, (n.get(x.line_id) || 0) + 1);
-    return lines.map((l) => ({ id: l.id, name: l.name, n: n.get(l.id) || 0 })).sort((a, b) => b.n - a.n);
+    return lines.filter((l) => !l.governorate).map((l) => ({ id: l.id, name: l.name, n: n.get(l.id) || 0 })).sort((a, b) => b.n - a.n);
   }, [items, lines]);
-  const noList = items.filter((x) => !x.line_id).length;
   const inGov = useMemo(() => (v.gov ? items.filter((x) => gov(x) === v.gov) : []), [items, v.gov]);
-  const areas = useMemo(() => {
+  // مناطقي بالمحافظة (وسط إربد، أطراف إربد، صريح، الرمثا…)
+  const zones = useMemo(() => {
+    if (!v.gov) return [];
+    const zs = zonesFor(lines, v.gov);
+    const n = new Map();
+    for (const x of inGov) { const z = zoneOf(x, zs); n.set(z, (n.get(z) || 0) + 1); }
+    return { list: zs.map((z) => ({ id: z.id, name: z.name, n: n.get(z.id) || 0 })), none: n.get(0) || 0 };
+  }, [lines, inGov, v.gov]);
+  const autoAreas = useMemo(() => {
     const m = new Map();
     for (const x of inGov) { const a = area(x); const k = nk(a); const e = m.get(k) || { k, a, n: 0 }; e.n++; m.set(k, e); }
     return [...m.values()].sort((a, b) => (a.a === NONE) - (b.a === NONE) || b.n - a.n);
   }, [inGov]);
-  const set = (p) => onChange({ gov: null, areas: [], lines: [], ...p });
+  const set = (p) => onChange({ gov: null, areas: [], zones: [], lines: [], ...p });
   const pickGov = (g) => set(g === v.gov ? {} : { gov: g });
-  const toggleArea = (k) => set({ gov: v.gov, areas: v.areas.includes(k) ? v.areas.filter((x) => x !== k) : [...v.areas, k] });
+  const toggle = (key, id) => set({ gov: v.gov, [key]: v[key].includes(id) ? v[key].filter((x) => x !== id) : [...v[key], id] });
   const toggleList = (id) => set({ lines: v.lines.includes(id) ? v.lines.filter((x) => x !== id) : [...v.lines, id] });
-  const shown = items.filter((x) => matchPlace(x, v)).length;
+  const shown = items.filter((x) => matchPlace(x, v, lines)).length;
+  const hasZones = v.gov && zones.list?.length > 0;
+  const zoneNames = hasZones ? v.zones.map((id) => (id ? zones.list.find((z) => z.id === id)?.name : "بدون منطقة")).filter(Boolean) : [];
   return (
     <div className="fx-place">
       <div className="fx-place-row">
         <button className={`fx-place-chip ${!v.gov && !v.lines.length ? "on" : ""}`} onClick={() => set({})}>الكل <i>{num(items.length)}</i></button>
         {govs.map(([g, n]) => <button key={g} className={`fx-place-chip ${v.gov === g ? "on" : ""} ${!n ? "zero" : ""}`} onClick={() => pickGov(g)}>{g} <i>{num(n)}</i></button>)}
       </div>
-      {lists.length > 0 && (
+      {lists.length > 0 && !v.gov && (
         <div className="fx-place-row lists">
           <span className="lbl">قوائمي</span>
           {lists.map((l) => <button key={l.id} className={`fx-place-chip sm list ${v.lines.includes(l.id) ? "on" : ""} ${!l.n ? "zero" : ""}`} onClick={() => toggleList(l.id)}>{l.name} <i>{num(l.n)}</i></button>)}
-          {noList > 0 && <button className={`fx-place-chip sm list ${v.lines.includes(0) ? "on" : ""}`} onClick={() => toggleList(0)}>بدون قائمة <i>{num(noList)}</i></button>}
         </div>
       )}
-      {v.gov && areas.length > 1 && (
+      {v.gov && (
         <div className="fx-place-sub">
-          <button className={`fx-place-chip sm ${!v.areas.length ? "on" : ""}`} onClick={() => set({ gov: v.gov })}>كل {v.gov} <i>{num(inGov.length)}</i></button>
-          {areas.map((a) => <button key={a.k} className={`fx-place-chip sm ${v.areas.includes(a.k) ? "on" : ""}`} onClick={() => toggleArea(a.k)}>{a.a} <i>{num(a.n)}</i></button>)}
+          <button className={`fx-place-chip sm ${!v.zones.length && !v.areas.length ? "on" : ""}`} onClick={() => set({ gov: v.gov })}>كل {v.gov} <i>{num(inGov.length)}</i></button>
+          {hasZones ? (
+            <>
+              {zones.list.map((z) => <button key={z.id} className={`fx-place-chip sm ${v.zones.includes(z.id) ? "on" : ""} ${!z.n ? "zero" : ""}`} onClick={() => toggle("zones", z.id)}>{z.name} <i>{num(z.n)}</i></button>)}
+              {zones.none > 0 && <button className={`fx-place-chip sm ghost ${v.zones.includes(0) ? "on" : ""}`} onClick={() => toggle("zones", 0)}>بدون منطقة <i>{num(zones.none)}</i></button>}
+            </>
+          ) : autoAreas.length > 1 && autoAreas.map((a) => <button key={a.k} className={`fx-place-chip sm ${v.areas.includes(a.k) ? "on" : ""}`} onClick={() => toggle("areas", a.k)}>{a.a} <i>{num(a.n)}</i></button>)}
+          {onEditZones && <button className="fx-place-chip sm edit" onClick={() => onEditZones(v.gov)}>✎ {hasZones ? "تعديل المناطق" : `اكتب مناطق ${v.gov}`}</button>}
         </div>
       )}
       {(v.gov || v.lines.length > 0) && (
         <small className="fx-muted">{num(shown)} {noun} {v.lines.length
-          ? `بقائمة ${v.lines.map((id) => (id ? lists.find((l) => l.id === id)?.name : "بدون قائمة")).filter(Boolean).join(" و")}`
-          : v.areas.length ? `بـ ${areas.filter((a) => v.areas.includes(a.k)).map((a) => a.a).join(" و")}` : `بـ ${v.gov}`}</small>
+          ? `بقائمة ${v.lines.map((id) => lists.find((l) => l.id === id)?.name).filter(Boolean).join(" و")}`
+          : zoneNames.length ? `بـ ${zoneNames.join(" و")}`
+          : v.areas.length ? `بـ ${autoAreas.filter((a) => v.areas.includes(a.k)).map((a) => a.a).join(" و")}` : `بـ ${v.gov}`}</small>
       )}
     </div>
   );
 }
 
+// تعديل مناطق محافظة: بتكتبها بإيدك (وسط إربد، أطراف إربد، صريح، الرمثا…)
+export function ZonesEditor({ gov: g, onClose }) {
+  const fx = useFx();
+  const zs = zonesFor(fx.boot.lines || [], g);
+  const [names, setNames] = useState(() => Object.fromEntries(zs.map((z) => [z.id, z.name])));
+  const [add, setAdd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async (f) => { setBusy(true); try { await f(); await fx.reloadBoot?.(); } catch (e) { fx.toast(e.message); } finally { setBusy(false); } };
+  return (
+    <Sheet title={`مناطق ${g}`} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-note sky">اكتب المناطق اللي بتشتغل فيها بـ{g} مثل ما بتحكيها: وسط {g}، أطراف {g}، صريح، الرمثا… الزبون اللي بلده نفس اسم المنطقة بيدخل فيها لحاله، والباقي بتحطه من الطلبات: حدد طلبات واكبس «منطقة».</div>
+        {zs.map((z) => (
+          <div key={z.id} className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
+            <input className="fx-input fx-grow" value={names[z.id] ?? ""} onChange={(e) => setNames({ ...names, [z.id]: e.target.value })}
+              onBlur={() => { const n = (names[z.id] || "").trim(); if (n && n !== z.name) run(() => fapi.saveLine({ ...z, name: n })); }} />
+            <button className="fx-icon-btn" disabled={busy} aria-label="احذف" onClick={() => run(() => fapi.deleteLine(z.id))}><FiX /></button>
+          </div>
+        ))}
+        <div className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
+          <input className="fx-input fx-grow" value={add} onChange={(e) => setAdd(e.target.value)} placeholder={zs.length ? "منطقة ثانية" : `مثلًا: وسط ${g}`}
+            onKeyDown={(e) => { if (e.key === "Enter" && add.trim()) run(async () => { await fapi.saveLine({ name: add.trim(), governorate: g }); setAdd(""); }); }} />
+          <button className="fx-btn pri" disabled={busy || !add.trim()} onClick={() => run(async () => { await fapi.saveLine({ name: add.trim(), governorate: g }); setAdd(""); })}>ضيف</button>
+        </div>
+        <button className="fx-btn block" onClick={onClose}>تم</button>
+      </div>
+    </Sheet>
+  );
+}
+
 export const placeName = (x) => area(x);
+export { zonesFor };
