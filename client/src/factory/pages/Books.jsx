@@ -871,7 +871,7 @@ function MeterEntrySheet({ m, onClose, onDone }) {
 
 // ---------- حركة المصاري: كل اللي دخل وطلع بمكان واحد ----------
 const JT = {
-  drivers: ["🚚", "من السائقين"], customers: ["🧾", "دفعات زباين"], partners: ["🏭", "الشركات"], other_in: ["➕", "دخل ثاني"],
+  drivers: ["🚚", "من السائقين"], counter: ["🏭", "بيع بالمصنع"], customers: ["🧾", "دفعات زباين"], partners: ["🏭", "الشركات"], other_in: ["➕", "دخل ثاني"],
   expenses: ["🧾", "مصاريف"], salaries: ["👥", "رواتب وسلف"], maint: ["🔧", "صيانة"], utilities: ["⚡", "كهربا ومي"],
 };
 const jshift = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
@@ -915,7 +915,7 @@ function Journal() {
           {canAdd && (
             <div className="hm-quick">
               <button onClick={() => setCash("out")}><span>−</span> مصروف</button>
-              <button onClick={() => setCash("in")}><span>+</span> دخل / بيع أرض</button>
+              <button onClick={() => setCash("in")}><span>+</span> دخل ثاني</button>
             </div>
           )}
           {rows.length === 0 && <Empty title="ما في حركة" text="أي مصاري بتدخل أو بتطلع بتنسجّل هون لحالها." />}

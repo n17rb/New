@@ -55,6 +55,7 @@ export const ACTIONS = [
   { key: "approve_expense", label: "الموافقة على مصاريف السائقين", plan: "factory" },
   { key: "adjust_stock", label: "تعديل رصيد المستودع يدويًا", plan: "factory" },
   { key: "give_bonus", label: "إعطاء بونص (كراتين ببلاش) يدويًا على الطلب", plan: "factory" },
+  { key: "factory_sale", label: "البيع على أرض المصنع (زبون إجا اشترى من المصنع)", plan: "factory" },
   { key: "self_attendance", label: "يسجّل حضوره بنفسه («وصلت»)" },
 ];
 
@@ -107,7 +108,7 @@ export const FACTORY_TEMPLATES = {
   admin: {
     label: "مدير",
     sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", f_maint: "edit", f_machines: "edit", f_store: "edit", payroll: "edit" }),
-    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true, delete_customer: true, self_attendance: true },
+    actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true, delete_customer: true, self_attendance: true, factory_sale: true },
   },
   dispatcher: {
     label: "مسؤول الحركة",
@@ -142,7 +143,7 @@ export const FACTORY_TEMPLATES = {
   accountant: {
     label: "محاسب",
     sections: F({ f_home: "view", f_money: "edit", f_customers: "view", f_reports: "view", f_store: "edit", payroll: "edit" }),
-    actions: { approve_expense: true },
+    actions: { approve_expense: true, factory_sale: true, give_credit: true },
   },
   viewer: {
     label: "متفرج",

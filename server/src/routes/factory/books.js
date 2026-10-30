@@ -446,7 +446,7 @@ router.get("/books/journal", view, async (req, res) => {
               (SELECT COALESCE(SUM(e.amount),0) FROM f_expenses e WHERE e.trip_id = t.id AND e.status = 'approved') AS expenses
        FROM f_trips t LEFT JOIN users u ON u.id = t.driver_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id
        WHERE t.settled_at IS NOT NULL AND ${D("t.settled_at")}`),
-    q(`SELECT l.id, l.created_at AS at, -l.amount AS amount, l.method, l.trip_id, c.name AS who, u.full_name AS by_name
+    q(`SELECT l.id, l.created_at AS at, -l.amount AS amount, l.method, l.trip_id, l.note, c.name AS who, u.full_name AS by_name
        FROM f_ledger l JOIN f_customers c ON c.id = l.customer_id LEFT JOIN users u ON u.id = l.created_by
        WHERE l.kind = 'payment' AND l.amount < 0 AND (l.trip_id IS NULL OR l.method <> 'cash') AND ${D("l.created_at")}`),
     q(`SELECT l.id, l.doc_date::text AS d, l.created_at AS at, l.kind, l.amount, l.method, p.name AS who FROM f_partner_ledger l JOIN f_partners p ON p.id = l.partner_id
@@ -464,7 +464,7 @@ router.get("/books/journal", view, async (req, res) => {
   const rows = [
     ...settle.map((t) => ({ key: `s${t.id}`, at: t.at, dir: "in", type: "drivers", amount: N(t.amount), title: `استلمت كاش من ${t.who || "السائق"}`,
       sub: [t.vehicle, N(t.expenses) ? `بعد مصاريفه ${N(t.expenses).toFixed(2)}` : "", N(t.cash_diff) > 0 ? `ناقص ${N(t.cash_diff).toFixed(2)} عهدة` : N(t.cash_diff) < 0 ? `زيادة ${(-N(t.cash_diff)).toFixed(2)}` : ""].filter(Boolean).join(" · ") })),
-    ...pays.map((p) => ({ key: `p${p.id}`, at: p.at, dir: "in", type: "customers", amount: N(p.amount), title: `دفعة من ${p.who}`, sub: [PM[p.method] || p.method, p.by_name ? `قبضها ${p.by_name}` : ""].filter(Boolean).join(" · ") })),
+    ...pays.map((p) => /بيع بالمصنع/.test(p.note || "") ? ({ key: `p${p.id}`, at: p.at, dir: "in", type: "counter", amount: N(p.amount), title: `بيع بالمصنع — ${p.who}`, sub: [PM[p.method] || p.method, p.by_name ? `باعها ${p.by_name}` : ""].filter(Boolean).join(" · ") }) : ({ key: `p${p.id}`, at: p.at, dir: "in", type: "customers", amount: N(p.amount), title: `دفعة من ${p.who}`, sub: [PM[p.method] || p.method, p.by_name ? `قبضها ${p.by_name}` : ""].filter(Boolean).join(" · ") })),
     ...partner.map((p) => ({ key: `r${p.id}`, at: p.at, d: p.d, dir: p.kind === "received" ? "in" : "out", type: "partners", amount: N(p.amount), title: p.kind === "received" ? `قبضنا من ${p.who}` : `دفعنا لـ${p.who}`, sub: p.method || "" })),
     ...cash.map((c) => ({ key: `c${c.id}`, at: c.at, d: c.d, dir: c.kind === "in" ? "in" : "out", type: c.emp_tx_id ? "salaries" : c.kind === "in" ? "other_in" : "expenses", amount: N(c.amount), title: c.category, sub: [c.note, c.by_name ? `سجّلها ${c.by_name}` : ""].filter(Boolean).join(" · ") })),
     ...maint.map((m) => ({ key: `m${m.id}`, at: m.at, d: m.d, dir: "out", type: "maint", amount: N(m.amount), title: `صيانة ${m.vehicle}`, sub: m.title || "" })),

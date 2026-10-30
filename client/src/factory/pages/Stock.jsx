@@ -54,9 +54,10 @@ function Overview() {
     ret: sum((p) => p.today.return),
     dmg: sum((p) => p.today.damage_wh || 0),
     adj: sum((p) => p.today.adjust || 0),
+    sale: sum((p) => p.today.sale || 0),
     bal: sum((p) => p.balance),
   };
-  const opening = T.bal - T.prod + T.load - T.ret + T.dmg - T.adj;
+  const opening = T.bal - T.prod + T.load + T.sale - T.ret + T.dmg - T.adj;
   const pickedName = pick ? products.find((p) => p.id === pick)?.name : "";
   const done = () => { setSheet(null); reload(); };
   return (
@@ -74,6 +75,7 @@ function Overview() {
             {opening !== 0 && <FlowRow label="كان بالمستودع الصبح" value={opening} tone="muted" plain />}
             <FlowRow label="أنتجنا" value={T.prod} sign="+" tone="ok" />
             <FlowRow label="طلع مع السواقين" value={T.load} sign="−" tone="sky" />
+            {T.sale > 0 && <FlowRow label="انباع من المصنع" value={T.sale} sign="−" tone="sky" />}
             {T.ret > 0 && <FlowRow label="رجع من السواقين" value={T.ret} sign="+" tone="ok" />}
             {T.dmg > 0 && <FlowRow label="تالف بالمستودع" value={T.dmg} sign="−" tone="crit" />}
             {T.adj !== 0 && <FlowRow label="جرد وتعديل" value={Math.abs(T.adj)} sign={T.adj > 0 ? "+" : "−"} tone="warn" />}
