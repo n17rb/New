@@ -1225,3 +1225,27 @@ a.fx-pill { text-decoration: none; }
 .hm-quick button + button span { background: #e8f6ee; color: #1f9d55; }
 .fx-chip.cat-edit { display: inline-flex; align-items: center; gap: 4px; padding-inline-end: 4px; background: #fdf2f2; border-color: #f5c2c2; }
 .fx-chip.cat-edit button { border: 0; background: #fff; color: #c43d3d; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; padding: 0; }
+
+/* حركة المصاري */
+.jr { display: grid; gap: 12px; min-width: 0; }
+.jr-tot { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.jr-tot > * { border: 0; border-radius: 18px; padding: 12px 8px; display: grid; gap: 2px; justify-items: center; font: inherit; background: #fff; box-shadow: 0 1px 8px rgba(16, 48, 77, .05); cursor: pointer; }
+.jr-tot small { font-size: 12px; color: var(--fx-muted); }
+.jr-tot b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.jr-tot .in b { color: #14653a; } .jr-tot .out b { color: #c43d3d; }
+.jr-tot .in.on { background: #e8f6ee; } .jr-tot .out.on { background: #fdecec; }
+.jr-tot .net { cursor: default; }
+.jr-types { display: flex; flex-wrap: wrap; gap: 6px; }
+.jr-types span { background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12.5px; color: #4a6077; box-shadow: 0 1px 4px rgba(16, 48, 77, .05); }
+.jr-types b { color: #10304d; }
+.jr-day { background: #fff; border-radius: 20px; padding: 6px 14px; box-shadow: 0 1px 10px rgba(16, 48, 77, .05); }
+.jr-day h4 { margin: 8px 0 2px; font-size: 13px; color: var(--fx-muted); }
+.jr-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f4f8; }
+.jr-row:last-child { border-bottom: 0; }
+.jr-row .ic { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: #f2f6fa; flex: none; font-size: 16px; }
+.jr-row.in .ic { background: #e8f6ee; } .jr-row.out .ic { background: #fdf2f2; }
+.jr-row .t { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.jr-row .t b { font-size: 14.5px; color: #10304d; }
+.jr-row .t small { font-size: 12px; color: var(--fx-muted); }
+.jr-row .a { font-weight: 800; font-size: 15.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jr-row.in .a { color: #14653a; } .jr-row.out .a { color: #c43d3d; }

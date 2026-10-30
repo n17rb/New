@@ -432,6 +432,49 @@ function range(period, day) {
   if (period === "year") return [`${day.slice(0, 4)}-01-01`, `${day.slice(0, 4)}-12-31`];
   return [day, day];
 }
+// ---------- حركة المصاري: كل قرش دخل أو طلع بمكان واحد (بدون ورق) ----------
+// الداخل: كاش استلمناه من السائقين بالتسوية، دفعات زباين بالمكتب، كليك، قبض من الشركات، دخل الصندوق (بيع أرض…)
+// الطالع: صرف الصندوق (ومنه الرواتب والسلف لحالها)، دفعات للموردين، صيانة السيارات، فواتير الكهربا والمي المدفوعة
+// مصاريف السائقين (ديزل…) بتطلع كتفصيل جوّا تسوية السائق لأنها انخصمت من الكاش اللي سلّمه
+router.get("/books/journal", view, async (req, res) => {
+  const to = isDate(req.query.to) ? req.query.to : jordanDate();
+  const from = isDate(req.query.from) ? req.query.from : to;
+  const D = (col) => `(${col} AT TIME ZONE 'Asia/Amman')::date BETWEEN $1 AND $2`;
+  const q = async (sql) => (await query(sql, [from, to])).rows;
+  const [settle, pays, partner, cash, maint, util] = await Promise.all([
+    q(`SELECT t.id, t.settled_at AS at, t.handed_cash AS amount, t.required_cash, t.cash_diff, u.full_name AS who, v.name AS vehicle,
+              (SELECT COALESCE(SUM(e.amount),0) FROM f_expenses e WHERE e.trip_id = t.id AND e.status = 'approved') AS expenses
+       FROM f_trips t LEFT JOIN users u ON u.id = t.driver_id LEFT JOIN f_vehicles v ON v.id = t.vehicle_id
+       WHERE t.settled_at IS NOT NULL AND ${D("t.settled_at")}`),
+    q(`SELECT l.id, l.created_at AS at, -l.amount AS amount, l.method, l.trip_id, c.name AS who, u.full_name AS by_name
+       FROM f_ledger l JOIN f_customers c ON c.id = l.customer_id LEFT JOIN users u ON u.id = l.created_by
+       WHERE l.kind = 'payment' AND l.amount < 0 AND (l.trip_id IS NULL OR l.method <> 'cash') AND ${D("l.created_at")}`),
+    q(`SELECT l.id, l.doc_date::text AS d, l.created_at AS at, l.kind, l.amount, l.method, p.name AS who FROM f_partner_ledger l JOIN f_partners p ON p.id = l.partner_id
+       WHERE l.kind IN ('paid','received') AND l.doc_date BETWEEN $1 AND $2`),
+    q(`SELECT c.id, c.doc_date::text AS d, c.created_at AS at, c.kind, c.category, c.amount, c.note, c.emp_tx_id, u.full_name AS by_name
+       FROM f_cashbook c LEFT JOIN users u ON u.id = c.created_by WHERE c.doc_date BETWEEN $1 AND $2`),
+    q(`SELECT m.id, m.done_on::text AS d, m.created_at AS at, m.cost AS amount, m.title, m.kind, v.name AS vehicle FROM f_maint m JOIN f_vehicles v ON v.id = m.vehicle_id
+       WHERE m.cost > 0 AND m.done_on BETWEEN $1 AND $2`).catch(() => []),
+    q(`SELECT e.id, e.doc_date::text AS d, COALESCE(e.paid_at, e.created_at) AS at, e.amount, mt.kind, mt.name FROM f_meter_entries e JOIN f_meters mt ON mt.id = e.meter_id
+       WHERE e.paid AND e.amount > 0 AND ${D("COALESCE(e.paid_at, e.created_at)")}`).catch(() => []),
+  ]);
+  const N = (x) => round2(Number(x || 0));
+  const PM = { cash: "كاش", cliq: "كليك", cheque: "شيك", transfer: "حوالة" };
+  const UK = { elec: "كهربا", trans: "كهربا", water: "مي", gen: "مولّد" };
+  const rows = [
+    ...settle.map((t) => ({ key: `s${t.id}`, at: t.at, dir: "in", type: "drivers", amount: N(t.amount), title: `استلمت كاش من ${t.who || "السائق"}`,
+      sub: [t.vehicle, N(t.expenses) ? `بعد مصاريفه ${N(t.expenses).toFixed(2)}` : "", N(t.cash_diff) > 0 ? `ناقص ${N(t.cash_diff).toFixed(2)} عهدة` : N(t.cash_diff) < 0 ? `زيادة ${(-N(t.cash_diff)).toFixed(2)}` : ""].filter(Boolean).join(" · ") })),
+    ...pays.map((p) => ({ key: `p${p.id}`, at: p.at, dir: "in", type: "customers", amount: N(p.amount), title: `دفعة من ${p.who}`, sub: [PM[p.method] || p.method, p.by_name ? `قبضها ${p.by_name}` : ""].filter(Boolean).join(" · ") })),
+    ...partner.map((p) => ({ key: `r${p.id}`, at: p.at, d: p.d, dir: p.kind === "received" ? "in" : "out", type: "partners", amount: N(p.amount), title: p.kind === "received" ? `قبضنا من ${p.who}` : `دفعنا لـ${p.who}`, sub: p.method || "" })),
+    ...cash.map((c) => ({ key: `c${c.id}`, at: c.at, d: c.d, dir: c.kind === "in" ? "in" : "out", type: c.emp_tx_id ? "salaries" : c.kind === "in" ? "other_in" : "expenses", amount: N(c.amount), title: c.category, sub: [c.note, c.by_name ? `سجّلها ${c.by_name}` : ""].filter(Boolean).join(" · ") })),
+    ...maint.map((m) => ({ key: `m${m.id}`, at: m.at, d: m.d, dir: "out", type: "maint", amount: N(m.amount), title: `صيانة ${m.vehicle}`, sub: m.title || "" })),
+    ...util.map((u) => ({ key: `u${u.id}`, at: u.at, d: u.d, dir: "out", type: "utilities", amount: N(u.amount), title: `فاتورة ${UK[u.kind] || ""} — ${u.name}`, sub: "" })),
+  ].map((r) => ({ ...r, day: r.d || new Date(r.at).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) }))
+    .sort((a, b) => (b.day.localeCompare(a.day)) || (new Date(b.at) - new Date(a.at)));
+  const sum = (dir) => round2(rows.filter((r) => r.dir === dir).reduce((a, r) => a + r.amount, 0));
+  res.json({ from, to, rows, in: sum("in"), out: sum("out"), net: round2(sum("in") - sum("out")) });
+});
+
 router.get("/books/summary", view, async (req, res) => {
   const period = ["day", "week", "month", "year"].includes(req.query.period) ? req.query.period : "month";
   const day = isDate(req.query.date) ? req.query.date : jordanDate();

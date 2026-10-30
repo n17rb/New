@@ -76,6 +76,7 @@ export const fapi = {
   orderFirst: (id) => post(`/orders/${id}/first`),
   productionLog: (from, to) => get(`/stock/production-log?from=${from}&to=${to}`),
   cashCats: () => get("/books/cash-cats"),
+  journal: (from, to) => get(`/books/journal?from=${from}&to=${to}`),
   saveCashCats: (kind, list) => put(`/books/cash-cats/${kind}`, { list }),
   orderUnassign: (id, reason) => post(`/orders/${id}/unassign`, { reason }),
   payment: (id, b) => post(`/customers/${id}/payments`, b),
