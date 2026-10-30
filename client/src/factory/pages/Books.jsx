@@ -22,13 +22,14 @@ const balColor = (b) => (b > 0.005 ? "var(--fx-crit)" : b < -0.005 ? "var(--fx-o
 
 export default function Books() {
   const [params, setParams] = useSearchParams();
-  const tabs = [["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["handover", "التسليم"], ["summary", "الملخّص"]];
+  const tabs = [["journal", "حركة المصاري"], ["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["handover", "التسليم"], ["summary", "الملخّص"]];
   const recycleOnly = params.get("tab") === "recycle";
-  const tab = recycleOnly ? "recycle" : tabs.find((t) => t[0] === params.get("tab"))?.[0] || "partners";
+  const tab = recycleOnly ? "recycle" : tabs.find((t) => t[0] === params.get("tab"))?.[0] || "journal";
   return (
     <div className="fx-page">
       <h1 className="fx-h1">{recycleOnly ? "♻️ إعادة التدوير" : "الدفاتر"}</h1>
       {!recycleOnly && <div className="fx-tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}</div>}
+      {tab === "journal" && <Journal />}
       {tab === "partners" && <Partners />}
       {tab === "cash" && <Cash />}
       {tab === "utils" && <Utilities />}
@@ -865,5 +866,74 @@ function MeterEntrySheet({ m, onClose, onDone }) {
         }}>✓ سجّل</Act>
       </div>
     </Sheet>
+  );
+}
+
+// ---------- حركة المصاري: كل اللي دخل وطلع بمكان واحد ----------
+const JT = {
+  drivers: ["🚚", "من السائقين"], customers: ["🧾", "دفعات زباين"], partners: ["🏭", "الشركات"], other_in: ["➕", "دخل ثاني"],
+  expenses: ["🧾", "مصاريف"], salaries: ["👥", "رواتب وسلف"], maint: ["🔧", "صيانة"], utilities: ["⚡", "كهربا ومي"],
+};
+const jshift = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+function Journal() {
+  const fx = useFx();
+  const t0 = today();
+  const [mode, setMode] = useState("day");
+  const [day, setDay] = useState(t0);
+  const range = mode === "day" ? [day, day] : mode === "week" ? [jshift(t0, -6), t0] : [`${t0.slice(0, 8)}01`, t0];
+  const { data, error, reload } = useLoad(() => fapi.journal(range[0], range[1]), [range[0], range[1]]);
+  const [dir, setDir] = useState("all");
+  const [cash, setCash] = useState(null);
+  const canAdd = fx.can("f_money", "edit") || fx.can("f_home");
+  const rows = (data?.rows || []).filter((r) => dir === "all" || r.dir === dir);
+  const days = [...new Set(rows.map((r) => r.day))];
+  const byType = (d) => { const m = new Map(); for (const r of data?.rows || []) if (r.dir === d) m.set(r.type, (m.get(r.type) || 0) + r.amount); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+  return (
+    <div className="jr">
+      <div className="pl-modes">
+        {[["day", "يوم"], ["week", "آخر ٧ أيام"], ["month", "هالشهر"]].map(([k, l]) => <button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>)}
+      </div>
+      {mode === "day" && (
+        <div className="pl-day">
+          <button className="fx-plain" onClick={() => setDay(jshift(day, -1))} aria-label="اليوم اللي قبل">‹</button>
+          <b>{day === t0 ? "اليوم" : day === jshift(t0, -1) ? "مبارح" : date(day)}</b>
+          <button className="fx-plain" disabled={day === t0} onClick={() => setDay(jshift(day, 1))} aria-label="اليوم اللي بعد">›</button>
+        </div>
+      )}
+      <Err msg={error} />
+      {!data && !error && <Loading />}
+      {data && (
+        <>
+          <div className="jr-tot">
+            <button className={`in ${dir === "in" ? "on" : ""}`} onClick={() => setDir(dir === "in" ? "all" : "in")}><small>دخل</small><b>{money(data.in)}</b></button>
+            <button className={`out ${dir === "out" ? "on" : ""}`} onClick={() => setDir(dir === "out" ? "all" : "out")}><small>طلع</small><b>{money(data.out)}</b></button>
+            <div className="net"><small>الصافي</small><b style={{ color: data.net < 0 ? "#c43d3d" : "#14653a" }}>{money(data.net)}</b></div>
+          </div>
+          {(dir === "in" || dir === "out") && byType(dir).length > 0 && (
+            <div className="jr-types">{byType(dir).map(([t, v]) => <span key={t}>{JT[t]?.[0]} {JT[t]?.[1]} <b>{money(v)}</b></span>)}</div>
+          )}
+          {canAdd && (
+            <div className="hm-quick">
+              <button onClick={() => setCash("out")}><span>−</span> مصروف</button>
+              <button onClick={() => setCash("in")}><span>+</span> دخل / بيع أرض</button>
+            </div>
+          )}
+          {rows.length === 0 && <Empty title="ما في حركة" text="أي مصاري بتدخل أو بتطلع بتنسجّل هون لحالها." />}
+          {days.map((d) => (
+            <section key={d} className="jr-day">
+              {days.length > 1 && <h4>{date(d)}</h4>}
+              {rows.filter((r) => r.day === d).map((r) => (
+                <div key={r.key} className={`jr-row ${r.dir}`}>
+                  <span className="ic">{JT[r.type]?.[0] || "•"}</span>
+                  <span className="t"><b>{r.title}</b>{r.sub ? <small>{r.sub}</small> : null}</span>
+                  <span className="a" dir="ltr">{r.dir === "in" ? "+" : "−"}{money(r.amount)}</span>
+                </div>
+              ))}
+            </section>
+          ))}
+        </>
+      )}
+      {cash && <CashSheet kind={cash} cats={[]} onClose={() => setCash(null)} onDone={() => { setCash(null); reload(); }} />}
+    </div>
   );
 }
