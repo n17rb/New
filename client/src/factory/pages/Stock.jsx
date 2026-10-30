@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FiAlertTriangle, FiClipboard, FiPlus, FiPower, FiTruck } from "react-icons/fi";
+import { FiAlertTriangle, FiClipboard, FiPlus, FiPower, FiTruck, FiChevronDown, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { openPrint } from "../printView.js";
 import { TakeSheet } from "./Store.jsx";
-import { plantName } from "../plants.js";
+import { plantName, lineType, plantBg, plantIcon } from "../plants.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, Reload, ProductArt, num, time, dateTime, date } from "../ui.jsx";
 
 export default function Stock() {
@@ -16,6 +16,7 @@ export default function Stock() {
   const boss = fx.can("f_home");
   const tabs = [
     canStock || canProd || boss ? ["stock", "اليوم"] : null,
+    canStock || canProd || boss ? ["plog", "سجل الإنتاج"] : null,
     canStock || boss ? ["load", "تحميل السيارات"] : null,
     canProd || canMach || boss ? ["prod", "المكنات"] : null,
     canStock || canProd || boss ? ["log", "السجل"] : null,
@@ -30,6 +31,7 @@ export default function Stock() {
       {tab === "stock" && <Overview />}
       {tab === "load" && <Loading_ />}
       {tab === "prod" && <Production />}
+      {tab === "plog" && <ProdLog />}
       {tab === "log" && <Log />}
     </div>
   );
@@ -597,3 +599,96 @@ function Log() {
   );
 }
 
+
+// ---------- سجل الإنتاج المفصّل: كل مصنع لحاله، وكل منتج، والوردية، ومين سجّل ----------
+const dshift = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+function ProdLog() {
+  const fx = useFx();
+  const edit = fx.can("f_production", "edit");
+  const t0 = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
+  const [mode, setMode] = useState("day");
+  const [day, setDay] = useState(t0);
+  const range = mode === "day" ? [day, day] : mode === "week" ? [dshift(t0, -6), t0] : [`${t0.slice(0, 8)}01`, t0];
+  const { data, error, reload } = useLoad(() => fapi.productionLog(range[0], range[1]), [range[0], range[1]]);
+  const [sheet, setSheet] = useState(false);
+  const isToday = day === t0;
+  const dayLabel = isToday ? "اليوم" : day === dshift(t0, -1) ? "مبارح" : date(day);
+  const maxP = Math.max(1, ...(data?.lines || []).flatMap((l) => l.products.map((p) => p.n)));
+  const maxD = Math.max(1, ...(data?.days || []).map((d) => d.n));
+  return (
+    <div className="pl">
+      <div className="pl-modes">
+        {[["day", "يوم"], ["week", "آخر ٧ أيام"], ["month", "هالشهر"]].map(([k, l]) => <button key={k} className={mode === k ? "on" : ""} onClick={() => setMode(k)}>{l}</button>)}
+      </div>
+      {mode === "day" && (
+        <div className="pl-day">
+          <button className="fx-plain" onClick={() => setDay(dshift(day, -1))} aria-label="اليوم اللي قبل"><FiChevronRight /></button>
+          <b>{dayLabel}</b>
+          <button className="fx-plain" disabled={isToday} onClick={() => setDay(dshift(day, 1))} aria-label="اليوم اللي بعد"><FiChevronLeft /></button>
+        </div>
+      )}
+      <Err msg={error} />
+      {!data && !error && <Loading />}
+      {data && (
+        <>
+          <div className="pl-total">
+            <small>{mode === "day" ? `إنتاج ${dayLabel}` : mode === "week" ? "إنتاج آخر ٧ أيام" : "إنتاج هالشهر"}</small>
+            <b>{num(data.total)} <span>كرتونة</span></b>
+            {data.products.length > 0 && <div className="pl-mini">{data.products.map((p) => <span key={p.product_id}>{p.name} <i>{num(p.n)}</i></span>)}</div>}
+            {edit && <button className="pl-add" onClick={() => setSheet(true)}><FiPlus /> سجّل إنتاج</button>}
+          </div>
+          {mode !== "day" && data.days.length > 1 && (
+            <div className="pl-days">
+              {data.days.map((d) => (
+                <div key={d.d} className="c" title={`${d.d}: ${d.n}`}>
+                  <i style={{ height: `${Math.max(4, (d.n / maxD) * 100)}%` }} />
+                  <small>{Number(d.d.slice(8))}</small>
+                </div>
+              ))}
+            </div>
+          )}
+          {data.total === 0 && <Empty title="ما في إنتاج مسجّل" text={edit ? "اكبس «سجّل إنتاج» لما الكراتين تخلص من الخط." : ""} />}
+          {data.lines.filter((l) => l.n > 0 || l.id).map((l) => <PlantLog key={l.id} l={l} maxP={maxP} showEntries={mode === "day"} />)}
+        </>
+      )}
+      {sheet && <ProdSheet onClose={() => setSheet(false)} onDone={() => { setSheet(false); reload(); }} />}
+    </div>
+  );
+}
+function PlantLog({ l, maxP, showEntries }) {
+  const [open, setOpen] = useState(false);
+  const t = lineType(l.name);
+  return (
+    <section className={`pl-plant ${l.n ? "" : "empty"}`}>
+      <header style={{ background: plantBg(t) }}>
+        {l.photo_url ? <img src={l.photo_url} alt="" /> : <span className="ic">{plantIcon(t)}</span>}
+        <b>{plantName(l.name)}</b>
+        <span className="n">{num(l.n)} <small>كرتونة</small></span>
+      </header>
+      {l.n === 0 ? <div className="pl-none">ما أنتج إشي</div> : (
+        <div className="pl-body">
+          {l.products.map((p) => (
+            <div key={p.product_id} className="pl-prod">
+              <ProductArt p={p} size={40} />
+              <span className="t"><b>{p.name}</b><span className="bar"><i style={{ width: `${(p.n / maxP) * 100}%` }} /></span></span>
+              <span className="q">{num(p.n)}<small>{p.per_carton ? `${num(p.n * p.per_carton)} حبة` : "كرتونة"}</small></span>
+            </div>
+          ))}
+          {l.shifts.length > 0 && <div className="pl-shifts">{l.shifts.map((s) => <span key={s.shift}>{s.shift === "بدون" ? "بدون وردية" : `وردية ${s.shift}`} <i>{num(s.n)}</i></span>)}</div>}
+          {showEntries && l.entries.length > 0 && (
+            <>
+              <button className={`pl-more ${open ? "on" : ""}`} onClick={() => setOpen(!open)}>التسجيلات ({l.entries.length}) <FiChevronDown /></button>
+              {open && (
+                <div className="pl-entries">
+                  {l.entries.map((e) => (
+                    <div key={e.id} className="e"><time>{time(e.created_at)}</time><span>{num(e.qty)} {e.product_name}{e.machine_name ? ` · ${e.machine_name}` : ""}</span><small>{e.by_name || ""}</small></div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
