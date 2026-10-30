@@ -435,6 +435,9 @@ router.get("/books/summary", view, async (req, res) => {
     one(`SELECT COALESCE(SUM(e.amount),0) AS total, COALESCE(SUM(CASE WHEN m.kind IN ('elec','trans') THEN e.amount END),0) AS elec, COALESCE(SUM(CASE WHEN m.kind = 'water' THEN e.amount END),0) AS water, COALESCE(SUM(CASE WHEN m.kind = 'gen' THEN e.amount END),0) AS gen FROM f_meter_entries e JOIN f_meters m ON m.id = e.meter_id WHERE e.doc_date BETWEEN $1 AND $2`),
   ]);
   const N = (x) => round2(Number(x || 0));
+  // تفصيل المصاريف: كل بند لحاله (ضيافة، إيجار، ديزل…)
+  const cashCats = (await query("SELECT category AS name, SUM(amount) AS amount FROM f_cashbook WHERE kind = 'out' AND doc_date BETWEEN $1 AND $2 GROUP BY category ORDER BY 2 DESC", [from, to])).rows.map((x) => ({ name: x.name, amount: N(x.amount) }));
+  const drvKinds = (await query(`SELECT kind AS name, SUM(amount) AS amount FROM f_expenses WHERE status = 'approved' AND ${D("created_at")} GROUP BY kind ORDER BY 2 DESC`, [from, to]).catch(() => ({ rows: [] }))).rows.map((x) => ({ name: x.name, amount: N(x.amount) }));
   const store = (await query("SELECT COALESCE(SUM(balance * price),0) AS v FROM f_materials WHERE active AND balance > 0")).rows[0].v;
   const owe = (await query("SELECT COALESCE(SUM(CASE WHEN balance > 0 THEN balance END),0) AS we, COALESCE(SUM(CASE WHEN balance < 0 THEN -balance END),0) AS they FROM f_partners")).rows[0];
   const debts = (await query("SELECT COALESCE(SUM(balance),0) AS v FROM f_customers WHERE balance > 0")).rows[0].v;
@@ -445,6 +448,7 @@ router.get("/books/summary", view, async (req, res) => {
     sales: { invoices: N(sales.total), count: sales.n || 0, partner_sales: N(purch.sales), recycle: N(recyc.amount), recycle_kg: N(recyc.kg) },
     collected: { cash: N(coll.cash), cliq: N(coll.cliq), other: N(coll.other), partners: N(paid.received), recycle: N(recyc.received), other_income: N(cash.inn) },
     spent: { driver_expenses: N(drvExp.total), cashbook: N(cash.out), suppliers: N(paid.paid), maintenance: N(maint.cost), electricity: N(util.elec), water: N(util.water), generators: N(util.gen) },
+    spent_detail: { cashbook: cashCats, driver: drvKinds },
     purchases: N(purch.purchases),
     production: { cartons: prod.cartons || 0, materials_used: N(used.cost), waste: N(waste.cost) },
     totals: { income: round2(income), spend: round2(spend), net: round2(income - spend) },

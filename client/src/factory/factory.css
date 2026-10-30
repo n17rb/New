@@ -1208,3 +1208,6 @@ a.fx-pill { text-decoration: none; }
 .pl-entries .e time { color: var(--fx-muted); font-size: 12px; min-width: 52px; }
 .pl-entries .e span { flex: 1; color: #10304d; }
 .pl-entries .e small { color: var(--fx-muted); font-size: 11.5px; }
+.sum-sub { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
+.sum-sub span { background: #fdf2f2; color: #8a3a3a; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; }
+.sum-sub b { color: #a32020; }
