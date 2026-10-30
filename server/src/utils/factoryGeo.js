@@ -99,3 +99,10 @@ export function chainNearest(start, stops) {
 export function sortNearest(factory, stops) {
   return [...stops].sort((a, b) => (km(factory, pointOf(a)) ?? 9999) - (km(factory, pointOf(b)) ?? 9999));
 }
+
+// ترتيب الوقفات: المستعجل أول، وبعدين كل وقفة لأقرب وحدة إلها (المحلات القريبة من بعض ورا بعض)
+export function smartOrder(start, stops) {
+  const urgent = chainNearest(start, stops.filter((s) => s.urgent));
+  const last = urgent.length ? pointOf(urgent[urgent.length - 1]) || start : start;
+  return [...urgent, ...chainNearest(last, stops.filter((s) => !s.urgent))];
+}
