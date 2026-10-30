@@ -72,6 +72,7 @@ export const fapi = {
   deleteCustomer: (id) => del(`/customers/${id}`),
   customerLocation: (id, lat, lng) => post(`/customers/${id}/location`, { lat, lng }),
   driverNoLocation: () => get("/driver/no-location"),
+  setCustomersLine: (b) => post("/customers/set-line", b),
   payment: (id, b) => post(`/customers/${id}/payments`, b),
   adjust: (id, b) => post(`/customers/${id}/adjust`, b),
   customerDebt: (id, b) => post(`/customers/${id}/debt`, b),

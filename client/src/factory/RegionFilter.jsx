@@ -224,34 +224,63 @@ export function AreasFilter({ items, value = [], onChange, noun = "طلب" }) {
 // كبسة وحدة بتوريك طلبات المكان، وبتقدر تختار أكثر من منطقة
 // ============================================================
 export function matchPlace(x, v) {
+  if (v?.lines?.length) return v.lines.includes(x.line_id || 0);
   if (!v?.gov) return true;
   if (gov(x) !== v.gov) return false;
   return !v.areas?.length || v.areas.includes(nk(area(x)));
 }
-export function PlaceChips({ items, value, onChange, noun = "طلب" }) {
-  const v = value || { gov: null, areas: [] };
-  const govs = useMemo(() => countBy(items, gov), [items]);
+const FIXED_GOVS = ["إربد", "جرش", "عجلون", "المفرق"]; // المحافظات الثابتة — بتطلع دايمًا حتى لو ما فيها طلبات
+export function PlaceChips({ items, value, onChange, noun = "طلب", lines = [] }) {
+  const v = { gov: null, areas: [], lines: [], ...(value || {}) };
+  const govs = useMemo(() => {
+    const m = new Map(FIXED_GOVS.map((g) => [g, 0]));
+    for (const x of items) { const g = gov(x); m.set(g, (m.get(g) || 0) + 1); }
+    const fixed = FIXED_GOVS.map((g) => [g, m.get(g)]);
+    const rest = [...m.entries()].filter(([g, n]) => !FIXED_GOVS.includes(g) && n > 0).sort((a, b) => (a[0] === NONE) - (b[0] === NONE) || b[1] - a[1]);
+    return [...fixed, ...rest];
+  }, [items]);
+  // القوائم (الخطوط) اللي إلها طلبات، أو كل القوائم
+  const lists = useMemo(() => {
+    const n = new Map();
+    for (const x of items) if (x.line_id) n.set(x.line_id, (n.get(x.line_id) || 0) + 1);
+    return lines.map((l) => ({ id: l.id, name: l.name, n: n.get(l.id) || 0 })).sort((a, b) => b.n - a.n);
+  }, [items, lines]);
+  const noList = items.filter((x) => !x.line_id).length;
   const inGov = useMemo(() => (v.gov ? items.filter((x) => gov(x) === v.gov) : []), [items, v.gov]);
   const areas = useMemo(() => {
     const m = new Map();
     for (const x of inGov) { const a = area(x); const k = nk(a); const e = m.get(k) || { k, a, n: 0 }; e.n++; m.set(k, e); }
     return [...m.values()].sort((a, b) => (a.a === NONE) - (b.a === NONE) || b.n - a.n);
   }, [inGov]);
-  const pickGov = (g) => onChange(g === v.gov ? { gov: null, areas: [] } : { gov: g, areas: [] });
-  const toggleArea = (k) => onChange({ gov: v.gov, areas: v.areas.includes(k) ? v.areas.filter((x) => x !== k) : [...v.areas, k] });
+  const set = (p) => onChange({ gov: null, areas: [], lines: [], ...p });
+  const pickGov = (g) => set(g === v.gov ? {} : { gov: g });
+  const toggleArea = (k) => set({ gov: v.gov, areas: v.areas.includes(k) ? v.areas.filter((x) => x !== k) : [...v.areas, k] });
+  const toggleList = (id) => set({ lines: v.lines.includes(id) ? v.lines.filter((x) => x !== id) : [...v.lines, id] });
+  const shown = items.filter((x) => matchPlace(x, v)).length;
   return (
     <div className="fx-place">
       <div className="fx-place-row">
-        <button className={`fx-place-chip ${!v.gov ? "on" : ""}`} onClick={() => onChange({ gov: null, areas: [] })}>الكل <i>{num(items.length)}</i></button>
-        {govs.map(([g, n]) => <button key={g} className={`fx-place-chip ${v.gov === g ? "on" : ""}`} onClick={() => pickGov(g)}>{g} <i>{num(n)}</i></button>)}
+        <button className={`fx-place-chip ${!v.gov && !v.lines.length ? "on" : ""}`} onClick={() => set({})}>الكل <i>{num(items.length)}</i></button>
+        {govs.map(([g, n]) => <button key={g} className={`fx-place-chip ${v.gov === g ? "on" : ""} ${!n ? "zero" : ""}`} onClick={() => pickGov(g)}>{g} <i>{num(n)}</i></button>)}
       </div>
+      {lists.length > 0 && (
+        <div className="fx-place-row lists">
+          <span className="lbl">قوائمي</span>
+          {lists.map((l) => <button key={l.id} className={`fx-place-chip sm list ${v.lines.includes(l.id) ? "on" : ""} ${!l.n ? "zero" : ""}`} onClick={() => toggleList(l.id)}>{l.name} <i>{num(l.n)}</i></button>)}
+          {noList > 0 && <button className={`fx-place-chip sm list ${v.lines.includes(0) ? "on" : ""}`} onClick={() => toggleList(0)}>بدون قائمة <i>{num(noList)}</i></button>}
+        </div>
+      )}
       {v.gov && areas.length > 1 && (
         <div className="fx-place-sub">
-          <button className={`fx-place-chip sm ${!v.areas.length ? "on" : ""}`} onClick={() => onChange({ gov: v.gov, areas: [] })}>كل {v.gov} <i>{num(inGov.length)}</i></button>
+          <button className={`fx-place-chip sm ${!v.areas.length ? "on" : ""}`} onClick={() => set({ gov: v.gov })}>كل {v.gov} <i>{num(inGov.length)}</i></button>
           {areas.map((a) => <button key={a.k} className={`fx-place-chip sm ${v.areas.includes(a.k) ? "on" : ""}`} onClick={() => toggleArea(a.k)}>{a.a} <i>{num(a.n)}</i></button>)}
         </div>
       )}
-      {v.gov && <small className="fx-muted">{num(items.filter((x) => matchPlace(x, v)).length)} {noun} {v.areas.length ? `بـ ${areas.filter((a) => v.areas.includes(a.k)).map((a) => a.a).join(" و")}` : `بـ ${v.gov}`}</small>}
+      {(v.gov || v.lines.length > 0) && (
+        <small className="fx-muted">{num(shown)} {noun} {v.lines.length
+          ? `بقائمة ${v.lines.map((id) => (id ? lists.find((l) => l.id === id)?.name : "بدون قائمة")).filter(Boolean).join(" و")}`
+          : v.areas.length ? `بـ ${areas.filter((a) => v.areas.includes(a.k)).map((a) => a.a).join(" و")}` : `بـ ${v.gov}`}</small>
+      )}
     </div>
   );
 }

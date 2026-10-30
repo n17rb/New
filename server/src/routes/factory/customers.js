@@ -306,6 +306,21 @@ router.put("/customers/:id", edit, async (req, res) => {
 });
 
 // السائق بيحفظ موقع الزبون وهو واقف عنده
+// حط زباين بقائمة (خط): من شاشة الطلبات — بتحدد طلبات وبتكبس «حطهم بقائمة». بتقدر تعمل قائمة جديدة بنفس الكبسة
+router.post("/customers/set-line", needAny(["f_customers", "edit"], ["f_dispatch", "edit"]), async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.customer_ids) ? req.body.customer_ids : []).map(Number).filter((x) => x > 0))].slice(0, 500);
+  if (!ids.length) return bad(res, "اختار زباين.");
+  let lineId = req.body?.line_id === null || req.body?.line_id === 0 ? null : Number(req.body?.line_id) || null;
+  const newName = String(req.body?.new_name || "").trim().slice(0, 100);
+  if (newName) {
+    const ex = (await query("SELECT id FROM f_lines WHERE active AND name = $1 LIMIT 1", [newName])).rows[0];
+    lineId = ex ? ex.id : (await query("INSERT INTO f_lines (name, governorate) VALUES ($1,$2) RETURNING id", [newName, String(req.body?.governorate || "").trim().slice(0, 60) || null])).rows[0].id;
+  } else if (lineId && !(await query("SELECT 1 FROM f_lines WHERE id = $1 AND active", [lineId])).rows.length) return bad(res, "القائمة غير موجودة.");
+  await query("UPDATE f_customers SET line_id = $1 WHERE id = ANY($2::int[])", [lineId, ids]);
+  const line = lineId ? (await query("SELECT * FROM f_lines WHERE id = $1", [lineId])).rows[0] : null;
+  res.json({ ok: true, line, count: ids.length });
+});
+
 router.post("/customers/:id/location", edit, async (req, res) => {
   const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return bad(res, "الموقع غير صحيح.");
