@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle, FiEdit2, FiX, FiTruck, FiChevronLeft } from "react-icons/fi";
+import { FiPlus, FiCheck, FiArrowUp, FiArrowDown, FiInfo, FiTrash2, FiSearch, FiShuffle, FiEdit2, FiX, FiTruck, FiChevronLeft, FiList } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today, DateInput } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
@@ -13,18 +13,20 @@ export default function Orders() {
   const dispatch = fx.can("f_dispatch", "edit");
   const editOrders = fx.can("f_orders", "edit") || dispatch;
   const { data, error, reload } = useLoad(() => fapi.orders(), []);
+  LINE_NAMES = new Map((fx.boot.lines || []).map((l) => [l.id, l.name]));
   const [done, setDone] = useState(null);
   const [sel, setSel] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [msgs, setMsgs] = useState(null);
 
   // المناطق اللي اختارها (بتنحفظ على هالتلفون)
-  const [region, setRegionS] = useState(() => { try { const v = JSON.parse(localStorage.getItem("fx-orders-place") || "null"); return v && typeof v === "object" ? { gov: v.gov || null, areas: Array.isArray(v.areas) ? v.areas : [] } : { gov: null, areas: [] }; } catch { return { gov: null, areas: [] }; } });
+  const [region, setRegionS] = useState(() => { try { const v = JSON.parse(localStorage.getItem("fx-orders-place") || "null"); return v && typeof v === "object" ? { gov: v.gov || null, areas: Array.isArray(v.areas) ? v.areas : [], lines: Array.isArray(v.lines) ? v.lines : [] } : { gov: null, areas: [], lines: [] }; } catch { return { gov: null, areas: [], lines: [] }; } });
   const setRegion = (v) => { setRegionS(v); try { localStorage.setItem("fx-orders-place", JSON.stringify(v)); } catch { /* */ } };
   const all = data || [];
   const open = all.filter((o) => matchPlace(o, region));
   const free = open.filter((o) => !o.trip_id && ["new", "delayed"].includes(o.status));
   const assigned = open.filter((o) => o.trip_id);
+  const canList = fx.can("f_customers", "edit") || fx.can("f_dispatch", "edit");
   const selCartons = sel.reduce((s, id) => s + (all.find((o) => o.id === id)?.cartons || 0), 0);
   // التحديد بيضل لما تغيّر المنطقة: بتختار من صريح، بتروح الحصن وبتزيد، وكلهم بيطلعوا على نفس السيارة
   const selPlaces = useMemo(() => {
@@ -82,7 +84,7 @@ export default function Orders() {
 
           {editOrders && <PostponeCard onDone={reload} />}
 
-          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => setRegion(r)} noun="طلب" />}
+          {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => setRegion(r)} noun="طلب" lines={fx.boot.lines || []} />}
 
           {cur === "free" && (
             <>
@@ -150,10 +152,12 @@ export default function Orders() {
         <div className="fx-selbar">
           <span className="fx-grow"><b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة{selPlaces.length > 1 && <small className="fx-sel-places">{selPlaces.map(([k, n]) => `${n} ${k}`).join(" · ")}</small>}</span>
           <button className="fx-btn sm" onClick={() => setSel([])}>إلغاء</button>
+          {canList && <button className="fx-btn sm" onClick={() => setSheet({ kind: "list" })}><FiList /> قائمة</button>}
           <button className="fx-btn pri" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}><FiTruck /> حطها على سيارة</button>
         </div>
       )}
 
+      {sheet?.kind === "list" && <ListSheet orders={all.filter((o) => sel.includes(o.id))} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await fx.reloadBoot?.(); reload(); }} />}
       {sheet?.kind === "new" && <OrderSheet onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "edit" && <OrderSheet order={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "info" && ["delivered", "failed"].includes(sheet.o.status) && <StopSheet o={sheet.o} onClose={() => setSheet(null)} />}
@@ -169,6 +173,8 @@ export function itemsLine(o) {
   return o.items.map((i) => (i.qty > 0 ? `${num(i.qty)} ${i.name}${i.bonus_qty ? ` +${num(i.bonus_qty)} بونص` : ""}` : `🎁 ${num(i.bonus_qty)} ${i.name} بونص`)).join("، ");
 }
 
+let LINE_NAMES = new Map();
+const lineName = (id) => (LINE_NAMES.get(id) ? `📋 ${LINE_NAMES.get(id)}` : "");
 function OrderRow({ o, selectable, on, onToggle, onInfo }) {
   return (
     <div className={`fx-crow ${on ? "sel" : ""}`}>
@@ -180,7 +186,7 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
       <button className="fx-plain fx-crow-main" onClick={selectable ? onToggle : onInfo}>
         <span className="t">
           <b>{o.customer_name}</b>
-          <small>{[o.city, `${num(o.cartons)} كرتونة`].filter(Boolean).join(" · ")}{o.due_date && o.due_date !== today() ? ` · ${date(o.due_date)}` : ""}</small>
+          <small>{[o.city, `${num(o.cartons)} كرتونة`, o.line_id && lineName(o.line_id)].filter(Boolean).join(" · ")}{o.due_date && o.due_date !== today() ? ` · ${date(o.due_date)}` : ""}</small>
           {(o.urgent || o.status === "delayed" || o.recurring_id) && (
             <span className="tags">
               {o.recurring_id && <i className="o">🔁 طلب ثابت</i>}
@@ -714,5 +720,42 @@ function PostponeCard({ onDone }) {
         );
       })}
     </section>
+  );
+}
+
+// حط زباين الطلبات المحددة بقائمة (مثلًا «صريح وعجلون») — أو اعمل قائمة جديدة
+function ListSheet({ orders, onClose, onDone }) {
+  const fx = useFx();
+  const lines = fx.boot.lines || [];
+  const custIds = [...new Set(orders.map((o) => o.customer_id))];
+  const [name, setName] = useState("");
+  const [err, setErr] = useState("");
+  const go = async (b) => {
+    setErr("");
+    try { const r = await fapi.setCustomersLine({ customer_ids: custIds, ...b }); fx.toast(r.line ? `انحطّوا بقائمة ${r.line.name}` : "انشالوا من القائمة"); await onDone(); } catch (e) { setErr(e.message); }
+  };
+  return (
+    <Sheet title={`حط ${custIds.length} ${custIds.length === 1 ? "زبون" : "زباين"} بقائمة`} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-note sky">القائمة زي الخط: بتجمع زباين مع بعض (مثلًا «صريح وعجلون»). بعدها بتكبس على القائمة فوق الطلبات وبتطلعلك طلباتهم بس.</div>
+        <div className="fx-chips">{orders.slice(0, 12).map((o) => <span key={o.id} className="fx-chip">{o.customer_name}</span>)}{orders.length > 12 && <span className="fx-chip">+{orders.length - 12}</span>}</div>
+        {lines.length > 0 && <b>اختار قائمة</b>}
+        <div className="fx-list">
+          {lines.map((l) => (
+            <Act key={l.id} className="fx-item" onClick={() => go({ line_id: l.id })}>
+              <span className="t"><b>📋 {l.name}</b><span>{[l.governorate, l.vehicle_name].filter(Boolean).join(" · ")}</span></span>
+              <FiChevronLeft />
+            </Act>
+          ))}
+        </div>
+        <b>أو قائمة جديدة</b>
+        <div className="fx-row" style={{ flexWrap: "nowrap" }}>
+          <input className="fx-input fx-grow" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلًا: صريح وعجلون" />
+          <Act className="fx-btn pri" disabled={!name.trim()} onClick={() => go({ new_name: name.trim() })}>اعملها</Act>
+        </div>
+        <Err msg={err} />
+        <Act className="fx-link" style={{ justifySelf: "center" }} onClick={() => go({ line_id: null })}>شيلهم من أي قائمة</Act>
+      </div>
+    </Sheet>
   );
 }

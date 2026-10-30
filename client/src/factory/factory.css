@@ -1142,3 +1142,19 @@ a.fx-pill { text-decoration: none; }
 .sm-chip.ok { background: #e8f6ee; border-color: #c9ead6; color: #14653a; }
 .sm-chip.no { opacity: .45; }
 .fx-sel-places { display: block; font-size: 12px; opacity: .85; font-weight: 600; margin-top: 2px; }
+
+/* الموقع لازم للسائق */
+.fx-loc-need { background: #fff7e4; border-radius: 16px; padding: 10px; box-shadow: 0 0 0 2px #f0b43c; }
+.fx-loc-need .req { color: #b06a00; font-size: 12px; }
+.fx-loc-why { color: #8a5a00; font-weight: 600; }
+.fx-noloc { background: #fff7e4; border-radius: 18px; padding: 14px; display: grid; gap: 8px; }
+.fx-noloc > b { color: #8a5a00; }
+.fx-noloc > small { color: #8a5a00; opacity: .85; }
+.fx-noloc .row { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 14px; padding: 10px 12px; }
+.fx-noloc .row .t { flex: 1; min-width: 0; display: grid; }
+.fx-noloc .row .t small { color: var(--fx-muted); font-size: 12px; }
+.fx-place-chip.zero { opacity: .55; }
+.fx-place-row.lists { align-items: center; }
+.fx-place-row.lists .lbl { flex: none; font-size: 12.5px; font-weight: 700; color: var(--fx-muted); }
+.fx-place-chip.list { background: #fffaf0; border-color: #f3e2b8; }
+.fx-place-chip.list.on { background: #b06a00; border-color: #b06a00; color: #fff; }

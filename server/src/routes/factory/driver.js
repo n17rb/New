@@ -623,6 +623,12 @@ router.get("/driver/shops", drive, async (req, res) => {
 });
 
 // أسعار المحل (الخاصة أو العامة)
+// المحلات اللي سجّلها السائق بدون موقع — بتطلعله تذكير لحتى يحفظ موقعها لما يمر عندها
+router.get("/driver/no-location", drive, async (req, res) => {
+  const r = await query("SELECT id, name, phone, city FROM f_customers WHERE active AND lat IS NULL AND created_by = $1 ORDER BY id DESC LIMIT 30", [req.user.id]);
+  res.json(r.rows);
+});
+
 router.get("/driver/prices", drive, async (req, res) => {
   const cid = Number(req.query.customer_id) || null;
   const ps = (await query("SELECT id, price FROM f_products WHERE active")).rows;

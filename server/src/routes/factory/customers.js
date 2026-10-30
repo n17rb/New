@@ -13,6 +13,9 @@ const router = Router();
 const view = needAny(["f_customers"], ["f_orders"], ["f_dispatch"], ["f_money"], ["f_drive", "edit"]);
 const edit = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"]);
 const editOrFleet = needAny(["f_customers", "edit"], ["f_orders", "edit"], ["f_drive", "edit"], ["f_fleet", "edit"]);
+// السائق (بدون صلاحية الزباين أو الطلبات) لازم يحفظ موقع المحل مع الزبون — هو واقف عنده
+const driverOnly = (u) => can(u, "f_drive", "edit") && !can(u, "f_customers", "edit") && !can(u, "f_orders", "edit");
+const NEED_LOC = "لازم تحفظ موقع المحل قبل ما تحفظ الزبون — اكبس «أنا عنده هلأ».";
 const str = (v, n = 150) => (v == null || v === "" ? null : String(v).trim().slice(0, n));
 
 // الزباين القدام اللي ما إلهم محافظة/لواء: منطلعهم من اسم المنطقة
@@ -230,6 +233,7 @@ router.post("/customers-region", async (req, res) => {
 router.post("/customers", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
   if (!can(req.user, "f_customers", "edit")) Object.assign(c, { pay_terms: "cash", credit_limit: 0 }); // شروط الدفع للإدارة
+  if (driverOnly(req.user) && (c.lat == null || c.lng == null)) return res.status(400).json({ error: NEED_LOC, code: "NEED_LOCATION" });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -269,6 +273,7 @@ router.put("/customers/:id", edit, async (req, res) => {
   let c; try { c = await cleanCustomer(req.body || {}); } catch (e) { return bad(res, e.message); }
   // السائق/المدخل بيعدّل البيانات (الاسم، التلفون، الموقع، الصورة…) بس مش شروط الدفع ولا السقف ولا الخط ولا الأسعار
   const full = can(req.user, "f_customers", "edit");
+  if (driverOnly(req.user) && (c.lat == null || c.lng == null)) return res.status(400).json({ error: NEED_LOC, code: "NEED_LOCATION" });
   if (!full) {
     const old = (await query("SELECT line_id, pay_terms, credit_limit, seq_no FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
     if (!old) return bad(res, "الزبون غير موجود.", 404);
@@ -301,6 +306,21 @@ router.put("/customers/:id", edit, async (req, res) => {
 });
 
 // السائق بيحفظ موقع الزبون وهو واقف عنده
+// حط زباين بقائمة (خط): من شاشة الطلبات — بتحدد طلبات وبتكبس «حطهم بقائمة». بتقدر تعمل قائمة جديدة بنفس الكبسة
+router.post("/customers/set-line", needAny(["f_customers", "edit"], ["f_dispatch", "edit"]), async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.customer_ids) ? req.body.customer_ids : []).map(Number).filter((x) => x > 0))].slice(0, 500);
+  if (!ids.length) return bad(res, "اختار زباين.");
+  let lineId = req.body?.line_id === null || req.body?.line_id === 0 ? null : Number(req.body?.line_id) || null;
+  const newName = String(req.body?.new_name || "").trim().slice(0, 100);
+  if (newName) {
+    const ex = (await query("SELECT id FROM f_lines WHERE active AND name = $1 LIMIT 1", [newName])).rows[0];
+    lineId = ex ? ex.id : (await query("INSERT INTO f_lines (name, governorate) VALUES ($1,$2) RETURNING id", [newName, String(req.body?.governorate || "").trim().slice(0, 60) || null])).rows[0].id;
+  } else if (lineId && !(await query("SELECT 1 FROM f_lines WHERE id = $1 AND active", [lineId])).rows.length) return bad(res, "القائمة غير موجودة.");
+  await query("UPDATE f_customers SET line_id = $1 WHERE id = ANY($2::int[])", [lineId, ids]);
+  const line = lineId ? (await query("SELECT * FROM f_lines WHERE id = $1", [lineId])).rows[0] : null;
+  res.json({ ok: true, line, count: ids.length });
+});
+
 router.post("/customers/:id/location", edit, async (req, res) => {
   const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return bad(res, "الموقع غير صحيح.");
