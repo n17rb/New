@@ -8,7 +8,7 @@ router.use(requireAuth, gate("cash"));
 
 // نرجّع التاريخ كنص YYYY-MM-DD عشان ما يتزحلق يوم بسبب فرق التوقيت
 const ENTRY_COLUMNS = `id, period_id, to_char(entry_date, 'YYYY-MM-DD') AS entry_date,
-  sales_amount, expense_amount, notes, meter_reading, bottles_total, bottles_delivery,
+  sales_amount, expense_amount, expense_items, notes, meter_reading, bottles_total, bottles_delivery,
   created_by, created_at, updated_at`;
 
 async function getOrCreateOpenPeriod() {
@@ -292,7 +292,23 @@ router.get("/entries/:date", async (req, res) => {
 });
 
 router.post("/entries", async (req, res) => {
-  const { entry_date, sales_amount, expense_amount, notes, meter_reading, bottles_total, bottles_delivery } = req.body || {};
+  const { entry_date, sales_amount, notes, meter_reading, bottles_total, bottles_delivery } = req.body || {};
+  let { expense_amount } = req.body || {};
+
+  // تفاصيل الصرفيات (على شو انصرفت): المجموع بينحسب منها
+  let expenseItems = undefined;
+  if (Array.isArray(req.body?.expense_items)) {
+    expenseItems = [];
+    for (const it of req.body.expense_items.slice(0, 50)) {
+      const name = String(it?.name || "").trim().slice(0, 60);
+      const amount = Math.round(Number(it?.amount) * 100) / 100;
+      if (!name && !(amount > 0)) continue;
+      if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: `اكتب مبلغ صحيح لـ«${name || "صرفية"}».` });
+      expenseItems.push({ name: name || "صرفيات", amount });
+    }
+    expense_amount = expenseItems.length ? String(Math.round(expenseItems.reduce((a, x) => a + x.amount, 0) * 100) / 100) : (expense_amount ?? "");
+    if (!expenseItems.length) expenseItems = null;
+  }
   const date = entry_date || getJordanToday();
   const dateError = validateDate(date);
   if (dateError) return res.status(400).json({ error: dateError });
@@ -330,17 +346,18 @@ router.post("/entries", async (req, res) => {
   if (oldEntry) {
     const result = await query(
       `UPDATE cash_entries SET sales_amount = $1, expense_amount = $2, notes = $3,
-         meter_reading = $4, bottles_total = $5, bottles_delivery = $6, updated_at = now()
+         meter_reading = $4, bottles_total = $5, bottles_delivery = $6,
+         expense_items = CASE WHEN $8::boolean THEN $9::text::jsonb ELSE expense_items END, updated_at = now()
        WHERE id = $7 RETURNING ${ENTRY_COLUMNS}`,
-      [sales.value, expenses.value, cleanNotes, meter.value, bt.value, bd.value, oldEntry.id]
+      [sales.value, expenses.value, cleanNotes, meter.value, bt.value, bd.value, oldEntry.id, expenseItems !== undefined, expenseItems ? JSON.stringify(expenseItems) : null]
     );
     saved = result.rows[0];
   } else {
     const periodId = await periodForNewDate(date);
     const result = await query(
-      `INSERT INTO cash_entries (period_id, entry_date, sales_amount, expense_amount, notes, meter_reading, bottles_total, bottles_delivery, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${ENTRY_COLUMNS}`,
-      [periodId, date, sales.value, expenses.value, cleanNotes, meter.value, bt.value, bd.value, req.user.id]
+      `INSERT INTO cash_entries (period_id, entry_date, sales_amount, expense_amount, notes, meter_reading, bottles_total, bottles_delivery, created_by, expense_items)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::text::jsonb) RETURNING ${ENTRY_COLUMNS}`,
+      [periodId, date, sales.value, expenses.value, cleanNotes, meter.value, bt.value, bd.value, req.user.id, expenseItems ? JSON.stringify(expenseItems) : null]
     );
     saved = result.rows[0];
   }

@@ -231,7 +231,7 @@ export default function Cash() {
   const [day, setDay] = useState(null);
   const [dayLoading, setDayLoading] = useState(false);
   const [sales, setSales] = useState("");
-  const [expenses, setExpenses] = useState("");
+  const [expItems, setExpItems] = useState([]); // [{name, amount}] — على شو انصرفت
   const [notes, setNotes] = useState("");
   const [meter, setMeter] = useState("");
   const [bottlesTotal, setBottlesTotal] = useState("");
@@ -255,7 +255,10 @@ export default function Cash() {
       setDay(r);
       const e = r.entry;
       setSales(e ? String(Number(e.sales_amount) || "") : "");
-      setExpenses(e ? String(Number(e.expense_amount) || "") : "");
+      const items = Array.isArray(e?.expense_items) ? e.expense_items : null;
+      setExpItems(items && items.length
+        ? items.map((x) => ({ name: x.name || "", amount: String(x.amount) }))
+        : e && Number(e.expense_amount) > 0 ? [{ name: "صرفيات", amount: String(Number(e.expense_amount)) }] : []);
       setNotes(e?.notes || "");
       setMeter(e?.meter_reading != null ? String(Number(e.meter_reading)) : "");
       setBottlesTotal(e?.bottles_total != null ? String(e.bottles_total) : "");
@@ -293,16 +296,21 @@ export default function Cash() {
   const effTotal = bottlesTotal !== "" ? Number(bottlesTotal) : autoTotal;
   const effDelivery = bottlesDelivery !== "" ? Number(bottlesDelivery) : day?.delivery_auto ?? 0;
   const effShop = effTotal != null ? Math.max(0, effTotal - effDelivery) : null;
+  const expTotal = Math.round(expItems.reduce((a, x) => a + (Number(x.amount) || 0), 0) * 100) / 100;
 
   async function handleSave() {
     setError("");
     setSuccess("");
-    const nums = [sales, expenses].map((x) => (x === "" ? 0 : Number(x)));
+    const nums = [sales, ...expItems.map((x) => x.amount)].map((x) => (x === "" ? 0 : Number(x)));
     if (nums.some((x) => !Number.isFinite(x) || x < 0)) return setError("تأكد إن الأرقام صحيحة.");
+    const cleanItems = expItems.filter((x) => x.name.trim() || Number(x.amount) > 0);
+    if (cleanItems.some((x) => !(Number(x.amount) > 0))) return setError("في صرفية بدون مبلغ — اكتب المبلغ أو احذفها.");
     setSaving(true);
     try {
       const r = await api.saveCashEntry({
-        entry_date: selectedDate, sales_amount: sales, expense_amount: expenses, notes: notes.trim(),
+        entry_date: selectedDate, sales_amount: sales, notes: notes.trim(),
+        expense_items: cleanItems.map((x) => ({ name: x.name.trim() || "صرفيات", amount: Number(x.amount) })),
+        expense_amount: cleanItems.length ? String(expTotal) : "",
         meter_reading: meter, bottles_total: bottlesTotal, bottles_delivery: bottlesDelivery,
       });
       const wasExisting = !!day?.entry;
@@ -379,16 +387,12 @@ export default function Cash() {
             )}
             {!day.entry && canEditCash && <p className="text-secondary" style={{ fontSize: "0.85rem", marginTop: 0 }}>هذا اليوم مش مسجّل — عبّي الأرقام واحفظ.</p>}
 
-            <div className="field-row">
-              <div className="field">
-                <label>المبيعات (JD)</label>
-                <input type="number" inputMode="decimal" step="0.01" min="0" value={sales} onChange={(e) => setSales(e.target.value)} placeholder="0" readOnly={!canEditCash} />
-              </div>
-              <div className="field">
-                <label>الصرفيات (JD)</label>
-                <input type="number" inputMode="decimal" step="0.01" min="0" value={expenses} onChange={(e) => setExpenses(e.target.value)} placeholder="0" readOnly={!canEditCash} />
-              </div>
+            <div className="field">
+              <label>المبيعات (JD)</label>
+              <input type="number" inputMode="decimal" step="0.01" min="0" value={sales} onChange={(e) => setSales(e.target.value)} placeholder="0" readOnly={!canEditCash} />
             </div>
+
+            <ExpensesEditor items={expItems} onChange={setExpItems} total={expTotal} readOnly={!canEditCash} />
 
             <div className="bottles-box">
               <div className="bottles-box-h">
@@ -461,6 +465,8 @@ export default function Cash() {
         <div className="sum-row total"><span>الكاش المتوقع بالدرج</span><span className="tabular-num">{money(data.expected_cash)}</span></div>
       </div>
 
+      <ExpensesBreakdown entries={data.entries} />
+
       <div className="card">
         <h2 className="title-md">جدول الأيام</h2>
         <p className="text-secondary" style={{ fontSize: "0.8rem", marginTop: 0 }}>اضغط على أي يوم لتعديله.</p>
@@ -491,6 +497,83 @@ export default function Cash() {
         {showHistory ? "إخفاء الأرشيف" : "📁 أرشيف الفترات السابقة"}
       </button>
       {showHistory && <ArchiveList onOpenDay={openDay} />}
+    </div>
+  );
+}
+
+
+// ============================================================
+// الصرفيات بالتفصيل: كل بند (قهوة، تنك مي، بنزين…) ومبلغه — والمجموع لحاله
+// ============================================================
+const EXP_QUICK = ["قهوة", "تنك مي", "بنزين", "أكل", "صيانة", "كهربا", "أجرة"];
+
+function ExpensesEditor({ items, onChange, total, readOnly }) {
+  const set = (i, k, v) => onChange(items.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const add = (name = "") => onChange([...items, { name, amount: "" }]);
+  const remove = (i) => onChange(items.filter((_, j) => j !== i));
+
+  return (
+    <div className="exp-box">
+      <div className="exp-head">
+        <span>الصرفيات</span>
+        <b className="tabular-num">{total.toFixed(2)} <small>JD</small></b>
+      </div>
+
+      {items.length === 0 && <div className="exp-empty">ما في صرفيات لهاليوم{readOnly ? "" : " — ضيف على شو صرفت"}</div>}
+
+      {items.map((x, i) => (
+        <div key={i} className="exp-row">
+          <input className="exp-name" value={x.name} onChange={(e) => set(i, "name", e.target.value)} placeholder="على شو؟ (مثلًا ٥ قهوة)" readOnly={readOnly} maxLength={60} />
+          <input className="exp-amt tabular-num" type="number" inputMode="decimal" step="0.01" min="0" value={x.amount}
+            onChange={(e) => set(i, "amount", e.target.value)} placeholder="0.00" readOnly={readOnly} aria-label={`مبلغ ${x.name || "الصرفية"}`} />
+          {!readOnly && <button type="button" className="exp-del" onClick={() => remove(i)} aria-label="احذف">×</button>}
+        </div>
+      ))}
+
+      {!readOnly && (
+        <>
+          <div className="exp-quick">
+            {EXP_QUICK.map((q) => <button key={q} type="button" onClick={() => add(q)}>+ {q}</button>)}
+          </div>
+          <button type="button" className="exp-add" onClick={() => add("")}>+ صرفية ثانية</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// وين راحت الصرفيات بهالفترة (مجموع كل بند)
+function ExpensesBreakdown({ entries }) {
+  const rows = useMemo(() => {
+    const m = new Map();
+    for (const e of entries || []) {
+      const items = Array.isArray(e.expense_items) && e.expense_items.length
+        ? e.expense_items
+        : Number(e.expense_amount) > 0 ? [{ name: "صرفيات بدون تفصيل", amount: Number(e.expense_amount) }] : [];
+      for (const it of items) {
+        // «٥ قهوة» و«قهوة» نفس البند
+        const key = String(it.name || "صرفيات").replace(/[0-9٠-٩]+(\.[0-9٠-٩]+)?/g, "").replace(/\s+/g, " ").trim() || "صرفيات";
+        m.set(key, (m.get(key) || 0) + Number(it.amount || 0));
+      }
+    }
+    return [...m.entries()].map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 })).sort((a, b) => b.amount - a.amount);
+  }, [entries]);
+  if (!rows.length) return null;
+  const total = rows.reduce((a, x) => a + x.amount, 0);
+  const max = rows[0].amount || 1;
+  return (
+    <div className="card">
+      <h2 className="title-md">وين راحت الصرفيات؟</h2>
+      <p className="text-secondary" style={{ fontSize: "0.8rem", marginTop: -4 }}>من آخر أرشفة · المجموع <b className="tabular-num">{total.toFixed(2)} JD</b></p>
+      {rows.map((r) => (
+        <div key={r.name} className="exp-br">
+          <div className="exp-br-h">
+            <span>{r.name}</span>
+            <span className="tabular-num">{r.amount.toFixed(2)} JD <small>({Math.round((r.amount / total) * 100)}٪)</small></span>
+          </div>
+          <div className="exp-br-track"><div style={{ width: `${Math.max(4, (r.amount / max) * 100)}%` }} /></div>
+        </div>
+      ))}
     </div>
   );
 }

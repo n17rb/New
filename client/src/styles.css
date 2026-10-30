@@ -2711,3 +2711,26 @@ button.stop-row:active { background: var(--surface-2); }
   .inv { box-shadow: none; }
   .inv-hero, .inv-wallet { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- الصرفيات بالتفصيل ---------- */
+.exp-box { background: var(--surface-2); border-radius: 16px; padding: 12px; margin-bottom: 14px; }
+.exp-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.exp-head span { font-weight: 700; font-size: 0.9rem; }
+.exp-head b { font-size: 1.25rem; font-weight: 800; color: var(--urgent); }
+.exp-head small { font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; }
+.exp-empty { font-size: 0.82rem; color: var(--text-secondary); padding: 4px 2px 8px; }
+.exp-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.exp-row input { padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: 0.92rem; min-width: 0; }
+.exp-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.exp-name { flex: 1; }
+.exp-amt { width: 92px; text-align: left; }
+.exp-del { width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px; border: none; background: var(--urgent-soft); color: var(--urgent); font-size: 1.2rem; cursor: pointer; }
+.exp-quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.exp-quick button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.exp-add { width: 100%; border: 1.5px dashed var(--border); background: none; color: var(--primary); border-radius: 12px; padding: 9px; font: inherit; font-size: 0.86rem; font-weight: 700; cursor: pointer; }
+.exp-br { margin-bottom: 10px; }
+.exp-br-h { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 4px; }
+.exp-br-h span:first-child { font-weight: 700; }
+.exp-br-h small { color: var(--text-secondary); }
+.exp-br-track { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.exp-br-track div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #F07070, #D64545); }

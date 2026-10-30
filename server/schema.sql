@@ -1375,3 +1375,6 @@ ALTER TABLE f_cashbook ADD COLUMN IF NOT EXISTS emp_tx_id INTEGER;
 -- بيع على أرض المصنع: الكراتين بتطلع من المستودع مباشرة (حركة «sale»)
 ALTER TABLE f_stock_moves DROP CONSTRAINT IF EXISTS f_stock_moves_kind_check;
 ALTER TABLE f_stock_moves ADD CONSTRAINT f_stock_moves_kind_check CHECK (kind IN ('production','load','return','damage','adjust','count','sale'));
+
+-- تفاصيل الصرفيات لكل يوم: [{name, amount}] — والمجموع بينحفظ بـ expense_amount
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS expense_items JSONB;
