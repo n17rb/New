@@ -915,7 +915,7 @@ function Journal() {
           {canAdd && (
             <div className="hm-quick">
               <button onClick={() => setCash("out")}><span>−</span> مصروف</button>
-              <button onClick={() => setCash("in")}><span>+</span> دخل / بيع أرض</button>
+              <button onClick={() => setCash("in")}><span>+</span> دخل ثاني</button>
             </div>
           )}
           {rows.length === 0 && <Empty title="ما في حركة" text="أي مصاري بتدخل أو بتطلع بتنسجّل هون لحالها." />}
