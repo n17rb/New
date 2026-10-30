@@ -2734,3 +2734,36 @@ button.stop-row:active { background: var(--surface-2); }
 .exp-br-h small { color: var(--text-secondary); }
 .exp-br-track { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .exp-br-track div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #F07070, #D64545); }
+
+/* ============================================================
+   الشريط العلوي: فاتح وناعم بدل الأزرق العريض
+   ============================================================ */
+.top-bar {
+  background: rgba(243, 247, 253, 0.86);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  color: var(--text);
+  border-bottom: 1px solid rgba(13, 71, 161, 0.07);
+  min-height: 60px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+}
+.top-bar::after { display: none; }
+[data-theme="dark"] .top-bar { background: rgba(10, 22, 40, 0.86); border-bottom-color: var(--border); }
+.top-bar .brand { color: var(--text); gap: 10px; }
+.brand-mark {
+  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+  background: linear-gradient(140deg, #0A66F5 0%, #2F86FF 100%);
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(10, 102, 245, 0.25);
+}
+.top-bar .wordmark-name { font-size: 1.25rem; color: var(--navy); }
+[data-theme="dark"] .top-bar .wordmark-name { color: var(--text); }
+.top-bar .wordmark-sub { color: var(--text-secondary); opacity: 1; font-size: 0.7rem; }
+.top-icon {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border); color: var(--navy);
+  box-shadow: 0 1px 3px rgba(13, 71, 161, 0.06);
+}
+.top-icon:active { background: var(--surface-2); }
+[data-theme="dark"] .top-icon { color: var(--text); }
+.top-badge { top: -4px; left: -4px; background: #F0524F; border: 2px solid var(--bg); }

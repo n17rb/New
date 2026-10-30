@@ -158,6 +158,8 @@ function MainApp() {
     // المصانع دايمًا فاتح
     document.documentElement.setAttribute("data-theme", darkMode && readShop()?.plan !== "factory" ? "dark" : "light");
     localStorage.setItem("darkMode", darkMode ? "true" : "false");
+    // لون شريط التلفون فوق = لون الشريط العلوي الفاتح/الغامق
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", darkMode && readShop()?.plan !== "factory" ? "#0A1628" : "#F3F7FD");
   }, [darkMode]);
 
   function checkSetup() {
@@ -532,8 +534,8 @@ function TopBar({ unreadCount = 0, chatUnread = 0, showChat = false, shopName = 
   return (
     <header className="top-bar">
       <button className="brand" onClick={() => !minimal && navigate("/")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }} aria-label="الرئيسية">
-        <LogoMark size={34} color="#fff" strokeWidth={3.8} />
-        <Wordmark light subtitle={shopName} />
+        <span className="brand-mark"><LogoMark size={24} color="#fff" strokeWidth={4.2} /></span>
+        <Wordmark subtitle={shopName} />
       </button>
       {!minimal && (
         <div className="top-actions">
