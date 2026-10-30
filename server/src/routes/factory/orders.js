@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
-import { planStops, sortNearest, chainNearest, km, pointOf } from "../../utils/factoryGeo.js";
+import { planStops, sortNearest, chainNearest, smartOrder, km, pointOf } from "../../utils/factoryGeo.js";
 import { canAction } from "../../permissions.js";
 import { sendPushToUser } from "../../utils/push.js";
 import { inferRegion } from "../../utils/jordanRegions.js";
@@ -368,7 +368,7 @@ async function previewTrip({ vehicleId, orderIds, sort = false, date, departTime
   const orders = await loadOrders("o.id = ANY($1::int[])", [orderIds]);
   let stops = orderIds.map((id) => orders.find((o) => o.id === Number(id))).filter(Boolean);
   const factory = await factoryPoint();
-  if (sort) stops = sortNearest(factory, stops);
+  if (sort) stops = smartOrder(factory, stops);
   const existing = (await query(
     `SELECT t.id, t.extra_cartons, COALESCE((SELECT SUM(i.qty + i.bonus_qty) FROM f_orders o JOIN f_order_items i ON i.order_id = o.id WHERE o.trip_id = t.id AND o.status IN ('assigned','onway','delayed') AND NOT (o.id = ANY($3::int[]))), 0)::int AS cartons
      FROM f_trips t WHERE (t.vehicle_id = $1 AND t.trip_date = $2 AND t.status IN ('planned','active'))
@@ -439,6 +439,11 @@ router.post("/trips", dispatch, async (req, res) => {
       if (i.qty > 0) await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,'طلبات انضافت بعد التحميل',$5)", [i.product_id, i.qty, tripId, trip.vehicle_id, req.user.id]);
     }
   }
+  // طلب مستعجل انضاف لسيارة عندها وقفات: بيصير الوقفة الجاية فورًا، والباقي بيضل بترتيبه
+  if (pv.existing_trip_id) {
+    const urgentNew = (await loadOrders("o.id = ANY($1::int[]) AND o.urgent", [orderIds]));
+    if (urgentNew.length) await putFirst(tripId, urgentNew.map((o) => o.id));
+  }
   await recomputeEta(tripId, { fromNow: trip.status === "active" });
   const orders = await loadOrders("o.id = ANY($1::int[])", [orderIds]);
   const msgIds = [];
@@ -461,6 +466,44 @@ router.post("/trips", dispatch, async (req, res) => {
   res.status(201).json({ trip_id: tripId, message_ids: msgIds });
 });
 
+// بيخلّي طلبات معيّنة هي الوقفات الجاية (المستعجل) — الوقفات اللي خلصت بتضل بأولها
+async function putFirst(tripId, firstIds) {
+  const done = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('delivered','failed')", [tripId])).rows[0].n;
+  const pending = (await query("SELECT id FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway','delayed') ORDER BY stop_seq NULLS LAST, id", [tripId])).rows.map((r) => r.id);
+  const tv = (await query("SELECT t.status, v.last_lat, v.last_lng FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [tripId])).rows[0];
+  const start = tv?.status === "active" && tv.last_lat != null ? [tv.last_lat, tv.last_lng] : await factoryPoint();
+  const firsts = chainNearest(start, await loadOrders("o.id = ANY($1::int[])", [firstIds.filter((id) => pending.includes(id))])).map((o) => o.id);
+  const order = [...firsts, ...pending.filter((id) => !firsts.includes(id))];
+  let seq = done;
+  for (const id of order) await query("UPDATE f_orders SET stop_seq = $1 WHERE id = $2", [++seq, id]);
+}
+
+// «خلّيه أول»: طلب على سيارة بيصير الوقفة الجاية (حالة مستعجلة) — والسائق بيوصله إشعار
+router.post("/orders/:id/first", dispatch, async (req, res) => {
+  const o = (await loadOrders("o.id = $1", [req.params.id]))[0];
+  if (!o?.trip_id || !["assigned", "onway", "delayed"].includes(o.status)) return bad(res, "الطلب مش على سيارة.");
+  await query("UPDATE f_orders SET urgent = true, updated_at = now() WHERE id = $1", [o.id]);
+  await putFirst(o.trip_id, [o.id]);
+  await recomputeEta(o.trip_id, { fromNow: o.trip_status === "active" });
+  await notifyDriver(o.trip_id, `🚨 مستعجل: ${o.customer_name} أول وقفة`, `${o.cartons} كرتونة${o.city ? ` · ${o.city}` : ""}. روح عنده هلأ قبل الباقي.`);
+  await logActivity({ userId: req.user.id, action: "F_ORDER_FIRST", recordType: "f_order", recordId: o.id });
+  res.json({ ok: true });
+});
+
+// «شيله من السيارة»: الطلب بيرجع للطلبات الجديدة (السائق بيوصله إشعار ما يروح عنده)
+router.post("/orders/:id/unassign", dispatch, async (req, res) => {
+  const o = (await loadOrders("o.id = $1", [req.params.id]))[0];
+  if (!o?.trip_id || !["assigned", "onway", "delayed"].includes(o.status)) return bad(res, "الطلب مش على سيارة.");
+  const reason = String(req.body?.reason || "").trim().slice(0, 200);
+  await query("UPDATE f_orders SET status = 'new', trip_id = NULL, stop_seq = NULL, eta_at = NULL, updated_at = now() WHERE id = $1", [o.id]);
+  await recomputeEta(o.trip_id, { fromNow: o.trip_status === "active" });
+  const loaded = o.trip_status === "active" || o.status === "onway";
+  await notifyDriver(o.trip_id, `انلغى ${o.customer_name} من رحلتك`, `ما تروح عنده${reason ? ` (${reason})` : ""}.${loaded ? " كراتينه بترجع معك للمستودع." : ""}`);
+  await dropIfEmpty(o.trip_id);
+  await logActivity({ userId: req.user.id, action: "F_ORDER_UNASSIGN", recordType: "f_order", recordId: o.id, newValue: { from_trip: o.trip_id, reason } });
+  res.json({ ok: true, cartons_loaded: loaded });
+});
+
 // ترتيب الوقفات يدويًا أو من الأقرب للأبعد
 router.put("/trips/:id/stops", dispatch, async (req, res) => {
   let ids = (req.body?.order_ids || []).map(Number);
@@ -470,7 +513,7 @@ router.put("/trips/:id/stops", dispatch, async (req, res) => {
     const tv = (await query("SELECT t.status, v.last_lat, v.last_lng FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [req.params.id])).rows[0];
     const start = tv?.status === "active" && tv.last_lat != null ? [tv.last_lat, tv.last_lng] : await factoryPoint();
     const orders = await loadOrders("o.trip_id = $1 AND o.status IN ('assigned','onway','delayed')", [req.params.id]);
-    ids = chainNearest(start, orders).map((o) => o.id);
+    ids = smartOrder(start, orders).map((o) => o.id);
     // الوقفات اللي خلصت بتضل بأولها
     seq = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('delivered','failed')", [req.params.id])).rows[0].n;
   }

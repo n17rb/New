@@ -118,8 +118,8 @@ export default function Orders() {
                         <b>{o.customer_name}</b>
                         <small>{num(o.cartons)} كرتونة{o.eta_at ? ` · يوصل ${time(o.eta_at)}` : ""}</small>
                       </button>
-                      <StatusPill map={ORDER_STATUS} value={o.status} />
-                      {dispatch && <button className="fx-link" onClick={() => setSheet({ kind: "move", o })}>نقل</button>}
+                      {o.urgent ? <span className="fx-pill crit">🚨 مستعجل</span> : <StatusPill map={ORDER_STATUS} value={o.status} />}
+                      {dispatch && <button className="fx-link" onClick={() => setSheet({ kind: "carops", o, g })}>تعديل</button>}
                     </div>
                   ))}
                 </section>
@@ -157,6 +157,7 @@ export default function Orders() {
         </div>
       )}
 
+      {sheet?.kind === "carops" && <CarOrderOps o={sheet.o} g={sheet.g} onClose={() => setSheet(null)} onMove={() => setSheet({ kind: "move", o: sheet.o })} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "list" && <ListSheet orders={all.filter((o) => sel.includes(o.id))} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await fx.reloadBoot?.(); reload(); }} />}
       {sheet?.kind === "new" && <OrderSheet onClose={() => setSheet(null)} onSaved={after} />}
       {sheet?.kind === "edit" && <OrderSheet order={sheet.o} onClose={() => setSheet(null)} onSaved={after} />}
@@ -755,6 +756,40 @@ function ListSheet({ orders, onClose, onDone }) {
         </div>
         <Err msg={err} />
         <Act className="fx-link" style={{ justifySelf: "center" }} onClick={() => go({ line_id: null })}>شيلهم من أي قائمة</Act>
+      </div>
+    </Sheet>
+  );
+}
+
+// طلب على سيارة: خلّيه أول وقفة (مستعجل)، شيله من السيارة، أو انقله لسيارة ثانية
+function CarOrderOps({ o, g, onClose, onMove, onDone }) {
+  const fx = useFx();
+  const [why, setWhy] = useState("");
+  const [confirmOff, setConfirmOff] = useState(false);
+  const pending = g.orders.filter((x) => ["assigned", "onway", "delayed"].includes(x.status));
+  const isFirst = pending[0]?.id === o.id;
+  return (
+    <Sheet title={o.customer_name} onClose={onClose}>
+      <div className="fx-stack">
+        <div className="fx-note sky">{num(o.cartons)} كرتونة · على {g.vehicle_name} مع {g.driver_name || "السائق"} · الوقفة رقم {pending.findIndex((x) => x.id === o.id) + 1} من {pending.length}</div>
+        <Act className="fx-btn block fx-big" style={{ background: "#fdecec", color: "#a32020", borderColor: "#f5c2c2" }} disabled={isFirst && o.urgent} onClick={async () => {
+          await fapi.orderFirst(o.id); fx.toast(`${o.customer_name} صار أول وقفة — وصل السائق إشعار`); onDone();
+        }}>🚨 مستعجل — خلّيه أول وقفة</Act>
+        <small className="fx-muted" style={{ marginTop: -6 }}>السائق بيوصله إشعار يروح عنده هلأ قبل الباقي، والباقي بيضل بترتيبه.</small>
+        <button className="fx-btn block" onClick={onMove}>نقله لسيارة ثانية</button>
+        {!confirmOff ? (
+          <button className="fx-btn block" onClick={() => setConfirmOff(true)}>شيله من السيارة (ما يروح عنده)</button>
+        ) : (
+          <div className="fx-card fx-stack" style={{ gap: 8 }}>
+            <b>شيل {o.customer_name} من رحلة {g.driver_name || "السائق"}؟</b>
+            <input className="fx-input" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="السبب (اختياري) — مثلًا: الزبون أجّل" />
+            <small className="fx-muted">الطلب بيرجع للطلبات الجديدة، والسائق بيوصله إشعار ما يروح عنده.{o.status === "onway" || g.trip_status === "active" ? " كراتينه بترجع معه للمستودع." : ""}</small>
+            <div className="fx-grid2">
+              <button className="fx-btn" onClick={() => setConfirmOff(false)}>لا</button>
+              <Act className="fx-btn danger" onClick={async () => { await fapi.orderUnassign(o.id, why); fx.toast("انشال — ورجع للطلبات الجديدة"); onDone(); }}>شيله</Act>
+            </div>
+          </div>
+        )}
       </div>
     </Sheet>
   );
