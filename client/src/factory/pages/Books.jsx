@@ -462,8 +462,12 @@ function Cash() {
 }
 export function CashSheet({ kind, cats, onClose, onDone }) {
   const fx = useFx();
-  const used = cats.filter((c) => c.kind === kind).map((c) => c.category);
-  const opts = [...new Set([...CASH_CATS[kind], ...used])].slice(0, 16);
+  // البنود: بتضيف وبتحذف بحرية (بتنحفظ للكل)
+  const { data: saved, reload: reloadCats } = useLoad(() => fapi.cashCats(), []);
+  const opts = saved ? saved[kind] : CASH_CATS[kind];
+  const [editCats, setEditCats] = useState(false);
+  const [newCat, setNewCat] = useState("");
+  const saveCats = async (list) => { try { await fapi.saveCashCats(kind, list); await reloadCats(); } catch (e) { fx.toast(e.message); } };
   const [cat, setCat] = useState("");
   const [amount, setAmount] = useState("");
   const [d, setD] = useState(today());
@@ -473,8 +477,23 @@ export function CashSheet({ kind, cats, onClose, onDone }) {
   return (
     <Sheet title={kind === "in" ? "دخل للصندوق" : "صرف من الصندوق"} onClose={onClose}>
       <div className="fx-stack">
-        <div className="fx-chips">{opts.map((c) => <button key={c} type="button" className={`fx-chip ${cat === c ? "on" : ""}`} onClick={() => setCat(c)}>{c}</button>)}</div>
-        <label className="fx-field">البند<input className="fx-input" value={cat} onChange={(e) => setCat(e.target.value)} placeholder="أو اكتب بند جديد" /></label>
+        <div className="fx-row" style={{ justifyContent: "space-between" }}>
+          <b>{kind === "in" ? "شو هالدخل؟" : "شو سبب الصرف؟"}</b>
+          <button type="button" className="fx-link" onClick={() => setEditCats(!editCats)}>{editCats ? "تم" : "✎ تعديل البنود"}</button>
+        </div>
+        <div className="fx-chips">
+          {opts.map((c) => editCats
+            ? <span key={c} className="fx-chip cat-edit">{c}<button type="button" aria-label={`احذف ${c}`} onClick={() => saveCats(opts.filter((x) => x !== c))}><FiX /></button></span>
+            : <button key={c} type="button" className={`fx-chip ${cat === c ? "on" : ""}`} onClick={() => setCat(c)}>{c}</button>)}
+        </div>
+        {editCats ? (
+          <div className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
+            <input className="fx-input fx-grow" value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="بند جديد (مثلًا: محروقات المكتب)" />
+            <button type="button" className="fx-btn pri" disabled={!newCat.trim()} onClick={async () => { await saveCats([...opts, newCat.trim()]); setCat(newCat.trim()); setNewCat(""); }}>ضيف</button>
+          </div>
+        ) : (
+          <label className="fx-field">البند<input className="fx-input" value={cat} onChange={(e) => setCat(e.target.value)} placeholder="أو اكتب بند لمرة وحدة" /></label>
+        )}
         <label className="fx-field">المبلغ<input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
         <div className="fx-field">التاريخ<DateInput value={d} onChange={setD} ariaLabel="التاريخ" /></div>
         <label className="fx-field">ملاحظة<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>

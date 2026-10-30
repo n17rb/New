@@ -291,6 +291,21 @@ router.get("/books/cash", view, async (req, res) => {
   const cats = (await query("SELECT kind, category, COUNT(*)::int AS n FROM f_cashbook GROUP BY kind, category ORDER BY n DESC LIMIT 40")).rows;
   res.json({ from, to, rows, in: round2(rows.filter((x) => x.kind === "in").reduce((a, x) => a + x.amount, 0)), out: round2(rows.filter((x) => x.kind === "out").reduce((a, x) => a + x.amount, 0)), categories: cats });
 });
+// بنود الصندوق: الإدارة/المحاسب بيضيفوا ويحذفوا بنود الصرف والدخل
+const CASH_DEFAULT = { in: ["مبيعات مباشرة", "بيع أرض/أصول", "قرض", "رأس مال", "دخل ثاني"], out: ["ضيافة", "إيجار", "رواتب", "كهربا", "مي", "ضرايب ورسوم", "صيانة", "مصاريف مكتب", "مصاريف ثانية"] };
+async function cashCats() {
+  const r = (await query("SELECT key, value FROM app_settings WHERE key IN ('cash_cats_in','cash_cats_out')")).rows;
+  const get = (k) => { const v = r.find((x) => x.key === `cash_cats_${k}`)?.value; try { const a = JSON.parse(v); return Array.isArray(a) ? a : CASH_DEFAULT[k]; } catch { return CASH_DEFAULT[k]; } };
+  return { in: get("in"), out: get("out") };
+}
+router.get("/books/cash-cats", view, async (req, res) => res.json(await cashCats()));
+router.put("/books/cash-cats/:kind", editCash, async (req, res) => {
+  const kind = req.params.kind === "in" ? "in" : "out";
+  const list = [...new Set((Array.isArray(req.body?.list) ? req.body.list : []).map((x) => str(x, 60)).filter(Boolean))].slice(0, 40);
+  await query("INSERT INTO app_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", [`cash_cats_${kind}`, JSON.stringify(list)]);
+  res.json({ ok: true, list });
+});
+
 router.post("/books/cash", editCash, once(async (req, res) => {
   const b = req.body || {};
   const kind = b.kind === "in" ? "in" : "out";

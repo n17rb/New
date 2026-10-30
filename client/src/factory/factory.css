@@ -1223,3 +1223,5 @@ a.fx-pill { text-decoration: none; }
 .hm-quick button { border: 0; border-radius: 16px; background: #fff; box-shadow: 0 1px 8px rgba(16, 48, 77, .06); padding: 14px 10px; font: inherit; font-weight: 700; font-size: 14.5px; color: #10304d; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
 .hm-quick button span { width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; font-weight: 800; background: #fdecec; color: #c43d3d; }
 .hm-quick button + button span { background: #e8f6ee; color: #1f9d55; }
+.fx-chip.cat-edit { display: inline-flex; align-items: center; gap: 4px; padding-inline-end: 4px; background: #fdf2f2; border-color: #f5c2c2; }
+.fx-chip.cat-edit button { border: 0; background: #fff; color: #c43d3d; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; padding: 0; }
