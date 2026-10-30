@@ -1368,3 +1368,6 @@ DO $$ BEGIN
     INSERT INTO app_settings (key, value) VALUES ('mig_driver_bonus', '1') ON CONFLICT (key) DO NOTHING;
   END IF;
 END $$;
+
+-- راتب أو سلفة انصرفت من «الموظفين والرواتب» بتنسجّل لحالها مصروف بالصندوق (ومربوطة فيها)
+ALTER TABLE f_cashbook ADD COLUMN IF NOT EXISTS emp_tx_id INTEGER;

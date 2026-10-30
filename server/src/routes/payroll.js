@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query, logActivity } from "../db.js";
+import { query, logActivity, currentTenant } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction } from "../permissions.js";
 import { jordanDate } from "../utils/forecast.js";
@@ -276,6 +276,14 @@ router.post("/employees/:id/transactions", requireEdit, async (req, res) => {
     [req.params.id, kind, amount, date, req.body?.note || null, req.user.id]
   );
   await logActivity({ userId: req.user.id, action: `EMPLOYEE_${kind.toUpperCase()}`, recordType: "employee", recordId: Number(req.params.id), newValue: { amount, date, note: req.body?.note } });
+  // المصنع: صرف راتب أو سلفة = مصاري طلعت من الصندوق — بتنسجّل مصروف لحالها، بدون ما حدا يرجع يكتبها
+  if ((kind === "payment" || kind === "advance") && currentTenant()?.plan === "factory") {
+    const note = `${kind === "payment" ? "راتب" : "سلفة"} ${emp.rows[0].name}${req.body?.note ? ` — ${String(req.body.note).slice(0, 200)}` : ""}`;
+    await query(
+      "INSERT INTO f_cashbook (kind, category, amount, doc_date, note, created_by, emp_tx_id) VALUES ('out', $1, $2, $3, $4, $5, $6)",
+      [kind === "payment" ? "رواتب" : "سلف موظفين", amount, date, note, req.user.id, r.rows[0].id]
+    ).catch((e) => console.error("payroll→cashbook:", e.message));
+  }
   res.status(201).json(r.rows[0]);
 });
 
@@ -288,6 +296,7 @@ router.delete("/transactions/:id", requireEdit, async (req, res) => {
     return res.status(400).json({ error: "ما بتنحذف حركة مر عليها أكثر من يوم — المدير العام بس." });
   }
   await query("DELETE FROM employee_transactions WHERE id = $1", [t.id]);
+  await query("DELETE FROM f_cashbook WHERE emp_tx_id = $1", [t.id]).catch(() => {});
   await logActivity({ userId: req.user.id, action: "DELETE_EMPLOYEE_TX", recordType: "employee", recordId: t.employee_id, oldValue: t });
   res.json({ ok: true });
 });

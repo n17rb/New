@@ -319,6 +319,8 @@ router.post("/books/cash", editCash, once(async (req, res) => {
   res.status(201).json(r.rows[0]);
 }));
 router.delete("/books/cash/:id", editCash, async (req, res) => {
+  const row = (await query("SELECT emp_tx_id FROM f_cashbook WHERE id = $1", [req.params.id])).rows[0];
+  if (row?.emp_tx_id) return bad(res, "هاي من الرواتب — احذفها من «الموظفين والرواتب» وبتنحذف من هون لحالها.");
   await query("DELETE FROM f_cashbook WHERE id = $1 AND created_at > now() - interval '1 day'", [req.params.id]);
   res.json({ ok: true });
 });
