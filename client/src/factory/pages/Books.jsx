@@ -698,7 +698,9 @@ function Summary() {
             </section>
             <section className="fx-card"><b>اللي انصرف</b>
               <Row l="مصاريف السواقين" v={data.spent.driver_expenses} tone="var(--fx-crit)" />
+              {data.spent_detail?.driver?.length > 0 && <div className="sum-sub">{data.spent_detail.driver.map((x) => <span key={x.name}>{x.name} <b>{money(x.amount)}</b></span>)}</div>}
               <Row l="مصاريف الصندوق" v={data.spent.cashbook} tone="var(--fx-crit)" />
+              {data.spent_detail?.cashbook?.length > 0 && <div className="sum-sub">{data.spent_detail.cashbook.map((x) => <span key={x.name}>{x.name} <b>{money(x.amount)}</b></span>)}</div>}
               <Row l="دفعنا للموردين" v={data.spent.suppliers} tone="var(--fx-crit)" />
               <Row l="صيانة السيارات" v={data.spent.maintenance} tone="var(--fx-crit)" />
               <Row l="كهربا" v={data.spent.electricity} tone="var(--fx-crit)" />
