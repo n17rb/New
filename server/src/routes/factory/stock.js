@@ -22,6 +22,7 @@ const BAL_SQL = `
     COALESCE(SUM(CASE
       WHEN m.kind = 'production' THEN m.qty
       WHEN m.kind = 'load' THEN -m.qty
+      WHEN m.kind = 'sale' THEN -m.qty
       WHEN m.kind = 'return' THEN m.qty
       WHEN m.kind = 'damage' AND m.damage_source = 'warehouse' THEN -m.qty
       WHEN m.kind IN ('adjust','count') THEN m.qty
@@ -66,7 +67,7 @@ router.get("/stock", viewStock, async (req, res) => {
       ...p,
       today: {
         production: t(p.id, "production"), load: t(p.id, "load"), return: t(p.id, "return"), damage: t(p.id, "damage"),
-        damage_wh: t(p.id, "damage", "warehouse"), adjust: t(p.id, "adjust") + t(p.id, "count"),
+        damage_wh: t(p.id, "damage", "warehouse"), adjust: t(p.id, "adjust") + t(p.id, "count"), sale: t(p.id, "sale"),
       },
       demand: demand.rows.find((d) => d.product_id === p.id)?.qty || 0,
     })),
