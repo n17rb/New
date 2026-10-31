@@ -676,7 +676,7 @@ const round2 = (n) => Math.round(Number(n) * 100) / 100;
 //  - cash_received أقل من المطلوب ← الباقي بينضاف دين على الزبون (بدها صلاحية البيع بالدين)
 //  - cash_received أكثر من المطلوب ← الزيادة بتسدّد من دينه القديم
 router.post("/stops/:stopId/deliver", async (req, res) => {
-  const { item_payments, cash_received, empties, allow_paper_coupons, coupon_any_item } = req.body || {};
+  const { item_payments, cash_received, empties, allow_paper_coupons } = req.body || {};
 
   const stopResult = await query(
     `SELECT ts.*, c.name AS customer_name, c.coupon_balance, c.debt_balance, o.customer_id, o.status AS order_status,
@@ -720,9 +720,8 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
 
   for (const item of items) {
     let couponQty = paymentMap[item.id] || 0;
-    // الكوبون بينقبل على المنتجات اللي بتقبله، وعلى القوارير اللي بترجع (حتى لو المنتج مش معلّم)
-    // (أو أي صنف إذا الكابتن اختار «كوبون» وما في ولا صنف معلّم)
-    if (!item.coupon_eligible && !item.is_returnable && !coupon_any_item) couponQty = 0;
+    // الكوبون بينقبل بس على المنتج المعلّم «يقبل كوبون» (الشرنكات والكراتين وغيرها كاش)
+    if (!item.coupon_eligible) couponQty = 0;
     couponQty = Math.max(0, Math.min(Math.floor(couponQty), item.quantity));
 
     totalCouponsUsed += couponQty;

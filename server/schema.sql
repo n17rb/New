@@ -1392,3 +1392,13 @@ WHERE name IS DISTINCT FROM (
 -- رابط عام لرصيد كوبونات الزبون (بيتابع رصيده بدون تسجيل دخول)
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS wallet_token VARCHAR(40);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_wallet_token ON customers(wallet_token) WHERE wallet_token IS NOT NULL;
+
+-- الكوبون بينقبل بس على المنتج المعلّم «يقبل كوبون» (مرة وحدة: القوارير اللي بترجع بتتعلّم إنها بتقبل كوبون
+-- عشان ما يوقف شي كان شغّال، وبعدها صاحب المحل بيتحكم من صفحة المنتجات)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'mig_coupon_only_eligible') THEN
+    UPDATE products SET coupon_eligible = true WHERE is_returnable = true AND coupon_eligible = false;
+    INSERT INTO app_settings (key, value) VALUES ('mig_coupon_only_eligible', '1') ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;

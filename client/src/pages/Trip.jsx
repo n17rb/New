@@ -824,8 +824,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
 }
 
 // المبلغ المطلوب كاش بعد الكوبونات والخصم (نفس حساب السيرفر)
-// الكوبون بينقبل على المنتج المعلّم إنه بيقبل كوبون، أو على القوارير اللي بترجع
-const couponable = (it) => !!(it.coupon_eligible || it.is_returnable);
+// الكوبون بينقبل بس على المنتج المعلّم «يقبل كوبون» (الشرنكات والكراتين وغيرها كاش)
+const couponable = (it) => !!it.coupon_eligible;
 
 function computeAmountDue(stop, couponQty = {}) {
   const cashPart = (stop.items || []).reduce((sum, it) => {
@@ -841,14 +841,12 @@ function computeAmountDue(stop, couponQty = {}) {
 // بعد «تم التسليم»: خيارين كبار — كاش أو كوبون (والتفاصيل للحالات الخاصة)
 function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
   const items = stop.items || [];
-  // إذا ولا صنف معلّم إنه بيقبل كوبون، الكابتن بيقدر يحاسب كوبون على كل الطلب
-  const anyItem = !items.some(couponable);
-  const eligible = anyItem ? items : items.filter(couponable);
+  const eligible = items.filter(couponable);
   const eligibleQty = eligible.reduce((s, it) => s + it.quantity, 0);
   const balance = Math.max(0, Number(stop.coupon_balance || 0));
   const cashAll = computeAmountDue(stop);
   const allCoupons = Object.fromEntries(eligible.map((it) => [it.id, it.quantity]));
-  const cashWithCoupons = anyItem ? 0 : computeAmountDue(stop, allCoupons);
+  const cashWithCoupons = computeAmountDue(stop, allCoupons);
   const canCoupon = eligibleQty > 0;
   const enoughCoupons = balance >= eligibleQty;
   const paper = Math.max(0, eligibleQty - balance);
@@ -866,7 +864,7 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
       );
       if (!ok) return;
     }
-    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: it.quantity })), { cash_received: cashWithCoupons, allow_paper_coupons: !enoughCoupons, coupon_any_item: anyItem });
+    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: it.quantity })), { cash_received: cashWithCoupons, allow_paper_coupons: !enoughCoupons });
     onCancel();
   }
 
