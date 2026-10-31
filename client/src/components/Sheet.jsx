@@ -9,6 +9,33 @@ export default function Sheet({ open, title, onClose, children }) {
   const start = useRef(null); // {y, t}
   const sheetRef = useRef(null);
   const moved = useRef(0); // عشان السحبة ما تنحسب كبسة
+  // الجزء الظاهر من الشاشة (بدون الكيبورد) — عشان اللوحة تطلع فوق الكيبورد مش تحته
+  const [vp, setVp] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kb = window.innerHeight - vv.height;
+      setVp(kb > 80 ? { top: vv.offsetTop, height: vv.height } : null);
+    };
+    // لما يفتح الكيبورد: خلّي الخانة اللي بتكتب فيها ظاهرة
+    const onFocus = (e) => {
+      if (!sheetRef.current?.contains(e.target)) return;
+      setTimeout(() => e.target.scrollIntoView?.({ block: "nearest", behavior: "smooth" }), 300);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    document.addEventListener("focusin", onFocus);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.removeEventListener("focusin", onFocus);
+      setVp(null);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +92,10 @@ export default function Sheet({ open, title, onClose, children }) {
       onClick={onClose}
       onMouseMove={dragging ? onMove : undefined}
       onMouseUp={dragging ? onEnd : undefined}
-      style={dragY ? { background: `rgba(10, 22, 40, ${Math.max(0, 0.38 - dragY / 1200)})` } : undefined}
+      style={{
+        ...(dragY ? { background: `rgba(10, 22, 40, ${Math.max(0, 0.38 - dragY / 1200)})` } : null),
+        ...(vp ? { top: vp.top, bottom: "auto", height: vp.height } : null),
+      }}
     >
       <div
         ref={sheetRef}
@@ -74,7 +104,7 @@ export default function Sheet({ open, title, onClose, children }) {
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        style={{ transform: dragY ? `translateY(${dragY}px)` : undefined, transition: dragging ? "none" : "transform 0.18s ease-out" }}
+        style={{ transform: dragY ? `translateY(${dragY}px)` : undefined, transition: dragging ? "none" : "transform 0.18s ease-out", ...(vp ? { maxHeight: Math.round(vp.height * 0.92) } : null) }}
       >
         <div className="sheet-grab" {...dragProps}>
           <button type="button" className="sheet-handle-btn" onClick={() => { if (moved.current < 6) onClose?.(); }} aria-label="إغلاق (اسحب لتحت)">
