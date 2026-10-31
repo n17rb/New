@@ -1402,3 +1402,7 @@ BEGIN
     INSERT INTO app_settings (key, value) VALUES ('mig_coupon_only_eligible', '1') ON CONFLICT (key) DO NOTHING;
   END IF;
 END $$;
+
+-- الزبون طالب باقة كوبونات مع الطلب (أو لحالها): بتبيّن للكابتن بالرحلة
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS wants_coupons BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS wants_package_id INTEGER;

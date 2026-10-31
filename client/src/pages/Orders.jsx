@@ -181,9 +181,10 @@ export default function Orders({ user }) {
                 <span className="ord-name">
                   {o.customer_name}
                   <CouponChip balance={o.coupon_balance} />
+                  {o.wants_coupons && <span className="want-tag">🎫 بدو باقة</span>}
                   {o.priority === "urgent" && <span className="ord-flag">🚨</span>}
                 </span>
-                <span className="ord-items">{itemsText(o.items) || <NeedsQuantityBadge order={o} />}</span>
+                <span className="ord-items">{itemsText(o.items) || (o.wants_coupons && !o.needs_quantity ? "باقة كوبونات بس" : <NeedsQuantityBadge order={o} />)}</span>
                 <span className="ord-meta tabular-num">
                   #{o.order_number} · {formatTime(o.created_at)}
                   {scheduleLabel(o) && !["DELIVERED", "CANCELLED"].includes(o.status) && <span className="sched-badge">📅 {scheduleLabel(o)}</span>}
@@ -311,8 +312,9 @@ function OrderDetail({ orderId, user, onBack }) {
         {order.driver_name && order.status === "IN_ROUTE" && (
           <div className="od-driver"><FiTruck aria-hidden="true" /> مع {order.driver_name} بالرحلة</div>
         )}
-        {(Number(order.debt_balance) > 0 || Number(order.coupon_balance) > 0) && (
+        {(Number(order.debt_balance) > 0 || Number(order.coupon_balance) > 0 || order.wants_coupons) && (
           <div className="od-tags">
+            {order.wants_coupons && <span className="od-tag blue">🎫 بدو باقة كوبونات{order.wants_package_name ? `: ${order.wants_package_name}` : ""}</span>}
             {Number(order.debt_balance) > 0 && <span className="od-tag red">عليه {Number(order.debt_balance).toFixed(2)} JD</span>}
             {Number(order.coupon_balance) > 0 && <span className="od-tag blue">🎫 معه {order.coupon_balance} كوبون</span>}
           </div>

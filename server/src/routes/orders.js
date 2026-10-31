@@ -101,6 +101,7 @@ router.get("/:id", async (req, res) => {
   const orderResult = await query(
     `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.phone_normalized AS customer_phone_normalized,
             c.bottle_type, c.coupon_balance, c.debt_balance,
+            (SELECT name FROM coupon_packages WHERE id = o.wants_package_id) AS wants_package_name,
             (SELECT t.driver_name FROM (SELECT u.full_name AS driver_name FROM trip_stops ts JOIN trips t2 ON t2.id = ts.trip_id
                LEFT JOIN users u ON u.id = t2.driver_id WHERE ts.order_id = o.id ORDER BY ts.id DESC LIMIT 1) t) AS driver_name
      FROM orders o JOIN customers c ON c.id = o.customer_id
@@ -117,9 +118,13 @@ router.get("/:id", async (req, res) => {
 export { cleanSchedule };
 
 router.post("/", async (req, res) => {
-  const { customer_id, items, priority, notes } = req.body;
+  const { customer_id, priority, notes } = req.body;
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  // طالب باقة كوبونات: بيصير الطلب ينعمل حتى لو بدون مي (باقة بس)
+  const wantsCoupons = !!req.body.wants_coupons;
+  const wantsPackageId = wantsCoupons && Number(req.body.wants_package_id) > 0 ? Number(req.body.wants_package_id) : null;
 
-  if (!customer_id || !Array.isArray(items) || items.length === 0) {
+  if (!customer_id || (items.length === 0 && !wantsCoupons)) {
     return res.status(400).json({ error: "العميل والمنتجات مطلوبة (منتج واحد على الأقل)." });
   }
   let schedule;
@@ -173,16 +178,16 @@ router.post("/", async (req, res) => {
       });
     }
 
-    if (preparedItems.length === 0) throw new Error("لا يوجد أي منتج بكمية أكبر من صفر.");
+    if (preparedItems.length === 0 && !wantsCoupons) throw new Error("لا يوجد أي منتج بكمية أكبر من صفر.");
 
     const orderNumber = await nextOrderNumber(client);
     const finalTotal = subtotal;
 
     const orderResult = await client.query(
-      `INSERT INTO orders (order_number, customer_id, priority, subtotal, final_total, notes, requested_time, scheduled_date, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      `INSERT INTO orders (order_number, customer_id, priority, subtotal, final_total, notes, requested_time, scheduled_date, created_by, wants_coupons, wants_package_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [orderNumber, customer_id, priority === "urgent" ? "urgent" : "normal", subtotal, finalTotal, notes || null,
-       schedule.requested_time, schedule.scheduled_date, req.user.id]
+       schedule.requested_time, schedule.scheduled_date, req.user.id, wantsCoupons, wantsPackageId]
     );
     const order = orderResult.rows[0];
 

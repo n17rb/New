@@ -687,6 +687,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
               </span>
               <span>{s.customer_name}</span>
               <CouponChip balance={s.coupon_balance} />
+              {s.wants_coupons && !s.package_sold && !s.delivered_at && <span className="want-tag">🎫 بدو باقة</span>}
               <BottleTypeBadge type={s.bottle_type} />
               {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
               {s.is_time_locked && <span style={{ color: "var(--warning)", fontSize: "0.75rem" }}> ⏰ لموعد {formatClockTime(s.requested_time)}</span>}
@@ -1252,13 +1253,16 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
   // لو الزبون معه كوبونات بيستخدمها: بتفتح شاشة الدفع.
   // غير هيك: تسليم بضغطة وحدة وقبض المبلغ كامل كاش.
   const needsPaymentChoice = stop.coupon_balance > 0 && (stop.items || []).some((it) => it.coupon_eligible);
-  const missingQuantity = !stop.items || stop.items.length === 0;
+  // طلب باقة كوبونات بس (بدون مي)
+  const couponOnly = !!stop.wants_coupons && !stop.needs_quantity && (!stop.items || stop.items.length === 0);
+  const missingQuantity = !couponOnly && (!stop.items || stop.items.length === 0);
   const [showQuantityForm, setShowQuantityForm] = useState(false);
   const amountDue = missingQuantity ? 0 : computeAmountDue(stop);
   const debt = Number(stop.debt_balance || 0);
 
   function handleDeliverClick() {
     // دايمًا بنسأل: حاسب كاش ولا كوبون؟ عشان جرد السيارة يطلع مضبوط
+    if (couponOnly) { deliverFast(stop, [], { cash_received: 0 }); return; }
     if (!missingQuantity) { setShowPayChoice(true); return; }
     if (needsPaymentChoice) setShowPaymentForm(true);
     else deliverFast(stop, [], { cash_received: amountDue });
@@ -1358,6 +1362,21 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
         <div style={{ marginBottom: 10 }}><span className="badge" style={{ background: "var(--warning-soft)", color: "var(--warning)" }}>⏰ موعده {formatClockTime(stop.requested_time)}</span></div>
       )}
 
+      {stop.wants_coupons && !readOnly && (
+        stop.package_sold ? (
+          <div className="sc-want done">✓ انباعتله الباقة اللي طلبها</div>
+        ) : (
+          <button type="button" className="sc-want" onClick={() => setSelling(true)}>
+            <span className="sc-want-ic" aria-hidden="true">🎫</span>
+            <span className="sc-want-t">
+              <b>الزبون طالب باقة كوبونات</b>
+              <small>{stop.wants_package_name ? `بدو: ${stop.wants_package_name}` : "اسأله أي باقة بدو"}{couponOnly ? " · باقة بس، بدون مي" : ""}</small>
+            </span>
+            <span className="sc-want-go">بيع</span>
+          </button>
+        )
+      )}
+
       {missingQuantity && !showQuantityForm && !readOnly && (
         <div className="card" style={{ border: "2px solid #E8A020", background: "rgba(232, 160, 32, 0.08)" }}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>📅 طلب تلقائي — لسا ما انحدد عدد القوارير</div>
@@ -1410,7 +1429,7 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
       )}
       {stopMsg && <div className="success-box" style={{ marginBottom: 10 }}>{stopMsg}</div>}
       <EditItemsSheet open={editingItems} stop={stop} onClose={() => setEditingItems(false)} onSaved={afterSheet} />
-      <SellPackageSheet open={selling} stop={stop} onClose={() => setSelling(false)} onSaved={afterSheet} />
+      <SellPackageSheet open={selling} stop={stop} preselect={stop.wants_coupons ? stop.wants_package_id : null} onClose={() => setSelling(false)} onSaved={afterSheet} />
 
       {(() => {
         const sideTxt = stop.side === "يسار" ? "شمال الدرج" : stop.side === "يمين" ? "يمين الدرج" : stop.side;

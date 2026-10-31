@@ -15,9 +15,14 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
+  // الزبون طالب باقة كوبونات (مع المي أو لحالها)
+  const [wantsCoupons, setWantsCoupons] = useState(false);
+  const [wantPkg, setWantPkg] = useState(null);
+  const [packages, setPackages] = useState([]);
 
   useEffect(() => {
     api.getProducts().then(setProducts).catch((err) => setError(err.message));
+    api.getCouponPackages().then(setPackages).catch(() => {});
     api.getOrders({ customer_id: customer.id, limit: 1 })
       .then((orders) => { if (orders[0]) setLastOrder(orders[0]); })
       .catch(() => {});
@@ -44,7 +49,7 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
   }
 
   const total = products.reduce((sum, p) => sum + (quantities[p.id] || 0) * Number(p.unit_price), 0);
-  const hasAnyItem = Object.values(quantities).some((q) => q > 0);
+  const hasAnyItem = Object.values(quantities).some((q) => q > 0) || wantsCoupons;
 
   async function handleSubmit() {
     setError("");
@@ -59,6 +64,8 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
         items,
         priority,
         notes: notes || undefined,
+        wants_coupons: wantsCoupons || undefined,
+        wants_package_id: wantsCoupons && wantPkg ? wantPkg : undefined,
         scheduled_date: schedule.scheduled_date || undefined,
         requested_time: schedule.requested_time || undefined,
       });
@@ -137,6 +144,32 @@ export default function OrderForm({ customer, user, onClose, onCreated }) {
           </div>
         ))}
       </div>
+
+      {packages.length > 0 && (
+        <div className={`of-want${wantsCoupons ? " on" : ""}`}>
+          <button type="button" className="of-want-row" onClick={() => setWantsCoupons((v) => !v)} aria-pressed={wantsCoupons}>
+            <span className="of-want-ic" aria-hidden="true">🎫</span>
+            <span className="of-want-t">
+              <b>بدو باقة كوبونات</b>
+              <small>{wantsCoupons ? "الكابتن رح يشوفها بالرحلة ويبيعه إياها هناك" : "إذا طلب كوبونات على التلفون"}</small>
+            </span>
+            <span className="pr-sw-k" aria-hidden="true"><i /></span>
+          </button>
+          {wantsCoupons && (
+            <div className="of-want-pk">
+              <button type="button" className={!wantPkg ? "on" : ""} onClick={() => setWantPkg(null)}>مش محدد</button>
+              {packages.map((p) => (
+                <button key={p.id} type="button" className={wantPkg === p.id ? "on" : ""} onClick={() => setWantPkg(p.id)}>
+                  {p.name} · <span className="tabular-num">{Number(p.price).toFixed(2)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {wantsCoupons && !Object.values(quantities).some((q) => q > 0) && (
+            <div className="of-want-note">ما اخترت مي — الطلب رح يكون باقة كوبونات بس</div>
+          )}
+        </div>
+      )}
 
       <div className="field">
         <label>الأولوية</label>

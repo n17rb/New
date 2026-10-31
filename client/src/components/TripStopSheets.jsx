@@ -81,7 +81,7 @@ export function EditItemsSheet({ open, stop, onClose, onSaved }) {
 // ============================================================
 // بيع باقة كوبونات للزبون من جوّا الرحلة
 // ============================================================
-export function SellPackageSheet({ open, stop, onClose, onSaved }) {
+export function SellPackageSheet({ open, stop, preselect = null, onClose, onSaved }) {
   const [packages, setPackages] = useState(null);
   const [pick, setPick] = useState(null);
   const [payMode, setPayMode] = useState("full"); // full | part
@@ -93,7 +93,7 @@ export function SellPackageSheet({ open, stop, onClose, onSaved }) {
   useEffect(() => {
     if (!open) return;
     setDone(null);
-    setPick(null);
+    setPick(preselect || null);
     setPayMode("full");
     setPaid("");
     setError("");

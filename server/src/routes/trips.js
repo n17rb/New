@@ -142,7 +142,8 @@ async function insertNotification({ type, message, customerId, tripId }) {
 async function buildTripDetailResponse(trip, requestingUser) {
   const stopsResult = await query(
     `SELECT ts.*, o.order_number, o.status AS order_status, o.priority, o.final_total, o.notes AS order_notes, o.requested_time,
-            o.needs_quantity, o.auto_from_reminder,
+            o.needs_quantity, o.auto_from_reminder, o.wants_coupons, o.wants_package_id, wp.name AS wants_package_name,
+            (o.wants_coupons AND EXISTS (SELECT 1 FROM coupon_sales cs WHERE cs.customer_id = o.customer_id AND cs.created_at >= o.created_at)) AS package_sold,
             c.id AS customer_id, c.name AS customer_name, c.phone_normalized, c.phone_display, c.coupon_balance, c.bottle_type,
             c.debt_balance, c.bottles_out, o.subtotal,
             l.latitude, l.longitude, l.maps_url, l.street, l.building_number, l.building_name,
@@ -150,6 +151,7 @@ async function buildTripDetailResponse(trip, requestingUser) {
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
      JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN coupon_packages wp ON wp.id = o.wants_package_id
      LEFT JOIN LATERAL (
        SELECT * FROM customer_locations WHERE customer_id = c.id ORDER BY id ASC LIMIT 1
      ) l ON true
@@ -680,7 +682,7 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
 
   const stopResult = await query(
     `SELECT ts.*, c.name AS customer_name, c.coupon_balance, c.debt_balance, o.customer_id, o.status AS order_status,
-            o.subtotal, o.final_total,
+            o.subtotal, o.final_total, o.wants_coupons, o.needs_quantity,
             t.driver_id, t.status AS trip_status, u.full_name AS driver_name
      FROM trip_stops ts
      JOIN orders o ON o.id = ts.order_id
@@ -705,7 +707,8 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     [stop.order_id]
   );
   const items = itemsResult.rows;
-  if (items.length === 0) {
+  // طلب باقة كوبونات بس (بدون مي) بيتسلّم عادي
+  if (items.length === 0 && !(stop.wants_coupons && !stop.needs_quantity)) {
     return res.status(400).json({ error: "هذا الطلب ما إله كمية — حدد عدد القوارير قبل التسليم." });
   }
 
