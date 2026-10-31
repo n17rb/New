@@ -19,6 +19,9 @@ export function normAr(s) {
 const loose = (w) => w.replace(/ث/g, "س").replace(/ذ/g, "ز").replace(/ظ/g, "ض").replace(/ط/g, "ت").replace(/ص/g, "س").replace(/ق/g, "ك").replace(/ه$/g, "");
 const noAl = (w) => (w.length > 4 && w.startsWith("ال") ? w.slice(2) : w);
 const words = (s) => normAr(s).split(" ").filter(Boolean).map(noAl);
+// كلمات إنجليزي شايعة بأسماء المحلات: supermarket = سوبرماركت
+const EN = { supermarket: "سوبرماركت", super: "سوبر", market: "ماركت", mini: "ميني", minimarket: "ميني ماركت", mall: "مول", bakery: "مخبز", water: "مياه", store: "متجر", shop: "محل" };
+const toArabic = (s) => String(s).replace(/[a-z]+/g, (w) => EN[w] || w);
 
 // مسافة التعديل (مع قلب حرفين جنب بعض = غلطة وحدة: هاشم/هشام)
 function lev(a, b) {
@@ -66,12 +69,22 @@ export function smartScore(query, item, fields = ["name", "contact_name", "city"
     if (digits.length >= 3 && (ph.includes(digits) || ph.includes(digits.replace(/^962/, "0")) || `962${ph.slice(1)}`.includes(digits))) return 0.9;
     return 0;
   }
-  const qw = words(query);
+  const qw = words(toArabic(raw));
   const hay = fields.flatMap((f) => words(item[f]));
   if (!hay.length) return 0;
   // «ابوعلي» = «أبو علي»: بنقارن بدون فراغات كمان
-  const qJoined = loose(raw.replace(/ /g, ""));
-  if (qJoined.length >= 4 && fields.some((f) => loose(normAr(item[f]).replace(/ /g, "")).includes(qJoined))) return 0.88;
+  const qJoined = loose(toArabic(raw).replace(/ /g, ""));
+  const joined = fields.map((f) => loose(normAr(item[f]).replace(/ /g, ""))).filter(Boolean);
+  if (qJoined.length >= 4 && joined.some((j) => j.includes(qJoined))) return 0.88;
+  // «سوبرمركت» أو «سبرماركت» = «سوبر ماركت»: غلطة بالكلمة الملزوقة
+  if (qJoined.length >= 6) {
+    const allowed = qJoined.length <= 8 ? 1 : 2;
+    for (const j of joined) {
+      for (let len = qJoined.length - 1; len <= qJoined.length + 1; len++) {
+        for (let i = 0; i + len <= j.length; i++) if (lev(qJoined, j.slice(i, i + len)) <= allowed) return 0.8;
+      }
+    }
+  }
   let sum = 0;
   for (const q of qw) {
     let best = 0;

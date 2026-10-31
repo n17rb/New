@@ -29,7 +29,7 @@ export function openPrint(html) {
   const close = () => { wrap.remove(); window.removeEventListener("popstate", onPop); };
   const onPop = () => close();
   // زر الرجوع بالتلفون كمان بيسكّرها
-  try { history.pushState({ fxPrint: 1 }, ""); window.addEventListener("popstate", onPop); } catch { /* */ }
+  try { history.pushState({ ...(history.state || {}), fxPrint: 1 }, ""); window.addEventListener("popstate", onPop); } catch { /* */ }
   back.onclick = () => { const pushed = history.state?.fxPrint; close(); if (pushed) history.back(); };
   print.onclick = () => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch { /* */ } };
 }
