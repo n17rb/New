@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import Sheet from "./Sheet.jsx";
+import { FaWhatsapp } from "react-icons/fa";
+import { couponsAddedText } from "./Receipt.jsx";
 
 // ============================================================
 // تعديل الطلب من جوّا الرحلة (مثلًا أخذ قارورتين بدل ٣)
@@ -85,9 +87,11 @@ export function SellPackageSheet({ open, stop, onClose, onSaved }) {
   const [paid, setPaid] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [done, setDone] = useState(null); // بعد البيع: {added, balance, unpaid, walletToken}
 
   useEffect(() => {
     if (!open) return;
+    setDone(null);
     setPick(null);
     setPayMode("full");
     setPaid("");
@@ -107,12 +111,33 @@ export function SellPackageSheet({ open, stop, onClose, onSaved }) {
     try {
       const r = await api.sellPackageInTrip(stop.id, { package_id: pkg.id, paid_amount: paidNum });
       onSaved?.(`✅ انباعت الباقة — صار معه ${r.coupon_balance} كوبون`);
-      onClose();
+      setDone({ added: pkg.coupons + (pkg.bonus_coupons || 0), balance: r.coupon_balance, unpaid, packageName: pkg.name, walletToken: r.wallet_token || null });
     } catch (e) {
       setError(e.message);
     } finally {
       setSaving(false);
     }
+  }
+
+  if (done) {
+    const msg = couponsAddedText({ name: stop.customer_name, ...done, balance: done.balance });
+    return (
+      <Sheet open={open} title="انباعت الباقة" onClose={onClose}>
+        <div className="sold-card">
+          <div className="sold-ic" aria-hidden="true">✓</div>
+          <div className="sold-n tabular-num">+{done.added}</div>
+          <div className="sold-t">كوبون انضاف لـ{stop.customer_name}</div>
+          <div className="sold-b tabular-num">رصيده صار {done.balance} كوبون</div>
+        </div>
+        <div className="sheet-actions">
+          <a className="btn-primary icon-row" style={{ justifyContent: "center", textDecoration: "none", background: "var(--whatsapp)" }}
+            href={`https://wa.me/${stop.phone_normalized}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" onClick={onClose}>
+            <FaWhatsapp aria-hidden="true" /> ابعتله رسالة برابط رصيده
+          </a>
+          <button className="btn-secondary" onClick={onClose}>تم</button>
+        </div>
+      </Sheet>
+    );
   }
 
   return (

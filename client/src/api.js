@@ -376,6 +376,8 @@ export const api = {
   getJard: (date) => request(`/jard${date ? `?date=${date}` : ""}`),
   getInvoiceLink: (orderId) => request(`/invoices/order/${orderId}`, { method: "POST" }),
   getPublicInvoice: (token) => request(`/public/invoice/${encodeURIComponent(token)}`),
+  getWalletLink: (customerId) => request(`/invoices/wallet/${customerId}`, { method: "POST" }),
+  getPublicWallet: (token) => request(`/public/wallet/${encodeURIComponent(token)}`),
   getPermissionsMeta: () => request("/auth/permissions-meta"),
   getShopLocation: () => request("/settings/shop-location"),
   setShopLocation: (body) => request("/settings/shop-location", { method: "PUT", body }),

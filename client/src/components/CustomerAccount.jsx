@@ -2,7 +2,7 @@ import { renderMessage } from "../messages.js";
 import { useEffect, useState } from "react";
 import { FiPlus, FiMinus, FiClock, FiCheck, FiX, FiPackage, FiFileText } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
-import { couponsWord } from "./Receipt.jsx";
+import { couponsWord, couponsAddedText } from "./Receipt.jsx";
 import BottleCustody from "./BottleCustody.jsx";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
@@ -102,10 +102,7 @@ function CouponWallet({ customer, onChanged }) {
               className="icon-row"
               style={{ color: "var(--whatsapp)", fontWeight: 700, marginTop: 6, textDecoration: "none" }}
               href={`https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(
-                renderMessage("coupons_added", {
-                  "الاسم": customer.name, "الكوبونات": couponsWord(sold.added), "الباقة": sold.packageName,
-                  "الرصيد": couponsWord(sold.newBalance), "الباقي": sold.unpaid > 0 ? `💳 باقي من ثمن الباقة: ${sold.unpaid.toFixed(2)} دينار` : "",
-                })
+                couponsAddedText({ name: customer.name, added: sold.added, balance: sold.newBalance, packageName: sold.packageName, unpaid: sold.unpaid, walletToken: sold.walletToken })
               )}`}
               target="_blank"
               rel="noreferrer"
@@ -181,8 +178,8 @@ function SellPackage({ customer, onCancel, onDone }) {
     setSaving(true);
     setError("");
     try {
-      await api.sellCouponPackage({ customer_id: customer.id, package_id: selected.id, paid_amount: paidNum });
-      onDone({ added: selected.coupons + (selected.bonus_coupons || 0), unpaid, packageName: selected.name });
+      const r = await api.sellCouponPackage({ customer_id: customer.id, package_id: selected.id, paid_amount: paidNum });
+      onDone({ added: selected.coupons + (selected.bonus_coupons || 0), unpaid, packageName: selected.name, walletToken: r?.wallet_token || null });
     } catch (err) {
       setError(err.message);
       setSaving(false);

@@ -23,6 +23,27 @@ export async function ensureInvoiceToken(orderId, tenantId) {
   return (await query("SELECT invoice_token FROM orders WHERE id = $1", [order.id])).rows[0].invoice_token;
 }
 
+// رابط رصيد كوبونات الزبون (بينعمل مرة وحدة وبيضل نفسه)
+export async function ensureWalletToken(customerId, tenantId) {
+  const r = await query("SELECT id, wallet_token FROM customers WHERE id = $1", [customerId]);
+  const c = r.rows[0];
+  if (!c) return null;
+  if (c.wallet_token) return c.wallet_token;
+  const token = `${tenantId}-${crypto.randomBytes(9).toString("base64url")}`;
+  await query("UPDATE customers SET wallet_token = $1 WHERE id = $2 AND wallet_token IS NULL", [token, c.id]);
+  return (await query("SELECT wallet_token FROM customers WHERE id = $1", [c.id])).rows[0].wallet_token;
+}
+
+router.post("/wallet/:customerId", async (req, res) => {
+  if (!canAny(req.user, [["customers", "view"], ["delivery", "edit"], ["coupons", "view"]])) {
+    return res.status(403).json({ error: "ما عندك صلاحية." });
+  }
+  if (req.user.inspecting) return res.status(403).json({ error: "وضع المعاينة." });
+  const token = await ensureWalletToken(req.params.customerId, req.tenant.id);
+  if (!token) return res.status(404).json({ error: "الزبون غير موجود." });
+  res.json({ token, path: `/w/${token}` });
+});
+
 router.post("/order/:id", async (req, res) => {
   if (!canAny(req.user, [["orders", "view"], ["delivery", "edit"], ["customers", "view"]])) {
     return res.status(403).json({ error: "ما عندك صلاحية." });
@@ -91,5 +112,33 @@ publicInvoiceRouter.get("/invoice/:token", async (req, res) => {
       last_package: lastPkg ? { name: lastPkg.name, coupons: lastPkg.coupons } : null,
     },
     items: items.rows.map((i) => ({ ...i, unit_price: Number(i.unit_price), line_total: Number(i.line_total) })),
+  });
+});
+
+// رصيد كوبونات الزبون — صفحة عامة بيفتحها من رسالة الواتساب
+publicInvoiceRouter.get("/wallet/:token", async (req, res) => {
+  const token = String(req.params.token || "");
+  const m = token.match(/^(\d+)-[A-Za-z0-9_-]{8,30}$/);
+  if (!m) return res.status(404).json({ error: "الرابط غير صحيح." });
+  const tenant = await getTenant(Number(m[1]));
+  if (!tenant || tenant.status !== "active") return res.status(404).json({ error: "الرابط غير صحيح." });
+  setRequestTenant(tenant);
+  const c = (await query("SELECT id, name, coupon_balance FROM customers WHERE wallet_token = $1", [token])).rows[0];
+  if (!c) return res.status(404).json({ error: "الرابط غير صحيح." });
+  const lastPkg = (await query(
+    "SELECT package_name_snapshot AS name, coupons, created_at FROM coupon_sales WHERE customer_id = $1 ORDER BY id DESC LIMIT 1",
+    [c.id]
+  )).rows[0] || null;
+  const history = (await query(
+    `SELECT change_amount, reason, balance_after, created_at FROM coupon_ledger
+     WHERE customer_id = $1 ORDER BY id DESC LIMIT 10`,
+    [c.id]
+  )).rows;
+  res.set("Cache-Control", "no-store");
+  res.json({
+    shop: { name: tenant.name, phone: tenant.phone && !tenant.is_home ? tenant.phone : null },
+    customer: { name: c.name, coupon_balance: c.coupon_balance },
+    last_package: lastPkg ? { name: lastPkg.name, coupons: lastPkg.coupons, at: lastPkg.created_at } : null,
+    history: history.map((h) => ({ change: h.change_amount, reason: h.reason, balance: h.balance_after, at: h.created_at })),
   });
 });

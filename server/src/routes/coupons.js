@@ -3,6 +3,7 @@ import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePerm } from "../permissions.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
+import { ensureWalletToken } from "./invoices.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -136,12 +137,10 @@ export async function sellCouponPackage({ customerId, packageId, paidAmount, use
 
 router.post("/sell", requirePerm("coupons", "edit"), async (req, res) => {
   try {
-    res.json(await sellCouponPackage({
-      customerId: Number(req.body?.customer_id),
-      packageId: Number(req.body?.package_id),
-      paidAmount: req.body?.paid_amount,
-      userId: req.user.id,
-    }));
+    const customerId = Number(req.body?.customer_id);
+    const r = await sellCouponPackage({ customerId, packageId: Number(req.body?.package_id), paidAmount: req.body?.paid_amount, userId: req.user.id });
+    const wallet_token = req.user.inspecting || !req.tenant?.id ? null : await ensureWalletToken(customerId, req.tenant.id).catch(() => null);
+    res.json({ ...r, wallet_token });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;

@@ -1388,3 +1388,7 @@ WHERE name IS DISTINCT FROM (
   CASE WHEN coupons = 1 THEN 'كوبون واحد' WHEN coupons = 2 THEN 'كوبونين'
        WHEN coupons BETWEEN 3 AND 10 THEN coupons || ' كوبونات' ELSE coupons || ' كوبون' END
   || CASE WHEN bonus_coupons > 0 THEN ' + ' || bonus_coupons || ' هدية' ELSE '' END);
+
+-- رابط عام لرصيد كوبونات الزبون (بيتابع رصيده بدون تسجيل دخول)
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS wallet_token VARCHAR(40);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_wallet_token ON customers(wallet_token) WHERE wallet_token IS NOT NULL;

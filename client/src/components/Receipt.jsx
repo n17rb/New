@@ -8,6 +8,23 @@ export function invoiceUrl(token) {
   return `${window.location.origin}/i/${token}`;
 }
 
+// رابط رصيد كوبونات الزبون
+export function walletUrl(token) {
+  return `${window.location.origin}/w/${token}`;
+}
+
+// رسالة «انضافلك كوبونات» — قصيرة ومرتبة مع رابط الرصيد
+export function couponsAddedText({ name, added, balance, packageName = "", unpaid = 0, walletToken = null }) {
+  return renderMessage("coupons_added", {
+    "الاسم": name,
+    "الكوبونات": couponsWord(added),
+    "الباقة": packageName,
+    "الرصيد": couponsWord(balance),
+    "الباقي": unpaid > 0 ? `باقي من ثمن الباقة: ${Number(unpaid).toFixed(2)} دينار` : "",
+    "الرابط": walletToken ? walletUrl(walletToken) : "",
+  }).replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function couponsWord(n) {
   if (n === 0) return "ما ضل عندك كوبونات";
   if (n === 1) return "كوبون واحد";

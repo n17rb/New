@@ -2767,3 +2767,25 @@ button.stop-row:active { background: var(--surface-2); }
 .top-icon:active { background: var(--surface-2); }
 [data-theme="dark"] .top-icon { color: var(--text); }
 .top-badge { top: -4px; left: -4px; background: #F0524F; border: 2px solid var(--bg); }
+
+/* صفحة رصيد الكوبونات العامة */
+.wl-hist { margin-top: 16px; }
+.wl-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #F0F3F8; }
+.wl-row:last-child { border-bottom: none; }
+.wl-dot { width: 32px; height: 32px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; }
+.wl-dot.in { background: #E6F5EC; color: #1F9D55; }
+.wl-dot.out { background: #E6F0FF; color: #0846B8; }
+.wl-t { flex: 1; display: flex; flex-direction: column; }
+.wl-t b { font-size: 0.92rem; }
+.wl-t small { font-size: 0.76rem; color: #5E7085; }
+.wl-n { font-weight: 800; }
+.wl-n.in { color: #1F9D55; }
+.wl-n.out { color: #0846B8; }
+
+/* بعد بيع الباقة بالرحلة */
+.sold-card { text-align: center; padding: 18px 12px; border-radius: 20px; background: linear-gradient(135deg, #EEF5FF, #F0FBF6); margin-bottom: 4px; }
+.sold-ic { width: 46px; height: 46px; margin: 0 auto 8px; border-radius: 50%; background: var(--success); color: #fff; font-size: 1.4rem; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.sold-n { font-size: 2.6rem; font-weight: 900; color: var(--primary); line-height: 1.1; }
+.sold-t { font-weight: 700; margin-top: 2px; }
+.sold-b { color: var(--text-secondary); font-size: 0.86rem; margin-top: 4px; }
+[data-theme="dark"] .sold-card { background: var(--surface-2); }

@@ -48,6 +48,7 @@ const MyPay = lazy(() => import("./pages/MyPay.jsx"));
 const Jard = lazy(() => import("./pages/Jard.jsx"));
 const Bottles = lazy(() => import("./pages/Bottles.jsx"));
 const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
+const PublicWallet = lazy(() => import("./pages/PublicWallet.jsx"));
 const MessageTemplates = lazy(() => import("./pages/MessageTemplates.jsx"));
 const Swot = lazy(() => import("./pages/Swot.jsx"));
 const TripReplay = lazy(() => import("./pages/TripReplay.jsx"));
@@ -125,6 +126,14 @@ export default function App() {
     return (
       <Suspense fallback={<SplashScreen />}>
         <PublicInvoice token={decodeURIComponent(window.location.pathname.slice(3))} />
+      </Suspense>
+    );
+  }
+  // رصيد كوبونات الزبون: بيفتح من رسالة الواتساب بدون تسجيل دخول
+  if (window.location.pathname.startsWith("/w/")) {
+    return (
+      <Suspense fallback={<SplashScreen />}>
+        <PublicWallet token={decodeURIComponent(window.location.pathname.slice(3))} />
       </Suspense>
     );
   }

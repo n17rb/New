@@ -9,7 +9,7 @@ import { can, canAction } from "../permissions.js";
 import { cleanSchedule } from "../utils/schedule.js";
 import { replaceOrderItems } from "../utils/orderEdit.js";
 import { sellCouponPackage } from "./coupons.js";
-import { ensureInvoiceToken } from "./invoices.js";
+import { ensureInvoiceToken, ensureWalletToken } from "./invoices.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -1145,13 +1145,15 @@ router.post("/stops/:stopId/sell-package", async (req, res) => {
   if (!canOperateTrip(req.user, trip)) return res.status(403).json({ error: "غير مصرح." });
   if (trip.status === "COMPLETED") return res.status(400).json({ error: "الرحلة خلصت." });
   try {
-    res.json(await sellCouponPackage({
+    const r = await sellCouponPackage({
       customerId: stop.customer_id,
       packageId: Number(req.body?.package_id),
       paidAmount: req.body?.paid_amount,
       userId: req.user.id,
       tripId: trip.id,
-    }));
+    });
+    const wallet_token = req.tenant?.id ? await ensureWalletToken(stop.customer_id, req.tenant.id).catch(() => null) : null;
+    res.json({ ...r, wallet_token });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;
