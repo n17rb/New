@@ -9,6 +9,7 @@ import { can, canAction } from "../permissions.js";
 import { cleanSchedule } from "../utils/schedule.js";
 import { replaceOrderItems } from "../utils/orderEdit.js";
 import { sellCouponPackage } from "./coupons.js";
+import { ensureInvoiceToken } from "./invoices.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -861,7 +862,13 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
   }
 
   invalidateForecastCache();
+  // رابط الفاتورة جاهز مع الرد — عشان رسالة الإيصال يكون فيها الرابط دايمًا
+  let invoiceToken = null;
+  if (req.tenant?.id && !req.user?.inspecting) {
+    invoiceToken = await ensureInvoiceToken(stop.order_id, req.tenant.id).catch(() => null);
+  }
   res.json({
+    invoice_token: invoiceToken,
     message: "تم تسجيل التسليم.",
     amount_due: amountDue,
     cash_collected: received,

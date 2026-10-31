@@ -12,6 +12,17 @@ import { getTenant } from "../utils/tenants.js";
 const router = Router();
 router.use(requireAuth);
 
+// رابط فاتورة الطلب (بينعمل مرة وحدة وبيضل نفسه)
+export async function ensureInvoiceToken(orderId, tenantId) {
+  const r = await query("SELECT id, invoice_token FROM orders WHERE id = $1", [orderId]);
+  const order = r.rows[0];
+  if (!order) return null;
+  if (order.invoice_token) return order.invoice_token;
+  const token = `${tenantId}-${crypto.randomBytes(9).toString("base64url")}`;
+  await query("UPDATE orders SET invoice_token = $1 WHERE id = $2 AND invoice_token IS NULL", [token, order.id]);
+  return (await query("SELECT invoice_token FROM orders WHERE id = $1", [order.id])).rows[0].invoice_token;
+}
+
 router.post("/order/:id", async (req, res) => {
   if (!canAny(req.user, [["orders", "view"], ["delivery", "edit"], ["customers", "view"]])) {
     return res.status(403).json({ error: "ما عندك صلاحية." });

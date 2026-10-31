@@ -59,10 +59,11 @@ export function receiptFromStop(stop) {
 // بطاقة بعد التسليم مباشرة: ملخص سريع + زر يبعت الإيصال للزبون
 export function ReceiptBanner({ receipt, onClose }) {
   const { stop, result } = receipt;
-  const [invoiceToken, setInvoiceToken] = useState(null);
+  const [invoiceToken, setInvoiceToken] = useState(result.invoice_token || null);
   useEffect(() => {
+    if (result.invoice_token) return;
     api.getInvoiceLink(stop.order_id).then((r) => setInvoiceToken(r.token)).catch(() => {});
-  }, [stop.order_id]);
+  }, [stop.order_id, result.invoice_token]);
   const data = {
     invoiceToken,
     name: stop.customer_name,
@@ -99,7 +100,18 @@ export function ReceiptBanner({ receipt, onClose }) {
         href={receiptLink(stop.phone_normalized, data)}
         target="_blank"
         rel="noreferrer"
-        onClick={onClose}
+        onClick={async (e) => {
+          // الرابط لسا ما وصل؟ بنجيبه أول عشان الرسالة يكون فيها رابط الفاتورة
+          if (!invoiceToken) {
+            e.preventDefault();
+            const w = window.open("", "_blank");
+            let token = null;
+            try { token = (await api.getInvoiceLink(stop.order_id)).token; } catch { /* بدون رابط */ }
+            const url = receiptLink(stop.phone_normalized, { ...data, invoiceToken: token });
+            if (w) w.location.href = url; else window.location.href = url;
+          }
+          onClose();
+        }}
       >
         <FaWhatsapp aria-hidden="true" /> ابعتله إيصال على واتساب
       </a>
