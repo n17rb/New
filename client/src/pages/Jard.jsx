@@ -55,6 +55,7 @@ export default function Jard() {
     `💵 كاش من الرحلات: ${money(s.trip_cash)} JD`,
     s.shop_debt_payments ? `💳 تسديد ديون بالمحل: ${money(s.shop_debt_payments)} JD` : null,
     s.coupon_sales_cash ? `🎫 بيع باقات: ${money(s.coupon_sales_cash)} JD` : null,
+    s.shop_sales_cash ? `🏪 مبيعات المحطة: ${money(s.shop_sales_cash)} JD` : null,
     `⬇️ المجموع داخل: ${money(s.money_in)} JD`,
     s.expenses ? `🧾 صرفيات: ${money(s.expenses)} JD` : null,
     s.payroll_out ? `👷 رواتب وسحوبات: ${money(s.payroll_out)} JD` : null,
@@ -101,6 +102,7 @@ export default function Jard() {
               <Row label="كاش من التوصيل" value={money(s.trip_cash)} sub={`${s.delivered} طلب متسلّم · قيمتها ${money(s.sales_value)}`} />
               {s.shop_debt_payments > 0 && <Row label="تسديد ديون بالمحل" value={money(s.shop_debt_payments)} />}
               {s.coupon_sales_cash > 0 && <Row label="بيع باقات كوبونات" value={money(s.coupon_sales_cash)} />}
+              {s.shop_sales_cash > 0 && <Row label="مبيعات المحطة (الكاشير)" value={money(s.shop_sales_cash)} sub={`${s.shop_sales_count} بيعة`} />}
               <Row label="المجموع" value={money(s.money_in)} strong color="var(--success)" />
             </div>
             <h2 className="title-md">المصاريف</h2>
@@ -146,6 +148,14 @@ export default function Jard() {
                           {x.delivered ? `سلّم ${x.delivered} طلب` : "ما سلّم طلبات"}{x.coupons ? ` · خصم ${x.coupons} كوبون${x.paper_coupons ? ` (${x.paper_coupons} ورقي)` : ""}` : ""}{x.empties ? ` · ${x.empties} فارغ` : ""}
                           {x.debt_added ? ` · دين ${money(x.debt_added)}` : ""}{x.debt_paid ? ` · قبض ديون ${money(x.debt_paid)}` : ""}
                         </div>
+                        {x.shop_cash > 0 && (
+                          <div className="fc-sub" style={{ color: "var(--navy)", fontWeight: 700 }}>
+                            🏪 باع بالمحل {money(x.shop_cash)} ({x.shop_count} بيعة)
+                          </div>
+                        )}
+                        {x.custody > 0 && (
+                          <div className="fc-sub" style={{ fontWeight: 700 }}>💼 معه عهدة {money(x.custody)} (مش من الكاش)</div>
+                        )}
                         {x.debt_cash > 0 && (
                           <div className="fc-sub" style={{ color: "var(--success)", fontWeight: 700 }}>
                             💳 قبض سداد ديون {money(x.debt_cash)} ({x.debt_cash_count} زبون)
@@ -160,9 +170,9 @@ export default function Jard() {
                       <div style={{ textAlign: "left" }}>
                         <div className="tabular-num" style={{ fontWeight: 800 }}>{money(x.total_cash)}</div>
                         <div className="fc-sub">معه كاش</div>
-                        {[x.cash, x.pkg_cash, x.debt_cash].filter((v) => v > 0).length > 1 && (
+                        {[x.cash, x.pkg_cash, x.debt_cash, x.shop_cash].filter((v) => v > 0).length > 1 && (
                           <div className="fc-sub tabular-num" style={{ fontSize: "0.68rem" }}>
-                            {[x.cash > 0 && `${money(x.cash)} توصيل`, x.pkg_cash > 0 && `${money(x.pkg_cash)} باقات`, x.debt_cash > 0 && `${money(x.debt_cash)} ديون`].filter(Boolean).join(" + ")}
+                            {[x.cash > 0 && `${money(x.cash)} توصيل`, x.pkg_cash > 0 && `${money(x.pkg_cash)} باقات`, x.debt_cash > 0 && `${money(x.debt_cash)} ديون`, x.shop_cash > 0 && `${money(x.shop_cash)} محل`].filter(Boolean).join(" + ")}
                           </div>
                         )}
                       </div>

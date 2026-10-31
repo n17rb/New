@@ -42,6 +42,7 @@ import subscriptionRoutes from "./routes/subscription.js";
 import supportRoutes from "./routes/support.js";
 import payrollRoutes from "./routes/payroll.js";
 import jardRoutes from "./routes/jard.js";
+import stationRoutes from "./routes/station.js";
 import invoiceRoutes, { publicInvoiceRouter } from "./routes/invoices.js";
 import factoryRoutes, { factoryPublicRouter, factoryWatch } from "./routes/factory/index.js";
 
@@ -119,6 +120,7 @@ app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/jard", jardRoutes);
+app.use("/api/station", stationRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/public", publicInvoiceRouter);
 app.use("/api/public", factoryPublicRouter);

@@ -1,8 +1,11 @@
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { api } from "../api.js";
 import {
   FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiDroplet,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
   FiTag, FiAlertCircle, FiMessageCircle, FiClipboard, FiUsers, FiStar, FiHeadphones, FiGrid, FiBriefcase, FiMessageSquare, FiTarget,
+  FiTruck, FiPackage, FiShoppingCart, FiBriefcase as FiCustody, FiPlus,
 } from "react-icons/fi";
 import { usePerms, useShop } from "../auth.jsx";
 import { LogoMark } from "../components/Logo.jsx";
@@ -68,6 +71,8 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         </Link>
       )}
 
+      <StationBlock can={can} feat={shop?.features || {}} />
+
       <Group title="الشغل اليومي">
         {(can("orders") || can("customers")) && <Row key="forecast" to="/forecast" icon={FiDroplet} title="توقعات الطلبات" sub="مين مفروض يطلب اليوم، ومين متأخر" />}
         {can("jard") && <Row key="jard" to="/jard" icon={FiClipboard} title="الجرد اليومي" sub="كم دخل وكم طلع، ومين قبض شو" />}
@@ -127,5 +132,46 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// المحطة بأول «المزيد»: السيارات (سيارة ١، سيارة ٢…) + المخزون + الكاشير + العهدة
+function StationBlock({ can, feat }) {
+  const showVehicles = feat.vehicles && (can("station") || can("delivery", "edit"));
+  const [vs, setVs] = useState(null);
+  useEffect(() => {
+    if (showVehicles) api.stVehicles().then((r) => setVs(r)).catch(() => setVs(null));
+  }, [showVehicles]);
+  const rows = [
+    (feat.station_stock || feat.vehicles || feat.cashier) && can("station") && <Row key="station" to="/station" icon={FiPackage} title="المحطة" sub="مبيعات المحطة والمركبات، المخزون، الربح" />,
+    feat.cashier && can("cashier") && <Row key="cashier" to="/cashier" icon={FiShoppingCart} title="الكاشير" sub="سجّل بيع المحل" />,
+    feat.custody && <Row key="custody" to="/custody" icon={FiCustody} title="العهدة" sub="المصاري الثابتة مع الموظفين" />,
+  ].filter(Boolean);
+  if (!showVehicles && !rows.length) return null;
+  return (
+    <>
+      {showVehicles && (
+        <>
+          <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>السيارات</span>
+            <Link to="/vehicles" style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--primary)", textDecoration: "none" }}>الكل</Link>
+          </div>
+          <div className="mv-strip">
+            {(vs?.vehicles || []).map((v) => (
+              <Link key={v.id} to={`/vehicles/${v.id}`} className={`mv-car${v.round ? " on" : ""}`}>
+                <FiTruck aria-hidden="true" />
+                <b>{v.name}</b>
+                <small>{v.round ? `${v.round.driver_name || ""} · ${v.round.summary.lines.filter((l) => l.loaded).map((l) => `${l.remaining} ${l.name}`).join("، ")}` : "فاضية"}</small>
+              </Link>
+            ))}
+            {vs?.can_edit && (
+              <Link to="/vehicles" className="mv-car add"><FiPlus aria-hidden="true" /><b>سيارة</b><small>ضيف سيارة</small></Link>
+            )}
+            {vs && vs.vehicles.length === 0 && !vs.can_edit && <div className="mv-none">ما في جولة مفتوحة إلك</div>}
+          </div>
+        </>
+      )}
+      {rows.length > 0 && <Group title="المحطة">{rows}</Group>}
+    </>
   );
 }

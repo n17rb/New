@@ -92,7 +92,7 @@ router.get("/me", requireAuth, async (req, res) => {
 
 // تعريف الأقسام والإجراءات والقوالب — لشاشة الصلاحيات
 router.get("/permissions-meta", requireAuth, (req, res) => {
-  res.json(permissionsMeta(req.tenant?.plan));
+  res.json(permissionsMeta(req.tenant?.plan, req.tenant?.features || {}));
 });
 
 export default router;

@@ -46,6 +46,11 @@ const Payroll = lazy(() => import("./pages/Payroll.jsx"));
 const PayrollEmployee = lazy(() => import("./pages/PayrollEmployee.jsx"));
 const MyPay = lazy(() => import("./pages/MyPay.jsx"));
 const Jard = lazy(() => import("./pages/Jard.jsx"));
+const Vehicles = lazy(() => import("./pages/Vehicles.jsx"));
+const VehicleDetail = lazy(() => import("./pages/Vehicles.jsx").then((m) => ({ default: m.VehicleDetail })));
+const Station = lazy(() => import("./pages/Station.jsx"));
+const Cashier = lazy(() => import("./pages/Cashier.jsx"));
+const Custody = lazy(() => import("./pages/Custody.jsx"));
 const Bottles = lazy(() => import("./pages/Bottles.jsx"));
 const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
 const PublicWallet = lazy(() => import("./pages/PublicWallet.jsx"));
@@ -389,6 +394,7 @@ function MainApp() {
   }
 
   const can = (section, level = "view") => canUser(user, section, level);
+  const feat = shop?.features || {};
   const isOwner = user.role === "super_admin";
   const canCustomers = can("customers") || can("orders") || can("delivery", "edit");
   const canTrip = can("delivery", "edit") || can("trips");
@@ -461,6 +467,11 @@ function MainApp() {
               {can("payroll") && <Route path="/payroll/:id" element={<PayrollEmployee />} />}
               <Route path="/my-pay" element={<MyPay />} />
               {can("jard") && <Route path="/jard" element={<Jard />} />}
+              {feat.vehicles && (can("station") || can("delivery", "edit")) && <Route path="/vehicles" element={<Vehicles />} />}
+              {feat.vehicles && (can("station") || can("delivery", "edit")) && <Route path="/vehicles/:id" element={<VehicleDetail />} />}
+              {(feat.station_stock || feat.vehicles || feat.cashier) && can("station") && <Route path="/station" element={<Station />} />}
+              {feat.cashier && can("cashier") && <Route path="/cashier" element={<Cashier />} />}
+              {feat.custody && <Route path="/custody" element={<Custody />} />}
               {(can("customers") || can("jard")) && <Route path="/bottles" element={<Bottles />} />}
               {isManager && !shop?.is_home && <Route path="/subscription" element={<Subscription onRefresh={refreshMe} />} />}
               {(isManager || user.inspecting) && !shop?.is_home && <Route path="/support" element={<Support />} />}

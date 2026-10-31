@@ -1430,3 +1430,101 @@ BEGIN
     INSERT INTO app_settings (key, value) VALUES ('mig_expense_categories', '1') ON CONFLICT (key) DO NOTHING;
   END IF;
 END $$;
+
+-- ============================================================
+-- المحطة (ميزات إضافية لكل محل): السيارات والجولات، مخزون المحطة، التوالف، الكاشير، العهدة
+-- ============================================================
+CREATE TABLE IF NOT EXISTS st_vehicles (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  plate VARCHAR(30),
+  status VARCHAR(10) NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- الجولة: تحميل ← بيع ← مرتجع (بيتصفّر رصيد السيارة)
+CREATE TABLE IF NOT EXISTS st_rounds (
+  id SERIAL PRIMARY KEY,
+  vehicle_id INTEGER NOT NULL REFERENCES st_vehicles(id) ON DELETE CASCADE,
+  driver_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  round_no INTEGER NOT NULL DEFAULT 1,
+  status VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ,
+  opened_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_st_rounds_open ON st_rounds(vehicle_id) WHERE status = 'open';
+CREATE TABLE IF NOT EXISTS st_round_items (
+  id SERIAL PRIMARY KEY,
+  round_id INTEGER NOT NULL REFERENCES st_rounds(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  name VARCHAR(100) NOT NULL,
+  loaded INTEGER NOT NULL DEFAULT 0,
+  sold INTEGER,
+  returned INTEGER,
+  damaged INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (round_id, product_id)
+);
+-- أصناف المحطة (المخزون ورأس المال): مربوطة بمنتج (بيتباع) أو لحالها (فلاتر، أغطية...)
+CREATE TABLE IF NOT EXISTS st_items (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  product_id INTEGER UNIQUE REFERENCES products(id) ON DELETE SET NULL,
+  unit VARCHAR(20) NOT NULL DEFAULT 'حبة',
+  cost_price NUMERIC(10,3) NOT NULL DEFAULT 0,
+  low_alert INTEGER NOT NULL DEFAULT 100,
+  alerted BOOLEAN NOT NULL DEFAULT false,
+  status VARCHAR(10) NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- كل حركة مخزون (موجب = دخل، سالب = طلع). التالف بيستنى موافقة
+CREATE TABLE IF NOT EXISTS st_moves (
+  id SERIAL PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES st_items(id) ON DELETE CASCADE,
+  kind VARCHAR(12) NOT NULL CHECK (kind IN ('in','load','return','shop_sale','damage','adjust')),
+  qty INTEGER NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'approved' CHECK (status IN ('approved','pending','rejected')),
+  round_id INTEGER REFERENCES st_rounds(id) ON DELETE SET NULL,
+  sale_id INTEGER,
+  unit_cost NUMERIC(10,3),
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_st_moves_item ON st_moves(item_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_st_moves_created ON st_moves(created_at DESC);
+-- بيع المحل (الكاشير)
+CREATE TABLE IF NOT EXISTS st_sales (
+  id SERIAL PRIMARY KEY,
+  items JSONB NOT NULL,
+  total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  cost_total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  note TEXT,
+  status VARCHAR(10) NOT NULL DEFAULT 'done' CHECK (status IN ('done','void')),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_st_sales_created ON st_sales(created_at DESC);
+-- العهدة: مبلغ ثابت مع الشخص (فراطة) — ما بينحسب من الكاش اللي بيسلّمه
+CREATE TABLE IF NOT EXISTS st_custody (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  note TEXT,
+  updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS st_custody_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount_before NUMERIC(10,2) NOT NULL DEFAULT 0,
+  amount_after NUMERIC(10,2) NOT NULL DEFAULT 0,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

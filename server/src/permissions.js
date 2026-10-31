@@ -23,6 +23,9 @@ export const SECTIONS = [
   { key: "settings", label: "إعدادات المحل", hint: "موقع المحل اللي بتخلص فيه الرحلات" },
   { key: "activity_log", label: "سجل النشاط", hint: "مين عمل شو وإيمتى", viewOnly: true },
   { key: "backup", label: "النسخ الاحتياطي", hint: "تنزيل نسخة من كل البيانات", viewOnly: true },
+  // ---------- ميزات المحطة (بتظهر بس إذا الميزة مفتوحة للمحل) ----------
+  { key: "station", label: "المحطة والسيارات", hint: "تحميل السيارات والمرتجع، مخزون المحطة، التوالف، العهدة", features: ["vehicles", "station_stock", "custody"] },
+  { key: "cashier", label: "الكاشير", hint: "تسجيل بيع المحل وتأكيده", features: ["cashier"] },
 
   // ---------- باقة المصانع (بتظهر بس عند المصنع) ----------
   { key: "f_home", label: "لوحة المالك", hint: "حالة المصنع اليوم والتنبيهات", viewOnly: true, plan: "factory" },
@@ -57,6 +60,7 @@ export const ACTIONS = [
   { key: "give_bonus", label: "إعطاء بونص (كراتين ببلاش) يدويًا على الطلب", plan: "factory" },
   { key: "factory_sale", label: "البيع على أرض المصنع (زبون إجا اشترى من المصنع)", plan: "factory" },
   { key: "self_attendance", label: "يسجّل حضوره بنفسه («وصلت»)" },
+  { key: "approve_damage", label: "الموافقة على التوالف", features: ["station_stock"] },
 ];
 
 export const LEVELS = ["none", "view", "edit"];
@@ -88,6 +92,16 @@ export const TEMPLATES = {
       dashboard: "none", customers: "edit", orders: "none", delivery: "none", trips: "none",
       products: "view", cash: "none", driver_balances: "none", reports: "none", settings: "none",
       debts: "none", coupons: "none", chat: "none", activity_log: "none", backup: "none",
+    },
+    actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: false, chat_with_admin: true },
+  },
+  station_worker: {
+    label: "موظف المحطة (كاشير)",
+    features: ["cashier", "vehicles", "station_stock"],
+    sections: {
+      dashboard: "none", customers: "view", orders: "view", delivery: "none", trips: "none",
+      products: "view", cash: "none", driver_balances: "none", reports: "none", settings: "none",
+      debts: "edit", coupons: "view", chat: "none", activity_log: "none", backup: "none", station: "edit", cashier: "edit",
     },
     actions: { discount: false, cancel_order: false, delete_customer: false, edit_prices: false, adjust_coupons: false, give_credit: false, chat_with_admin: true },
   },
@@ -153,12 +167,14 @@ export const FACTORY_TEMPLATES = {
 };
 
 // الأقسام والقوالب اللي بتظهر بشاشة الصلاحيات حسب باقة المشترك
-export function permissionsMeta(plan) {
+export function permissionsMeta(plan, features = {}) {
   const factory = plan === "factory";
+  // الأقسام المربوطة بميزة بتظهر بس إذا الميزة مفتوحة للمحل
+  const featureOk = (x) => !x.features || x.features.some((f) => features?.[f]);
   return {
-    sections: SECTIONS.filter((s) => (factory ? s.plan === "factory" || FACTORY_SHARED.includes(s.key) : s.plan !== "factory")),
-    actions: ACTIONS.filter((a) => (factory ? !SHOP_ONLY_ACTIONS.includes(a.key) && (a.plan === "factory" || ["discount", "give_credit", "self_attendance"].includes(a.key)) : a.plan !== "factory")),
-    templates: factory ? FACTORY_TEMPLATES : TEMPLATES,
+    sections: SECTIONS.filter((s) => featureOk(s) && (factory ? s.plan === "factory" || FACTORY_SHARED.includes(s.key) : s.plan !== "factory")),
+    actions: ACTIONS.filter((a) => featureOk(a) && (factory ? !SHOP_ONLY_ACTIONS.includes(a.key) && (a.plan === "factory" || ["discount", "give_credit", "self_attendance"].includes(a.key)) : a.plan !== "factory")),
+    templates: factory ? FACTORY_TEMPLATES : Object.fromEntries(Object.entries(TEMPLATES).filter(([, t]) => featureOk(t))),
   };
 }
 
