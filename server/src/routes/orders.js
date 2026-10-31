@@ -2,7 +2,7 @@ import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
-import { tryAutoAddToActiveTrip, rescheduleOrder } from "./trips.js";
+import { tryAutoAddToActiveTrip, rescheduleOrder, tripForNewOrder, addNewOrderToTrip } from "./trips.js";
 import { cleanSchedule } from "../utils/schedule.js";
 import { computeFinalTotal, replaceOrderItems } from "../utils/orderEdit.js";
 import { notifyNewOrder } from "../utils/notify.js";
@@ -129,6 +129,16 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
+  // طلب انعمل من جوّا رحلة جارية: بينضاف إلها مباشرة وبتترتب
+  let trip = null;
+  if (req.body.trip_id) {
+    try {
+      trip = await tripForNewOrder(req.body.trip_id, req.user);
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -195,6 +205,18 @@ router.post("/", async (req, res) => {
     });
 
     invalidateForecastCache();
+
+    if (trip) {
+      try {
+        await addNewOrderToTrip(trip, order.id, req.user.id);
+        res.status(201).json({ ...order, items: preparedItems, added_to_trip: trip.id });
+      } catch (e) {
+        console.error("add-to-trip error:", e.message);
+        res.status(201).json({ ...order, items: preparedItems, added_to_trip: null, warning: "انعمل الطلب بس ما انضاف للرحلة — ضيفه من الطلبات." });
+      }
+      return;
+    }
+
     res.status(201).json({ ...order, items: preparedItems });
 
     // لو انضاف تلقائيًا لرحلة شغّالة، إشعار الرحلة بيوصل لسائقها.

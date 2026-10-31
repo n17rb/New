@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { renderMessage } from "../messages.js";
 import { ReceiptBanner, receiptLink, receiptFromStop } from "../components/Receipt.jsx";
 import { api } from "../api.js";
-import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck, FiPhoneOff, FiRotateCw, FiCalendar, FiGrid, FiChevronLeft } from "react-icons/fi";
+import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefreshCw, FiClock, FiXCircle, FiHome, FiCamera, FiEdit2, FiTruck, FiPhoneOff, FiRotateCw, FiCalendar, FiGrid, FiChevronLeft, FiPlus } from "react-icons/fi";
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
-import { EditItemsSheet, SellPackageSheet } from "../components/TripStopSheets.jsx";
+import { EditItemsSheet, SellPackageSheet, NewOrderSheet } from "../components/TripStopSheets.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
@@ -465,6 +465,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
   }
 
   const [reorderSheet, setReorderSheet] = useState(false);
+  const [newOrderOpen, setNewOrderOpen] = useState(false);
   const routeStyle = trip.route_style === "loop" ? "loop" : "area";
 
   async function handleReorder(style) {
@@ -614,16 +615,33 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <h2 className="title-md" style={{ margin: 0 }}>كل توقفات الرحلة بالترتيب</h2>
           {trip.status === "STARTED" && (canOperate || isSuperAdmin || isManagerViewOnly) && (
-            <button
-              className="btn-secondary"
-              style={{ width: "auto", padding: "6px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
-              disabled={reordering}
-              onClick={() => setReorderSheet(true)}
-            >
-              <FiRefreshCw /> {reordering ? "جاري الترتيب..." : "رتّب من جديد"}
-            </button>
+            <div className="trip-head-btns">
+              {(canOperate || isSuperAdmin) && (
+                <button type="button" className="trip-add-btn" onClick={() => setNewOrderOpen(true)}>
+                  <FiPlus aria-hidden="true" /> طلب جديد
+                </button>
+              )}
+              <button
+                className="btn-secondary"
+                style={{ width: "auto", padding: "6px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
+                disabled={reordering}
+                onClick={() => setReorderSheet(true)}
+              >
+                <FiRefreshCw /> {reordering ? "جاري الترتيب..." : "رتّب"}
+              </button>
+            </div>
           )}
         </div>
+        <NewOrderSheet
+          open={newOrderOpen}
+          tripId={trip.id}
+          onClose={() => setNewOrderOpen(false)}
+          onSaved={(msg) => {
+            setReorderMessage(msg);
+            setTimeout(() => setReorderMessage(""), 6000);
+            onChanged();
+          }}
+        />
         <Sheet open={reorderSheet} title="كيف بدك ترتّب الرحلة؟" onClose={() => setReorderSheet(false)}>
           <div className="ro-opts">
             <button type="button" className={`ro-opt${routeStyle === "area" ? " on" : ""}`} onClick={() => handleReorder("area")}>

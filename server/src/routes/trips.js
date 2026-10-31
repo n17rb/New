@@ -1292,6 +1292,22 @@ export async function rescheduleOrder(orderId, { scheduled_date, requested_time,
   return order;
 }
 
+// طلب جديد من جوّا الرحلة: بنتأكد إنه الرحلة جارية وإله صلاحية عليها (قبل ما ننشئ الطلب)
+export async function tripForNewOrder(tripId, user) {
+  const r = await query("SELECT * FROM trips WHERE id = $1", [tripId]);
+  const trip = r.rows[0];
+  if (!trip) throw Object.assign(new Error("الرحلة غير موجودة."), { status: 404 });
+  if (!canOperateTrip(user, trip)) throw Object.assign(new Error("غير مصرح."), { status: 403 });
+  if (trip.status !== "STARTED") throw Object.assign(new Error("الرحلة ليست جارية حاليًا."), { status: 400 });
+  return trip;
+}
+
+// بعد ما انعمل الطلب: بينضاف للرحلة وبتترتب من جديد
+export async function addNewOrderToTrip(trip, orderId, userId) {
+  await appendOrderAndReoptimize(trip, orderId);
+  await logActivity({ userId, action: "ADD_ORDER_TO_TRIP", recordType: "trip", recordId: trip.id, newValue: { order_id: orderId, created_in_trip: true } });
+}
+
 export async function tryAutoAddToActiveTrip(orderId, actorId = null) {
   const activeResult = await query(`SELECT * FROM trips WHERE status = 'STARTED'`);
   if (activeResult.rows.length !== 1) return false;
