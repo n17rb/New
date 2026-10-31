@@ -9,6 +9,7 @@ import OrderForm from "../components/OrderForm.jsx";
 import CustomerAccount from "../components/CustomerAccount.jsx";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
 import { CustomerForecastCard, compactBottles } from "../components/Forecast.jsx";
+import CouponChip from "../components/CouponChip.jsx";
 
 const TABS = [
   { key: "orders", label: "الطلبات" },
@@ -264,7 +265,7 @@ function CustomerHeader({ customer, canManage, canDelete, canOrder, onNewOrder, 
           <span className="avatar" style={{ width: 52, height: 52, fontSize: "1.3rem", borderRadius: 16 }}>{initial}</span>
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 className="customer-hero-name">{customer.name}</h1>
+          <h1 className="customer-hero-name">{customer.name}<CouponChip balance={customer.coupon_balance} label /></h1>
           <div className="text-secondary tabular-num" style={{ fontSize: "0.85rem" }}>
             {customer.phone_display} · #{customer.sequential_number}
           </div>

@@ -14,6 +14,7 @@ import ShopLocationCard from "../components/ShopLocationCard.jsx";
 import { LoadInputs, TripLoadCard } from "../components/TripLoad.jsx";
 import { usePerms } from "../auth.jsx";
 import { scheduleLabel } from "../schedule.js";
+import CouponChip from "../components/CouponChip.jsx";
 
 function formatMinutes(mins) {
   if (mins <= 0) return "أقل من دقيقة";
@@ -685,6 +686,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
                 {i + 1}
               </span>
               <span>{s.customer_name}</span>
+              <CouponChip balance={s.coupon_balance} />
               <BottleTypeBadge type={s.bottle_type} />
               {!s.latitude && <span className="text-secondary" style={{ fontSize: "0.75rem" }}> (بدون موقع محفوظ)</span>}
               {s.is_time_locked && <span style={{ color: "var(--warning)", fontSize: "0.75rem" }}> ⏰ لموعد {formatClockTime(s.requested_time)}</span>}
@@ -1329,6 +1331,7 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2 className="sc-name">
             {stop.customer_name}
+            <CouponChip balance={stop.coupon_balance} label />
             {stop.priority === "urgent" && <span className="sc-urgent">🚨 مستعجل</span>}
           </h2>
           <div className="sc-sub tabular-num">#{stop.order_number}</div>

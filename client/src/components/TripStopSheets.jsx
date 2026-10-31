@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import Sheet from "./Sheet.jsx";
+import CouponChip from "./CouponChip.jsx";
 import { FaWhatsapp } from "react-icons/fa";
 import { couponsAddedText } from "./Receipt.jsx";
 
@@ -270,7 +271,7 @@ export function NewOrderSheet({ open, tripId, onClose, onSaved }) {
               <button key={c.id} type="button" className="no-row" onClick={() => choose(c)}>
                 <span className="no-av" aria-hidden="true">{(c.name || "؟").trim()[0]}</span>
                 <span className="no-t">
-                  <b>{c.name}</b>
+                  <b>{c.name}<CouponChip balance={c.coupon_balance} /></b>
                   <small>{place(c) || "بدون عنوان"}</small>
                 </span>
                 {c.phone_display && <span className="no-ph tabular-num" dir="ltr">{c.phone_display}</span>}

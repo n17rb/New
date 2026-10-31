@@ -7,6 +7,7 @@ import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.js
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import { scheduleLabel } from "../schedule.js";
+import CouponChip from "../components/CouponChip.jsx";
 
 // الحالات: اسم + لون ناعم
 export const STATUS_META = {
@@ -179,6 +180,7 @@ export default function Orders({ user }) {
               <span className="ord-main">
                 <span className="ord-name">
                   {o.customer_name}
+                  <CouponChip balance={o.coupon_balance} />
                   {o.priority === "urgent" && <span className="ord-flag">🚨</span>}
                 </span>
                 <span className="ord-items">{itemsText(o.items) || <NeedsQuantityBadge order={o} />}</span>

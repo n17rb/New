@@ -6,6 +6,7 @@ import LocationPicker from "../components/LocationPicker.jsx";
 import { usePerms, ViewOnlyNote } from "../auth.jsx";
 import { FiUserPlus, FiSearch, FiUpload, FiTool, FiMapPin, FiHash } from "react-icons/fi";
 import { BottleTypePicker, BottleTypeBadge } from "../components/BottleType.jsx";
+import CouponChip from "../components/CouponChip.jsx";
 
 // سطر العنوان المختصر: الشارع · عمارة · طابق · شقة
 function withLabel(label, value, alreadyLabeled) {
@@ -217,6 +218,7 @@ export default function Customers({ user }) {
                   <div>
                     <div style={{ fontWeight: 600 }}>
                       {c.name}
+                      <CouponChip balance={c.coupon_balance} />
                       {c.is_sample && <span className="badge sample-badge">تجريبي</span>}
                       {hasNoLink && (
                         <span style={{ color: "var(--warning)", fontSize: "0.75rem", marginRight: 6 }}> ⚠️ بدون موقع أصلًا</span>

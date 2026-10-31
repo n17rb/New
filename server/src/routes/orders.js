@@ -76,7 +76,7 @@ router.get("/", async (req, res) => {
   params.push(Math.min(Number(limit) || 100, 1000));
 
   const result = await query(
-    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.bottle_type
+    `SELECT o.*, c.name AS customer_name, c.phone_display AS customer_phone, c.bottle_type, c.coupon_balance
      FROM orders o
      JOIN customers c ON c.id = o.customer_id
      ${whereClause}
