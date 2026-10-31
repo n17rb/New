@@ -755,6 +755,22 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
             canOperate={canOperate}
             busy={busy}
             onUndo={() => withBusy(() => api.undoDeliver(closedStop.id))}
+            onReactivate={async () => {
+              const id = closedStop.id;
+              setBusy(true);
+              setError("");
+              try {
+                const r = await api.reactivateOrder(closedStop.order_id);
+                setReorderMessage(r?.message?.includes("الرحلة") ? `✅ رجع طلب ${closedStop.customer_name} عالرحلة وترتّبت من جديد` : (r?.message || "✅ رجع الطلب"));
+                setTimeout(() => setReorderMessage(""), 6000);
+                setSelectedStopId(id);
+                onChanged();
+              } catch (err) {
+                setError(err.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
             onBack={() => setSelectedStopId(null)}
             onRefresh={onChanged}
           />
@@ -1095,9 +1111,12 @@ function QuickQuantityForm({ stop, onSaved, onCancel }) {
 }
 
 // زبون خلص (تسلّم أو تعذّر أو انلغى) — تفاصيل البيت والتواصل، وتراجع عن التسليم
-function ClosedStopCard({ stop, index, canOperate, busy, onUndo, onBack, onRefresh }) {
+function ClosedStopCard({ stop, index, canOperate, busy, onUndo, onReactivate, onBack, onRefresh }) {
   const [editing, setEditing] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState(false);
+  const [confirmBack, setConfirmBack] = useState(false);
+  const cancelled = stop.order_status === "CANCELLED";
+  const failed = stop.order_status === "FAILED";
   const delivered = stop.order_status === "DELIVERED" || !!stop.delivered_at;
   // رابط الفاتورة جوّا رسالة الإيصال
   const [invoiceToken, setInvoiceToken] = useState(null);
@@ -1187,6 +1206,20 @@ function ClosedStopCard({ stop, index, canOperate, busy, onUndo, onBack, onRefre
       {delivered && canOperate && (
         <button className="btn-secondary" disabled={busy} onClick={() => setConfirmUndo(true)}>↩️ تراجع عن التسليم (رجّعه لسا ما تسلّم)</button>
       )}
+      {!delivered && (cancelled || failed) && canOperate && (
+        <button className="btn-primary icon-row" style={{ justifyContent: "center", marginTop: 12 }} disabled={busy} onClick={() => setConfirmBack(true)}>
+          <FiRotateCw aria-hidden="true" /> {cancelled ? "إعادة تفعيل الطلب" : "رجّعه عالرحلة"}
+        </button>
+      )}
+      <ConfirmSheet
+        open={confirmBack}
+        title={cancelled ? "إعادة تفعيل الطلب؟" : "ترجيع الطلب عالرحلة؟"}
+        text={`طلب ${stop.customer_name} رح يرجع عالرحلة كأنه لسا ما تسلّم، والرحلة بتترتب من جديد.`}
+        confirmLabel={cancelled ? "نعم، فعّله" : "نعم، رجّعه"}
+        busy={busy}
+        onConfirm={() => { setConfirmBack(false); onReactivate?.(); }}
+        onClose={() => setConfirmBack(false)}
+      />
       <ConfirmSheet
         open={confirmUndo}
         title="تراجع عن التسليم؟"
