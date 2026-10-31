@@ -265,6 +265,7 @@ export const api = {
   },
   sellCouponPackage: (body) => request("/coupons/sell", { method: "POST", body }),
   getCouponsOverview: () => request("/coupons/overview"),
+  getCouponHolders: () => request("/coupons/holders"),
 
   // حمولة السيارة
   setTripLoad: (tripId, items) => request(`/trips/${tripId}/load`, { method: "POST", body: { items } }),

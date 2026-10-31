@@ -174,4 +174,35 @@ router.get("/overview", requirePerm("coupons", "view"), async (req, res) => {
   res.json({ ...totals.rows[0], recent_sales: sales.rows, low_balance: low.rows });
 });
 
+// كل الزباين اللي معهم كوبونات (أو كان معهم): الرصيد، آخر باقة، وكم استعمل منها
+router.get("/holders", requirePerm("coupons", "view"), async (req, res) => {
+  const result = await query(
+    `SELECT c.id, c.name, c.phone_display, c.phone_normalized, c.coupon_balance,
+            r.name AS region_name,
+            ls.package_name_snapshot AS last_package, ls.coupons AS last_package_coupons, ls.created_at AS last_package_at,
+            COALESCE(led.bought, 0)::int AS total_in, COALESCE(led.used, 0)::int AS total_used, led.last_use_at
+     FROM customers c
+     LEFT JOIN LATERAL (
+       SELECT SUM(change_amount) FILTER (WHERE change_amount > 0) AS bought,
+              -SUM(change_amount) FILTER (WHERE change_amount < 0) AS used,
+              MAX(created_at) FILTER (WHERE change_amount < 0) AS last_use_at
+       FROM coupon_ledger WHERE customer_id = c.id
+     ) led ON true
+     LEFT JOIN LATERAL (
+       SELECT package_name_snapshot, coupons, created_at FROM coupon_sales
+       WHERE customer_id = c.id ORDER BY created_at DESC LIMIT 1
+     ) ls ON true
+     LEFT JOIN LATERAL (SELECT region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id LIMIT 1) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE c.status = 'active' AND (c.coupon_balance > 0 OR led.bought > 0)
+     ORDER BY c.coupon_balance DESC, c.name ASC`
+  );
+  const rows = result.rows;
+  res.json({
+    holders: rows,
+    customers_with: rows.filter((r) => r.coupon_balance > 0).length,
+    total_balance: rows.reduce((s, r) => s + Math.max(0, r.coupon_balance), 0),
+  });
+});
+
 export default router;

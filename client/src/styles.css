@@ -2869,3 +2869,35 @@ button.stop-row:active { background: var(--surface-2); }
 .pr-sw.on .pr-sw-k i { right: 21px; }
 .pr-more { border: none; background: none; font: inherit; font-size: 0.82rem; font-weight: 700; color: var(--primary); cursor: pointer; padding: 2px 2px 10px; }
 .pr-archive { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 10px; border: none; background: none; font: inherit; font-size: 0.85rem; font-weight: 700; color: var(--urgent); cursor: pointer; padding: 8px; }
+
+/* مع مين الكوبونات */
+.ch { margin-top: 20px; scroll-margin-top: 80px; }
+.ch-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
+.ch-title { font-size: 1.05rem; font-weight: 800; }
+.ch-sum { font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px; }
+.ch-sum b { color: var(--primary); font-weight: 800; }
+.ch-search { width: 100%; box-sizing: border-box; font: inherit; font-size: 0.95rem; padding: 11px 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); margin-bottom: 10px; }
+.ch-search:focus { outline: none; border-color: var(--primary); }
+.ch-seg { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; }
+.ch-seg button { flex-shrink: 0; font: inherit; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); border-radius: 99px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.ch-seg button span { font-size: 0.72rem; background: var(--surface-2); border-radius: 99px; padding: 0 7px; }
+.ch-seg button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.ch-seg button.on span { background: rgba(255,255,255,0.22); }
+.ch-empty { text-align: center; color: var(--text-secondary); padding: 20px; font-size: 0.85rem; }
+.ch-list { display: flex; flex-direction: column; gap: 8px; }
+.ch-row { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 12px 14px 10px; }
+.ch-main { all: unset; display: flex; align-items: center; gap: 12px; width: 100%; cursor: pointer; box-sizing: border-box; }
+.ch-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ch-t b { font-size: 0.95rem; font-weight: 700; }
+.ch-t small { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-n { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; min-width: 52px; }
+.ch-n b { font-size: 1.4rem; font-weight: 800; color: #0A66F5; line-height: 1.1; }
+.ch-n small { font-size: 0.68rem; color: var(--text-secondary); }
+.ch-row.low .ch-n b { color: var(--warning, #B7791F); }
+.ch-row.out .ch-n b { color: var(--urgent); }
+.ch-bar { height: 6px; border-radius: 99px; background: var(--surface-2); margin: 10px 0 6px; overflow: hidden; }
+.ch-bar span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #22C1E8, #0A66F5); }
+.ch-row.low .ch-bar span { background: var(--warning, #E0A030); }
+.ch-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-secondary); min-height: 22px; }
+.ch-wa { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--whatsapp); text-decoration: none; background: rgba(37, 211, 102, 0.1); border-radius: 99px; padding: 3px 10px; flex-shrink: 0; }
+.ch-more { width: 100%; margin-top: 10px; font: inherit; font-weight: 700; font-size: 0.85rem; color: var(--primary); background: var(--primary-soft); border: none; border-radius: 14px; padding: 10px; cursor: pointer; }

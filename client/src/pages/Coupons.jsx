@@ -142,7 +142,7 @@ export default function Coupons() {
             <div className="today-num tabular-num">{overview.month_count}</div>
             <div className="today-label">باقات انباعت</div>
           </div>
-          <div className="today-cell" style={{ cursor: "default" }}>
+          <div className="today-cell" onClick={() => document.getElementById("cp-holders")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
             <div className="today-num tabular-num">{overview.coupons_outstanding}</div>
             <div className="today-label">كوبون عند الزباين</div>
           </div>
@@ -192,27 +192,7 @@ export default function Coupons() {
         </div>
       )}
 
-      {overview && overview.low_balance.length > 0 && (
-        <>
-          <div className="section-title">كوبوناتهم قربت تخلص</div>
-          <div className="list-group">
-            {overview.low_balance.map((c) => (
-              <div key={c.id} className="list-row" style={{ cursor: "default" }}>
-                <button onClick={() => navigate(`/customers/${c.id}`)} style={{ all: "unset", flex: 1, minWidth: 0, cursor: "pointer" }}>
-                  <div className="list-title">{c.name}</div>
-                  <div className="list-sub tabular-num">{c.phone_display}</div>
-                </button>
-                <span className="badge" style={{ background: c.coupon_balance === 0 ? "var(--urgent-soft)" : "var(--warning-soft)", color: c.coupon_balance === 0 ? "var(--urgent)" : "var(--warning)" }}>
-                  {c.coupon_balance === 0 ? "خلصت" : `باقي ${c.coupon_balance}`}
-                </span>
-                <a className="icon-btn whatsapp" href={lowBalanceLink(c)} target="_blank" rel="noreferrer" aria-label={`ذكّر ${c.name}`}>
-                  <FaWhatsapp size={17} />
-                </a>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      <CouponHolders />
 
       {overview && overview.recent_sales.length > 0 && (
         <>
@@ -237,6 +217,99 @@ export default function Coupons() {
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// مع مين الكوبونات: كل زبون معه رصيد، كم ضله، وآخر باقة أخذها
+function CouponHolders() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState("all"); // all | low | out
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    api.getCouponHolders().then(setData).catch((e) => setError(e.message));
+  }, []);
+
+  if (error) return <div className="error-box">{error}</div>;
+  if (!data) return null;
+  if (data.holders.length === 0) return null;
+
+  const term = q.trim();
+  const counts = {
+    all: data.holders.filter((h) => h.coupon_balance > 0).length,
+    low: data.holders.filter((h) => h.coupon_balance > 0 && h.coupon_balance <= 2).length,
+    out: data.holders.filter((h) => h.coupon_balance <= 0).length,
+  };
+  const list = data.holders.filter((h) => {
+    if (filter === "all" && h.coupon_balance <= 0) return false;
+    if (filter === "low" && !(h.coupon_balance > 0 && h.coupon_balance <= 2)) return false;
+    if (filter === "out" && h.coupon_balance > 0) return false;
+    if (term && !(h.name || "").includes(term) && !(h.phone_display || "").replace(/\s/g, "").includes(term.replace(/\s/g, ""))) return false;
+    return true;
+  });
+  const shown = showAll || term ? list : list.slice(0, 30);
+  const fmt = (iso) => new Date(iso).toLocaleDateString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "short" });
+
+  return (
+    <div id="cp-holders" className="ch">
+      <div className="ch-head">
+        <div>
+          <div className="ch-title">مع مين الكوبونات</div>
+          <div className="ch-sum tabular-num">{data.customers_with} زبون معهم <b>{data.total_balance}</b> كوبون</div>
+        </div>
+      </div>
+
+      <input className="ch-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="دوّر باسم أو رقم…" aria-label="دوّر على زبون" />
+
+      <div className="ch-seg">
+        <button type="button" className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>معهم كوبونات <span className="tabular-num">{counts.all}</span></button>
+        <button type="button" className={filter === "low" ? "on" : ""} onClick={() => setFilter("low")}>قربت تخلص <span className="tabular-num">{counts.low}</span></button>
+        <button type="button" className={filter === "out" ? "on" : ""} onClick={() => setFilter("out")}>خلصت <span className="tabular-num">{counts.out}</span></button>
+      </div>
+
+      {list.length === 0 && <div className="ch-empty">ما في حدا هون</div>}
+
+      <div className="ch-list">
+        {shown.map((h) => {
+          const bal = Math.max(0, h.coupon_balance);
+          const total = Math.max(bal, h.last_package_coupons || 0);
+          const pct = total > 0 ? Math.round((bal / total) * 100) : 0;
+          const tone = bal === 0 ? "out" : bal <= 2 ? "low" : "ok";
+          return (
+            <div key={h.id} className={`ch-row ${tone}`}>
+              <button type="button" className="ch-main" onClick={() => navigate(`/customers/${h.id}`)}>
+                <span className="ch-t">
+                  <b>{h.name}</b>
+                  <small>
+                    {h.last_package ? `آخر باقة: ${h.last_package} · ${fmt(h.last_package_at)}` : h.region_name || h.phone_display}
+                  </small>
+                </span>
+                <span className="ch-n tabular-num">
+                  <b>{bal}</b>
+                  <small>{bal === 0 ? "خلصت" : total > bal ? `من ${total}` : "كوبون"}</small>
+                </span>
+              </button>
+              {total > 0 && <div className="ch-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></div>}
+              <div className="ch-foot tabular-num">
+                <span>استعمل {h.total_used} من أصل {h.total_in}{h.last_use_at ? ` · آخر استعمال ${fmt(h.last_use_at)}` : ""}</span>
+                {tone !== "ok" && h.phone_normalized && (
+                  <a className="ch-wa" href={lowBalanceLink(h)} target="_blank" rel="noreferrer" aria-label={`ذكّر ${h.name}`}>
+                    <FaWhatsapp aria-hidden="true" /> ذكّره
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!showAll && !term && list.length > shown.length && (
+        <button type="button" className="ch-more" onClick={() => setShowAll(true)}>عرض الكل ({list.length})</button>
       )}
     </div>
   );
