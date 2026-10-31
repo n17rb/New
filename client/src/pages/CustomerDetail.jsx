@@ -608,23 +608,12 @@ function LocationSection({ customer, canManage, onChanged }) {
 
       <div className="field">
         <label>جهة الشقة</label>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            type="button"
-            className={side === "يمين" ? "btn-primary" : "btn-secondary"}
-            style={{ flex: 1 }}
-            onClick={() => setSide("يمين")}
-          >
-            يمين
-          </button>
-          <button
-            type="button"
-            className={side === "يسار" ? "btn-primary" : "btn-secondary"}
-            style={{ flex: 1 }}
-            onClick={() => setSide("يسار")}
-          >
-            يسار
-          </button>
+        <div className="side-btns">
+          {[["يمين", "يمين الدرج"], ["يسار", "شمال الدرج"], ["يمين المصعد", "يمين المصعد"], ["شمال المصعد", "شمال المصعد"]].map(([val, label]) => (
+            <button key={val} type="button" className={`side-btn${side === val ? " on" : ""}`} onClick={() => setSide(side === val ? "" : val)}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 

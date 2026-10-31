@@ -90,7 +90,7 @@ export default function LocationPicker({ value, onChange, alwaysDetails = false,
         {F("apartment", "رقم الشقة")}
       </div>
       <div className="side-btns">
-        {[["يمين", "يمين الدرج"], ["يسار", "شمال الدرج"]].map(([val, label]) => (
+        {[["يمين", "يمين الدرج"], ["يسار", "شمال الدرج"], ["يمين المصعد", "يمين المصعد"], ["شمال المصعد", "شمال المصعد"]].map(([val, label]) => (
           <button key={val} type="button" className={`side-btn${v.side === val ? " on" : ""}`}
             onClick={() => onChange({ ...v, side: v.side === val ? "" : val })}>
             {label}

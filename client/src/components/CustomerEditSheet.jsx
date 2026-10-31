@@ -33,7 +33,7 @@ export default function CustomerEditSheet({ open, c, onClose, onSaved }) {
       building_name: c.building_name || "",
       floor: c.floor || "",
       apartment: c.apartment || "",
-      side: /يمين/.test(c.side || "") ? "يمين" : /شمال|يسار/.test(c.side || "") ? "يسار" : (c.side || ""),
+      side: /مصعد/.test(c.side || "") ? (/يمين/.test(c.side) ? "يمين المصعد" : "شمال المصعد") : /يمين/.test(c.side || "") ? "يمين" : /شمال|يسار/.test(c.side || "") ? "يسار" : (c.side || ""),
       access_notes: c.access_notes || "",
     });
     setName(c.customer_name || "");
