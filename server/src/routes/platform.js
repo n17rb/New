@@ -8,6 +8,7 @@ import {
   getPlatformSettings, findTenantIdByUsername, claimUsername, resetTenantData, removeSampleData, sampleDataCount,
 } from "../utils/tenants.js";
 import { notifyTenantManagers } from "../utils/platformNotify.js";
+import { FEATURES, cleanFeatures } from "../features.js";
 
 // ============================================================
 // لوحة إدارة موج: المحلات المشتركة، الاشتراكات، الدفعات، الدعم الفني
@@ -41,7 +42,7 @@ function present(t, stats = null, extra = {}) {
     id: t.id, name: t.name, owner_name: t.owner_name, phone: t.phone, city: t.city, status: t.status,
     is_demo: t.is_demo, is_home: t.is_home, plan: t.plan || "shop", paid_ever: t.paid_ever, monthly_price: Number(t.monthly_price),
     subscription_ends_at: t.subscription_ends_at, notes: t.notes, created_at: t.created_at,
-    last_active_at: t.last_active_at, access: tenantAccess(t), stats, ...extra,
+    last_active_at: t.last_active_at, access: tenantAccess(t), stats, features: cleanFeatures(t.features), ...extra,
   };
 }
 
@@ -140,6 +141,17 @@ router.put("/tenants/:id", async (req, res) => {
       [t.id, b.status === "suspended" ? "suspend" : "resume", b.reason || null]
     );
   }
+  invalidateTenant(t.id);
+  res.json(present(await getTenant(t.id)));
+});
+
+// ميزات المحل: تشغيل/إطفاء الإضافات لهالمحل بس
+router.get("/features", (req, res) => res.json(FEATURES));
+router.put("/tenants/:id/features", async (req, res) => {
+  const t = await getTenant(req.params.id);
+  if (!t) return res.status(404).json({ error: "المحل غير موجود." });
+  const features = cleanFeatures(req.body?.features);
+  await platformQuery("UPDATE platform.tenants SET features = $1::text::jsonb WHERE id = $2", [JSON.stringify(features), t.id]);
   invalidateTenant(t.id);
   res.json(present(await getTenant(t.id)));
 });

@@ -108,3 +108,6 @@ ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS demo_reset_on DATE;
 
 -- الباقة: shop = محل مي (الافتراضي)، factory = مصنع
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS plan VARCHAR(10) NOT NULL DEFAULT 'shop';
+
+-- ميزات إضافية بتنفتح لكل محل لحاله (من لوحة إدارة موج)
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS features JSONB NOT NULL DEFAULT '{}'::jsonb;

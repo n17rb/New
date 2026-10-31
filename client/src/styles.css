@@ -2942,3 +2942,26 @@ button.stop-row:active { background: var(--surface-2); }
 @keyframes scWant { 0%, 100% { box-shadow: 0 0 0 0 rgba(10, 102, 245, 0); } 50% { box-shadow: 0 0 0 5px rgba(10, 102, 245, 0.15); } }
 .want-tag { display: inline-flex; align-items: center; margin-inline-start: 6px; padding: 1px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 800; color: #0A55D0; background: #E3EEFF; white-space: nowrap; vertical-align: middle; }
 [data-theme="dark"] .want-tag { color: #9CC4FF; background: rgba(10, 102, 245, 0.18); }
+
+/* تفصيل الصرفيات: الأنواع */
+.exp-per { flex-shrink: 0; font-size: 0.66rem; font-weight: 800; padding: 2px 7px; border-radius: 99px; background: var(--surface); color: var(--text-secondary); }
+.exp-per.weekly { background: #FFF4E0; color: #B26B00; }
+.exp-per.monthly { background: #EDE7FF; color: #5B3FC4; }
+.exp-tabs { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.exp-tabs > button { font: inherit; font-size: 0.8rem; font-weight: 700; border: none; background: var(--surface); color: var(--text-secondary); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+.exp-tabs > button.on { background: var(--primary); color: #fff; }
+.exp-tabs .exp-manage { margin-inline-start: auto; background: none; color: var(--primary); display: inline-flex; align-items: center; gap: 4px; padding: 6px 4px; }
+.ec-list { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; }
+.ec-empty { color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 14px; }
+.ec-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; font-weight: 600; }
+.ec-row button { font: inherit; font-size: 0.78rem; font-weight: 700; color: var(--urgent); background: var(--urgent-soft); border: none; border-radius: 99px; padding: 4px 12px; cursor: pointer; }
+.ec-add { display: flex; gap: 8px; margin-top: 12px; }
+.ec-add input { flex: 1; min-width: 0; font: inherit; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.ec-add .btn-primary { width: auto; padding: 0 18px; }
+.exp-grp { margin-bottom: 14px; }
+.exp-grp-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.82rem; font-weight: 800; color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 8px; }
+.exp-grp-h b { color: var(--text); }
+button.exp-br-h { all: unset; display: flex; justify-content: space-between; width: 100%; font-size: 0.9rem; margin-bottom: 4px; cursor: pointer; box-sizing: border-box; }
+.exp-days { background: var(--surface-2); border-radius: 10px; padding: 6px 10px; margin-top: 6px; }
+.exp-day { display: flex; justify-content: space-between; font-size: 0.78rem; padding: 3px 0; color: var(--text-secondary); }
+.debt-pay-btn { flex-shrink: 0; font: inherit; font-size: 0.78rem; font-weight: 800; color: var(--success); background: var(--success-soft); border: none; border-radius: 99px; padding: 6px 12px; cursor: pointer; }

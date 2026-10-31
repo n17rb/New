@@ -209,6 +209,8 @@ export default function PlatformTenant() {
         </div>
       )}
 
+      <FeaturesCard t={t} onSaved={load} />
+
       {t.users?.length > 0 && (
         <>
           <div className="section-title">الحسابات</div>
@@ -294,5 +296,46 @@ function EditTenant({ t, onDone }) {
       </label>
       <button className="btn-primary" disabled={saving} onClick={save}>{saving ? "..." : "حفظ"}</button>
     </div>
+  );
+}
+
+// ميزات المحل: إضافات بتنفتح لهالمحل بس
+function FeaturesCard({ t, onSaved }) {
+  const [list, setList] = useState(null);
+  const [busyKey, setBusyKey] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => { api.platformFeatures().then(setList).catch((e) => setError(e.message)); }, []);
+  if (!list) return error ? <div className="error-box">{error}</div> : null;
+  const on = t.features || {};
+  async function toggle(key) {
+    setBusyKey(key);
+    setError("");
+    try {
+      await api.platformSetFeatures(t.id, { ...on, [key]: !on[key] });
+      onSaved();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyKey(null);
+    }
+  }
+  return (
+    <>
+      <div className="section-title">ميزات المحل</div>
+      <div className="card" style={{ padding: 12 }}>
+        <p className="text-secondary" style={{ margin: "0 2px 10px", fontSize: "0.8rem" }}>
+          إضافات بتظهر لهالمحل بس. اللي مطفية ما بتبيّن عنده أبدًا.
+        </p>
+        {error && <div className="error-box">{error}</div>}
+        <div className="pr-sws" style={{ margin: 0 }}>
+          {list.map((f) => (
+            <button key={f.key} type="button" className={`pr-sw${on[f.key] ? " on" : ""}`} disabled={busyKey === f.key} onClick={() => toggle(f.key)} aria-pressed={!!on[f.key]}>
+              <span className="pr-sw-t"><b>{f.label}</b><small>{f.hint}</small></span>
+              <span className="pr-sw-k" aria-hidden="true"><i /></span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }

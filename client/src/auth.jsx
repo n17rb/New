@@ -9,6 +9,12 @@ export function useShop() {
   return useContext(ShopContext);
 }
 
+// ميزة إضافية مفتوحة لهالمحل من إدارة موج؟
+export function useFeature(key) {
+  const shop = useContext(ShopContext);
+  return !!shop?.features?.[key];
+}
+
 const RANK = { none: 0, view: 1, edit: 2 };
 
 export function canUser(user, section, level = "view") {

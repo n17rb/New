@@ -1406,3 +1406,27 @@ END $$;
 -- الزبون طالب باقة كوبونات مع الطلب (أو لحالها): بتبيّن للكابتن بالرحلة
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS wants_coupons BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS wants_package_id INTEGER;
+
+-- أنواع الصرفيات (ميزة «تفصيل الصرفيات»): صاحب المحل بيضيف ويحذف — يومية / أسبوعية / شهرية
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  period VARCHAR(10) NOT NULL DEFAULT 'daily' CHECK (period IN ('daily','weekly','monthly')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'mig_expense_categories') THEN
+    IF NOT EXISTS (SELECT 1 FROM expense_categories) THEN
+      INSERT INTO expense_categories (name, period, sort_order) VALUES
+        ('ديزل', 'daily', 1), ('بنزين', 'daily', 2),
+        ('ثمن شرنكات', 'weekly', 1), ('ثمن قوارير فارغة', 'weekly', 2), ('ثمن جالون فارغ', 'weekly', 3), ('ثمن أغطية', 'weekly', 4),
+        ('مواد تنظيف', 'weekly', 5), ('متفرقة', 'weekly', 6), ('بنشر سيارة', 'weekly', 7),
+        ('إيجار محل', 'monthly', 1), ('إيجار بئر', 'monthly', 2), ('كهرباء', 'monthly', 3), ('اشتراك نت', 'monthly', 4),
+        ('اشتراك تلفون', 'monthly', 5), ('بونص موظف ١', 'monthly', 6), ('بونص موظف ٢', 'monthly', 7), ('ترخيص سيارة', 'monthly', 8),
+        ('صيانة سيارة', 'monthly', 9), ('غيار زيت', 'monthly', 10), ('ثمن تنك ماء', 'monthly', 11);
+    END IF;
+    INSERT INTO app_settings (key, value) VALUES ('mig_expense_categories', '1') ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;

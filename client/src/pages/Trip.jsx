@@ -6,13 +6,14 @@ import { FiNavigation, FiPhone, FiCheckCircle, FiAlertTriangle, FiMapPin, FiRefr
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 import CustomerEditSheet from "../components/CustomerEditSheet.jsx";
 import { EditItemsSheet, SellPackageSheet, NewOrderSheet } from "../components/TripStopSheets.jsx";
+import DebtPaySheet from "../components/DebtPaySheet.jsx";
 import SchedulePicker from "../components/SchedulePicker.jsx";
 import { FaWhatsapp } from "react-icons/fa";
 import RoutePreviewMap from "../components/RoutePreviewMap.jsx";
 import { BottleTypeBadge, NeedsQuantityBadge } from "../components/BottleType.jsx";
 import ShopLocationCard from "../components/ShopLocationCard.jsx";
 import { LoadInputs, TripLoadCard } from "../components/TripLoad.jsx";
-import { usePerms } from "../auth.jsx";
+import { usePerms, useFeature } from "../auth.jsx";
 import { scheduleLabel } from "../schedule.js";
 import CouponChip from "../components/CouponChip.jsx";
 
@@ -467,6 +468,8 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
 
   const [reorderSheet, setReorderSheet] = useState(false);
   const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const [debtOpen, setDebtOpen] = useState(false);
+  const quickPay = useFeature("debt_quick_pay");
   const routeStyle = trip.route_style === "loop" ? "loop" : "area";
 
   async function handleReorder(style) {
@@ -622,6 +625,11 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
                   <FiPlus aria-hidden="true" /> طلب جديد
                 </button>
               )}
+              {quickPay && (canOperate || isSuperAdmin) && (
+                <button type="button" className="trip-add-btn" style={{ background: "var(--success-soft)", color: "var(--success)" }} onClick={() => setDebtOpen(true)}>
+                  💳 سداد
+                </button>
+              )}
               <button
                 className="btn-secondary"
                 style={{ width: "auto", padding: "6px 10px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 4 }}
@@ -633,6 +641,13 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
             </div>
           )}
         </div>
+        {quickPay && (
+          <DebtPaySheet
+            open={debtOpen}
+            onClose={() => setDebtOpen(false)}
+            onDone={(msg) => { setReorderMessage(msg); setTimeout(() => setReorderMessage(""), 6000); onChanged(); }}
+          />
+        )}
         <NewOrderSheet
           open={newOrderOpen}
           tripId={trip.id}

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { gate, can } from "../permissions.js";
+import { requireFeature } from "../features.js";
 
 const router = Router();
 router.use(requireAuth, gate("cash"));
@@ -304,7 +305,8 @@ router.post("/entries", async (req, res) => {
       const amount = Math.round(Number(it?.amount) * 100) / 100;
       if (!name && !(amount > 0)) continue;
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: `اكتب مبلغ صحيح لـ«${name || "صرفية"}».` });
-      expenseItems.push({ name: name || "صرفيات", amount });
+      const period = ["daily", "weekly", "monthly"].includes(it?.period) ? it.period : undefined;
+      expenseItems.push(period ? { name: name || "صرفيات", amount, period } : { name: name || "صرفيات", amount });
     }
     expense_amount = expenseItems.length ? String(Math.round(expenseItems.reduce((a, x) => a + x.amount, 0) * 100) / 100) : (expense_amount ?? "");
     if (!expenseItems.length) expenseItems = null;
@@ -589,6 +591,34 @@ router.get("/trend", async (req, res) => {
     else if (b < a * 0.97) trend = "down";
   }
   res.json({ group_by: groupBy, rows, trend });
+});
+
+// ============================================================
+// أنواع الصرفيات (ميزة «تفصيل الصرفيات»)
+// ============================================================
+const PERIODS = ["daily", "weekly", "monthly"];
+router.get("/expense-categories", async (req, res) => {
+  const r = await query("SELECT id, name, period, sort_order FROM expense_categories ORDER BY CASE period WHEN 'daily' THEN 1 WHEN 'weekly' THEN 2 ELSE 3 END, sort_order, id");
+  res.json(r.rows);
+});
+router.post("/expense-categories", requireFeature("expense_details"), async (req, res) => {
+  if (!can(req.user, "cash", "edit")) return res.status(403).json({ error: "ما عندك صلاحية تعديل." });
+  const name = String(req.body?.name || "").trim().slice(0, 60);
+  const period = PERIODS.includes(req.body?.period) ? req.body.period : "daily";
+  if (!name) return res.status(400).json({ error: "اكتب اسم الصرفية." });
+  const dup = await query("SELECT id FROM expense_categories WHERE lower(name) = lower($1)", [name]);
+  if (dup.rows[0]) return res.status(400).json({ error: "هذا النوع موجود من قبل." });
+  const r = await query(
+    `INSERT INTO expense_categories (name, period, sort_order)
+     VALUES ($1, $2::varchar, COALESCE((SELECT MAX(sort_order) FROM expense_categories WHERE period = $2::varchar), 0) + 1) RETURNING *`,
+    [name, period]
+  );
+  res.status(201).json(r.rows[0]);
+});
+router.delete("/expense-categories/:id", requireFeature("expense_details"), async (req, res) => {
+  if (!can(req.user, "cash", "edit")) return res.status(403).json({ error: "ما عندك صلاحية تعديل." });
+  await query("DELETE FROM expense_categories WHERE id = $1", [req.params.id]);
+  res.json({ ok: true });
 });
 
 export default router;

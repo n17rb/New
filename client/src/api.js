@@ -233,6 +233,9 @@ export const api = {
   getCashHistoryPeriod: (id) => request(`/cash/history/${id}`),
   getCashInsights: () => request("/cash/insights"),
   saveCashSettings: (body) => request("/cash/settings", { method: "PUT", body }),
+  getExpenseCategories: () => request("/cash/expense-categories"),
+  addExpenseCategory: (body) => request("/cash/expense-categories", { method: "POST", body }),
+  deleteExpenseCategory: (id) => request(`/cash/expense-categories/${id}`, { method: "DELETE" }),
   getCashTrend: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/cash/trend${qs ? `?${qs}` : ""}`);
@@ -252,6 +255,8 @@ export const api = {
   getDebts: () => request("/debts"),
   getCustomerDebt: (customerId) => request(`/debts/customer/${customerId}`),
   recordDebtPayment: (customerId, body) => request(`/debts/customer/${customerId}/payment`, { method: "POST", body }),
+  getDebtQuickList: () => request("/debts/quick-list"),
+  quickPayDebt: (customerId, body) => request(`/debts/customer/${customerId}/quick-pay`, { method: "POST", body }),
   adjustDebt: (customerId, body) => request(`/debts/customer/${customerId}/adjust`, { method: "POST", body }),
 
   // باقات الكوبونات
@@ -330,6 +335,8 @@ export const api = {
   platformTenant: (id) => request(`/platform/tenants/${id}`),
   platformCreateTenant: (body) => request("/platform/tenants", { method: "POST", body }),
   platformUpdateTenant: (id, body) => request(`/platform/tenants/${id}`, { method: "PUT", body }),
+  platformFeatures: () => request("/platform/features"),
+  platformSetFeatures: (id, features) => request(`/platform/tenants/${id}/features`, { method: "PUT", body: { features } }),
   platformExtendTenant: (id, body) => request(`/platform/tenants/${id}/extend`, { method: "POST", body }),
   platformDeleteTenant: (id) => request(`/platform/tenants/${id}`, { method: "DELETE", body: { confirm: "احذف" } }),
   platformInspectTenant: (id) => request(`/platform/tenants/${id}/inspect`, { method: "POST" }),

@@ -4,6 +4,7 @@ import { query, setRequestTenant } from "../db.js";
 import { signToken, requireAuth, isPlatformAdmin } from "../middleware/auth.js";
 import { findTenantIdByUsername, getTenant, tenantAccess, getPlatformSettings, normalizeUsername } from "../utils/tenants.js";
 import { effectivePermissions, permissionsMeta } from "../permissions.js";
+import { cleanFeatures } from "../features.js";
 
 const router = Router();
 
@@ -65,6 +66,7 @@ async function shopInfo(req) {
     platform_admin: isPlatformAdmin({ tenant: t, user: req.user }),
     inspecting: !!req.user?.inspecting,
     plan: t.plan === "factory" ? "factory" : "shop",
+    features: cleanFeatures(t.features),
   };
   if (info.plan === "factory") {
     // هوية المصنع: الاسم والشعار والرقم بيطلعوا بالتطبيق والفواتير ورسائل الزباين

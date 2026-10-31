@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { FiSearch, FiChevronLeft } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { api } from "../api.js";
-import { ViewOnlyNote } from "../auth.jsx";
+import { ViewOnlyNote, useFeature } from "../auth.jsx";
+import DebtPaySheet from "../components/DebtPaySheet.jsx";
 
 function daysSince(date) {
   if (!date) return null;
@@ -29,10 +30,12 @@ export default function Debts() {
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("amount");
+  const quickPay = useFeature("debt_quick_pay");
+  const [paying, setPaying] = useState(undefined); // undefined = مسكّرة، null = اختار زبون، {..} = زبون محدد
+  const [done, setDone] = useState("");
 
-  useEffect(() => {
-    api.getDebts().then(setData).catch((err) => setError(err.message));
-  }, []);
+  const load = () => api.getDebts().then(setData).catch((err) => setError(err.message));
+  useEffect(() => { load(); }, []);
 
   const list = useMemo(() => {
     if (!data) return [];
@@ -45,7 +48,14 @@ export default function Debts() {
 
   return (
     <div className="page">
-      <h1 className="title-lg">ديون العملاء</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <h1 className="title-lg" style={{ margin: 0 }}>ديون العملاء</h1>
+        {quickPay && data && data.count > 0 && (
+          <button type="button" className="pr-add" style={{ background: "var(--success)", boxShadow: "none" }} onClick={() => setPaying(null)}>💳 سداد</button>
+        )}
+      </div>
+      <div style={{ height: 12 }} />
+      {done && <div className="success-box">{done}</div>}
       <ViewOnlyNote section="debts" />
       {error && <div className="error-box">{error}</div>}
 
@@ -105,6 +115,9 @@ export default function Debts() {
                 <span className="tabular-num" style={{ fontWeight: 800, color: "var(--urgent)", whiteSpace: "nowrap" }}>
                   {Number(c.debt_balance).toFixed(2)}
                 </span>
+                {quickPay && (
+                  <button type="button" className="debt-pay-btn" onClick={() => setPaying(c)}>سدّد</button>
+                )}
                 <a className="icon-btn whatsapp" href={reminderLink(c)} target="_blank" rel="noreferrer" aria-label={`تذكير ${c.name} على واتساب`}>
                   <FaWhatsapp size={17} />
                 </a>
@@ -113,6 +126,15 @@ export default function Debts() {
             );
           })}
         </div>
+      )}
+
+      {quickPay && (
+        <DebtPaySheet
+          open={paying !== undefined}
+          customer={paying || null}
+          onClose={() => setPaying(undefined)}
+          onDone={(m) => { setDone(m); setTimeout(() => setDone(""), 6000); load(); }}
+        />
       )}
     </div>
   );

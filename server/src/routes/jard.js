@@ -38,7 +38,7 @@ router.get("/", async (req, res) => {
     // مين سدّد دين، كم، ومين قبض (مع التوصيل أو بالمحل)
     query(
       `SELECT l.id, l.customer_id, c.name AS customer_name, (-l.change_amount)::float AS amount, l.balance_after::float AS balance_after,
-              l.notes, l.trip_id, l.created_at, u.full_name AS collected_by
+              l.notes, l.trip_id, l.created_at, l.created_by, u.full_name AS collected_by
        FROM customer_debt_ledger l JOIN customers c ON c.id = l.customer_id LEFT JOIN users u ON u.id = l.created_by
        WHERE l.reason = 'payment' AND ${DAY_SQL("l.created_at")} ORDER BY l.created_at`,
       [date]
@@ -98,7 +98,17 @@ router.get("/", async (req, res) => {
     d.pkg_coupons += sale.coupons;
     d.pkg_cash = n(d.pkg_cash + sale.paid);
   }
-  for (const d of drivers) d.total_cash = n(d.cash + d.pkg_cash);
+  // سداد ديون برا التوصيل (بالمحل أو سداد سريع): مع اللي قبضها
+  const blank = (id, name) => ({ driver_id: id, driver_name: name || "بدون اسم", delivered: 0, cash: 0, coupons: 0, paper_coupons: 0,
+    debt_added: 0, debt_paid: 0, amount_due: 0, empties: 0, pkg_count: 0, pkg_coupons: 0, pkg_cash: 0, no_trip: true });
+  for (const p of debtPayments.rows) {
+    if (p.trip_id) continue;
+    let d = drivers.find((x) => x.driver_id != null && x.driver_id === p.created_by);
+    if (!d) { d = blank(p.created_by, p.collected_by); drivers.push(d); }
+    d.debt_cash = n((d.debt_cash || 0) + p.amount);
+    d.debt_cash_count = (d.debt_cash_count || 0) + 1;
+  }
+  for (const d of drivers) d.total_cash = n(d.cash + d.pkg_cash + (d.debt_cash || 0));
   const couponsUsed = drivers.reduce((s, d) => s + d.coupons, 0);
   const couponsPaper = drivers.reduce((s, d) => s + (d.paper_coupons || 0), 0);
   const tripCash = n(drivers.reduce((s, d) => s + d.cash, 0));

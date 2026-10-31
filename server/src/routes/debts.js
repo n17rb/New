@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePerm } from "../permissions.js";
+import { requirePerm, can } from "../permissions.js";
+import { requireFeature } from "../features.js";
+import { notifyDebtPayment } from "../utils/notify.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -41,7 +43,7 @@ router.get("/customer/:id", requirePerm("debts", "view"), async (req, res) => {
   res.json(result.rows);
 });
 
-async function applyDebtChange(req, res, { customerId, change, reason, notes }) {
+async function applyDebtChange(req, res, { customerId, change, reason, notes, notifyQuick = false }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -72,6 +74,10 @@ async function applyDebtChange(req, res, { customerId, change, reason, notes }) 
       oldValue: { debt_balance: current },
       newValue: { debt_balance: after, change, notes },
     });
+    if (reason === "payment" && notifyQuick) {
+      notifyDebtPayment({ customerId, customerName: c.name, amount: -change, balanceAfter: after, actorId: req.user.id })
+        .catch((e) => console.error("notify error:", e.message));
+    }
     return res.json({ debt_balance: after, entry });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -94,6 +100,34 @@ router.post("/customer/:id/adjust", requirePerm("debts", "edit"), async (req, re
   if (!Number.isFinite(change) || change === 0) return res.status(400).json({ error: "اكتب المبلغ (موجب = دين جديد، سالب = شطب)." });
   if (!String(req.body?.notes || "").trim()) return res.status(400).json({ error: "اكتب سبب التعديل." });
   return applyDebtChange(req, res, { customerId: Number(req.params.id), change, reason: "manual", notes: req.body.notes.trim() });
+});
+
+// ============================================================
+// سداد سريع (ميزة «سداد الديون السريع»): الكابتن أو المساعد بيختار الزبون وبيكبس «تم السداد»
+// ============================================================
+function canQuickPay(user) {
+  return can(user, "debts", "edit") || can(user, "delivery", "edit");
+}
+router.get("/quick-list", requireFeature("debt_quick_pay"), async (req, res) => {
+  if (!canQuickPay(req.user)) return res.status(403).json({ error: "غير مصرح." });
+  const result = await query(
+    `SELECT c.id, c.name, c.phone_display, c.debt_balance, r.name AS region_name
+     FROM customers c
+     LEFT JOIN LATERAL (SELECT region_id FROM customer_locations WHERE customer_id = c.id ORDER BY id LIMIT 1) l ON true
+     LEFT JOIN regions r ON r.id = l.region_id
+     WHERE c.status = 'active' AND c.debt_balance > 0
+     ORDER BY c.name`
+  );
+  res.json(result.rows);
+});
+router.post("/customer/:id/quick-pay", requireFeature("debt_quick_pay"), async (req, res) => {
+  if (!canQuickPay(req.user)) return res.status(403).json({ error: "غير مصرح." });
+  const amount = round2(req.body?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "اكتب مبلغ الدفعة." });
+  return applyDebtChange(req, res, {
+    customerId: Number(req.params.id), change: -amount, reason: "payment",
+    notes: String(req.body?.notes || "").trim().slice(0, 120) || "سداد", notifyQuick: true,
+  });
 });
 
 export default router;

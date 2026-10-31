@@ -66,7 +66,7 @@ export default function Jard() {
     s.coupons_used ? `🎫 كوبونات انخصمت: ${s.coupons_used} (إلكتروني ${s.coupons_electronic}${s.coupons_paper ? ` · ورقي ${s.coupons_paper}` : ""})` : null,
     s.packages_sold ? `🎟️ باقات انباعت: ${s.packages_sold} (${s.coupons_sold} كوبون) · قبضنا ${money(s.coupon_sales_cash)} من ${money(s.coupon_sales_value)} JD` : null,
     "",
-    ...d.drivers.map((x) => `• ${x.driver_name}: ${x.delivered ? `${x.delivered} طلب` : "بالمحل"}${x.pkg_count ? ` + ${x.pkg_count} باقة` : ""}، معه ${money(x.total_cash)} JD`),
+    ...d.drivers.map((x) => `• ${x.driver_name}: ${x.delivered ? `${x.delivered} طلب` : "بالمحل"}${x.pkg_count ? ` + ${x.pkg_count} باقة` : ""}${x.debt_cash ? ` + سداد ديون ${money(x.debt_cash)}` : ""}، معه ${money(x.total_cash)} JD`),
   ].filter((x) => x !== null).join("\n") : "";
 
   return (
@@ -146,6 +146,11 @@ export default function Jard() {
                           {x.delivered ? `سلّم ${x.delivered} طلب` : "ما سلّم طلبات"}{x.coupons ? ` · خصم ${x.coupons} كوبون${x.paper_coupons ? ` (${x.paper_coupons} ورقي)` : ""}` : ""}{x.empties ? ` · ${x.empties} فارغ` : ""}
                           {x.debt_added ? ` · دين ${money(x.debt_added)}` : ""}{x.debt_paid ? ` · قبض ديون ${money(x.debt_paid)}` : ""}
                         </div>
+                        {x.debt_cash > 0 && (
+                          <div className="fc-sub" style={{ color: "var(--success)", fontWeight: 700 }}>
+                            💳 قبض سداد ديون {money(x.debt_cash)} ({x.debt_cash_count} زبون)
+                          </div>
+                        )}
                         {x.pkg_count > 0 && (
                           <div className="fc-sub" style={{ color: "var(--primary)", fontWeight: 700 }}>
                             🎫 باع {x.pkg_count} باقة ({x.pkg_coupons} كوبون) · قبض {money(x.pkg_cash)}
@@ -155,7 +160,11 @@ export default function Jard() {
                       <div style={{ textAlign: "left" }}>
                         <div className="tabular-num" style={{ fontWeight: 800 }}>{money(x.total_cash)}</div>
                         <div className="fc-sub">معه كاش</div>
-                        {x.pkg_cash > 0 && x.cash > 0 && <div className="fc-sub tabular-num" style={{ fontSize: "0.68rem" }}>{money(x.cash)} توصيل + {money(x.pkg_cash)} باقات</div>}
+                        {[x.cash, x.pkg_cash, x.debt_cash].filter((v) => v > 0).length > 1 && (
+                          <div className="fc-sub tabular-num" style={{ fontSize: "0.68rem" }}>
+                            {[x.cash > 0 && `${money(x.cash)} توصيل`, x.pkg_cash > 0 && `${money(x.pkg_cash)} باقات`, x.debt_cash > 0 && `${money(x.debt_cash)} ديون`].filter(Boolean).join(" + ")}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

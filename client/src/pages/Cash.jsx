@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, peek } from "../api.js";
-import { usePerms, ViewOnlyNote } from "../auth.jsx";
+import { usePerms, ViewOnlyNote, useFeature } from "../auth.jsx";
+import Sheet from "../components/Sheet.jsx";
 import { FiChevronRight, FiChevronLeft, FiEdit2, FiTrendingUp, FiTrendingDown, FiMinus, FiSettings, FiArchive, FiChevronDown } from "react-icons/fi";
 import SalesChart from "../components/SalesChart.jsx";
 
@@ -231,7 +232,9 @@ export default function Cash() {
   const [day, setDay] = useState(null);
   const [dayLoading, setDayLoading] = useState(false);
   const [sales, setSales] = useState("");
-  const [expItems, setExpItems] = useState([]); // [{name, amount}] — على شو انصرفت
+  const [expItems, setExpItems] = useState([]); // [{name, amount, period}] — على شو انصرفت (ميزة التفصيل)
+  const [expSimple, setExpSimple] = useState(""); // رقم واحد (المحلات بدون تفصيل)
+  const detailed = useFeature("expense_details");
   const [notes, setNotes] = useState("");
   const [meter, setMeter] = useState("");
   const [bottlesTotal, setBottlesTotal] = useState("");
@@ -259,6 +262,7 @@ export default function Cash() {
       setExpItems(items && items.length
         ? items.map((x) => ({ name: x.name || "", amount: String(x.amount) }))
         : e && Number(e.expense_amount) > 0 ? [{ name: "صرفيات", amount: String(Number(e.expense_amount)) }] : []);
+      setExpSimple(e && Number(e.expense_amount) > 0 ? String(Number(e.expense_amount)) : "");
       setNotes(e?.notes || "");
       setMeter(e?.meter_reading != null ? String(Number(e.meter_reading)) : "");
       setBottlesTotal(e?.bottles_total != null ? String(e.bottles_total) : "");
@@ -301,16 +305,20 @@ export default function Cash() {
   async function handleSave() {
     setError("");
     setSuccess("");
-    const nums = [sales, ...expItems.map((x) => x.amount)].map((x) => (x === "" ? 0 : Number(x)));
+    const nums = [sales, ...(detailed ? expItems.map((x) => x.amount) : [expSimple])].map((x) => (x === "" ? 0 : Number(x)));
     if (nums.some((x) => !Number.isFinite(x) || x < 0)) return setError("تأكد إن الأرقام صحيحة.");
-    const cleanItems = expItems.filter((x) => x.name.trim() || Number(x.amount) > 0);
+    const cleanItems = detailed ? expItems.filter((x) => x.name.trim() || Number(x.amount) > 0) : [];
     if (cleanItems.some((x) => !(Number(x.amount) > 0))) return setError("في صرفية بدون مبلغ — اكتب المبلغ أو احذفها.");
     setSaving(true);
     try {
       const r = await api.saveCashEntry({
         entry_date: selectedDate, sales_amount: sales, notes: notes.trim(),
-        expense_items: cleanItems.map((x) => ({ name: x.name.trim() || "صرفيات", amount: Number(x.amount) })),
-        expense_amount: cleanItems.length ? String(expTotal) : "",
+        ...(detailed
+          ? {
+              expense_items: cleanItems.map((x) => ({ name: x.name.trim() || "صرفيات", amount: Number(x.amount), ...(x.period ? { period: x.period } : {}) })),
+              expense_amount: cleanItems.length ? String(expTotal) : "",
+            }
+          : { expense_amount: expSimple }),
         meter_reading: meter, bottles_total: bottlesTotal, bottles_delivery: bottlesDelivery,
       });
       const wasExisting = !!day?.entry;
@@ -392,7 +400,14 @@ export default function Cash() {
               <input type="number" inputMode="decimal" step="0.01" min="0" value={sales} onChange={(e) => setSales(e.target.value)} placeholder="0" readOnly={!canEditCash} />
             </div>
 
-            <ExpensesEditor items={expItems} onChange={setExpItems} total={expTotal} readOnly={!canEditCash} />
+            {detailed ? (
+              <ExpensesEditor items={expItems} onChange={setExpItems} total={expTotal} readOnly={!canEditCash} />
+            ) : (
+              <div className="field">
+                <label>الصرفيات (JD)</label>
+                <input type="number" inputMode="decimal" step="0.01" min="0" value={expSimple} onChange={(e) => setExpSimple(e.target.value)} placeholder="0" readOnly={!canEditCash} />
+              </div>
+            )}
 
             <div className="bottles-box">
               <div className="bottles-box-h">
@@ -465,7 +480,7 @@ export default function Cash() {
         <div className="sum-row total"><span>الكاش المتوقع بالدرج</span><span className="tabular-num">{money(data.expected_cash)}</span></div>
       </div>
 
-      <ExpensesBreakdown entries={data.entries} />
+      {detailed && <ExpensesBreakdown entries={data.entries} />}
 
       <div className="card">
         <h2 className="title-md">جدول الأيام</h2>
@@ -505,12 +520,20 @@ export default function Cash() {
 // ============================================================
 // الصرفيات بالتفصيل: كل بند (قهوة، تنك مي، بنزين…) ومبلغه — والمجموع لحاله
 // ============================================================
-const EXP_QUICK = ["قهوة", "تنك مي", "بنزين", "أكل", "صيانة", "كهربا", "أجرة"];
+const PERIOD_LABEL = { daily: "يومية", weekly: "أسبوعية", monthly: "شهرية" };
+const PERIOD_ORDER = ["daily", "weekly", "monthly"];
 
 function ExpensesEditor({ items, onChange, total, readOnly }) {
+  const [cats, setCats] = useState(null);
+  const [tab, setTab] = useState("daily");
+  const [managing, setManaging] = useState(false);
+  const loadCats = () => api.getExpenseCategories().then(setCats).catch(() => setCats([]));
+  useEffect(() => { loadCats(); }, []);
+
   const set = (i, k, v) => onChange(items.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
-  const add = (name = "") => onChange([...items, { name, amount: "" }]);
+  const add = (name = "", period) => onChange([...items, { name, amount: "", ...(period ? { period } : {}) }]);
   const remove = (i) => onChange(items.filter((_, j) => j !== i));
+  const tabCats = (cats || []).filter((c) => c.period === tab);
 
   return (
     <div className="exp-box">
@@ -519,11 +542,12 @@ function ExpensesEditor({ items, onChange, total, readOnly }) {
         <b className="tabular-num">{total.toFixed(2)} <small>JD</small></b>
       </div>
 
-      {items.length === 0 && <div className="exp-empty">ما في صرفيات لهاليوم{readOnly ? "" : " — ضيف على شو صرفت"}</div>}
+      {items.length === 0 && <div className="exp-empty">ما في صرفيات لهاليوم{readOnly ? "" : " — اختار نوع الصرفية من تحت"}</div>}
 
       {items.map((x, i) => (
         <div key={i} className="exp-row">
-          <input className="exp-name" value={x.name} onChange={(e) => set(i, "name", e.target.value)} placeholder="على شو؟ (مثلًا ٥ قهوة)" readOnly={readOnly} maxLength={60} />
+          {x.period && <span className={`exp-per ${x.period}`}>{PERIOD_LABEL[x.period]}</span>}
+          <input className="exp-name" value={x.name} onChange={(e) => set(i, "name", e.target.value)} placeholder="على شو؟" readOnly={readOnly} maxLength={60} />
           <input className="exp-amt tabular-num" type="number" inputMode="decimal" step="0.01" min="0" value={x.amount}
             onChange={(e) => set(i, "amount", e.target.value)} placeholder="0.00" readOnly={readOnly} aria-label={`مبلغ ${x.name || "الصرفية"}`} />
           {!readOnly && <button type="button" className="exp-del" onClick={() => remove(i)} aria-label="احذف">×</button>}
@@ -532,46 +556,146 @@ function ExpensesEditor({ items, onChange, total, readOnly }) {
 
       {!readOnly && (
         <>
-          <div className="exp-quick">
-            {EXP_QUICK.map((q) => <button key={q} type="button" onClick={() => add(q)}>+ {q}</button>)}
+          <div className="exp-tabs">
+            {PERIOD_ORDER.map((p) => (
+              <button key={p} type="button" className={tab === p ? "on" : ""} onClick={() => setTab(p)}>{PERIOD_LABEL[p]}</button>
+            ))}
+            <button type="button" className="exp-manage" onClick={() => setManaging(true)} aria-label="تعديل أنواع الصرفيات"><FiEdit2 aria-hidden="true" /> تعديل</button>
           </div>
-          <button type="button" className="exp-add" onClick={() => add("")}>+ صرفية ثانية</button>
+          <div className="exp-quick">
+            {cats === null && <span className="text-secondary" style={{ fontSize: "0.8rem" }}>جاري التحميل…</span>}
+            {cats && tabCats.length === 0 && <span className="text-secondary" style={{ fontSize: "0.8rem" }}>ما في أنواع هون — ضيف من «تعديل»</span>}
+            {tabCats.map((c) => <button key={c.id} type="button" onClick={() => add(c.name, c.period)}>+ {c.name}</button>)}
+          </div>
+          <button type="button" className="exp-add" onClick={() => add("")}>+ صرفية ثانية (اكتب اسمها)</button>
         </>
       )}
+
+      <ExpenseCategoriesSheet open={managing} cats={cats || []} initialPeriod={tab} onClose={() => setManaging(false)} onChanged={loadCats} />
     </div>
   );
 }
 
-// وين راحت الصرفيات بهالفترة (مجموع كل بند)
+// تعديل أنواع الصرفيات: إضافة وحذف
+function ExpenseCategoriesSheet({ open, cats, initialPeriod, onClose, onChanged }) {
+  const [period, setPeriod] = useState(initialPeriod || "daily");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { if (open) { setPeriod(initialPeriod || "daily"); setName(""); setError(""); } }, [open]);
+
+  async function add() {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.addExpenseCategory({ name: name.trim(), period });
+      setName("");
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function del(c) {
+    setBusy(true);
+    setError("");
+    try {
+      await api.deleteExpenseCategory(c.id);
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const list = cats.filter((c) => c.period === period);
+
+  return (
+    <Sheet open={open} title="أنواع الصرفيات" onClose={onClose}>
+      <div className="seg" style={{ marginBottom: 12 }}>
+        {PERIOD_ORDER.map((p) => (
+          <button key={p} type="button" className={period === p ? "on" : ""} onClick={() => setPeriod(p)}>{PERIOD_LABEL[p]}</button>
+        ))}
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      <div className="ec-list">
+        {list.length === 0 && <div className="ec-empty">ما في أنواع {PERIOD_LABEL[period]} لسا</div>}
+        {list.map((c) => (
+          <div key={c.id} className="ec-row">
+            <span>{c.name}</span>
+            <button type="button" disabled={busy} onClick={() => del(c)} aria-label={`احذف ${c.name}`}>احذف</button>
+          </div>
+        ))}
+      </div>
+      <div className="ec-add">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={`نوع ${PERIOD_LABEL[period]} جديد (مثلًا غسيل سيارة)`} maxLength={60}
+          onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+        <button type="button" className="btn-primary" disabled={busy || !name.trim()} onClick={add}>ضيف</button>
+      </div>
+      <button className="btn-secondary" style={{ marginTop: 12 }} onClick={onClose}>تم</button>
+    </Sheet>
+  );
+}
+
+// وين راحت الصرفيات بهالفترة: مقسّمة يومية / أسبوعية / شهرية، وكل نوع بينفتح على أيامه
 function ExpensesBreakdown({ entries }) {
-  const rows = useMemo(() => {
-    const m = new Map();
+  const [open, setOpen] = useState(null);
+  const groups = useMemo(() => {
+    const m = new Map(); // key -> {name, period, amount, days: [{date, amount}]}
     for (const e of entries || []) {
       const items = Array.isArray(e.expense_items) && e.expense_items.length
         ? e.expense_items
         : Number(e.expense_amount) > 0 ? [{ name: "صرفيات بدون تفصيل", amount: Number(e.expense_amount) }] : [];
       for (const it of items) {
         // «٥ قهوة» و«قهوة» نفس البند
-        const key = String(it.name || "صرفيات").replace(/[0-9٠-٩]+(\.[0-9٠-٩]+)?/g, "").replace(/\s+/g, " ").trim() || "صرفيات";
-        m.set(key, (m.get(key) || 0) + Number(it.amount || 0));
+        const name = String(it.name || "صرفيات").replace(/[0-9٠-٩]+(\.[0-9٠-٩]+)?/g, "").replace(/\s+/g, " ").trim() || "صرفيات";
+        const period = it.period || "other";
+        const key = `${period}|${name}`;
+        const row = m.get(key) || { key, name, period, amount: 0, days: [] };
+        row.amount += Number(it.amount || 0);
+        row.days.push({ date: e.entry_date, amount: Number(it.amount || 0) });
+        m.set(key, row);
       }
     }
-    return [...m.entries()].map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 })).sort((a, b) => b.amount - a.amount);
+    const rows = [...m.values()].map((r) => ({ ...r, amount: Math.round(r.amount * 100) / 100 }));
+    return [...PERIOD_ORDER, "other"]
+      .map((p) => {
+        const list = rows.filter((r) => r.period === p).sort((a, b) => b.amount - a.amount);
+        return { period: p, list, total: Math.round(list.reduce((a, x) => a + x.amount, 0) * 100) / 100 };
+      })
+      .filter((g) => g.list.length);
   }, [entries]);
-  if (!rows.length) return null;
-  const total = rows.reduce((a, x) => a + x.amount, 0);
-  const max = rows[0].amount || 1;
+  if (!groups.length) return null;
+  const total = groups.reduce((a, g) => a + g.total, 0);
+  const max = Math.max(...groups.flatMap((g) => g.list.map((r) => r.amount)), 1);
   return (
     <div className="card">
       <h2 className="title-md">وين راحت الصرفيات؟</h2>
       <p className="text-secondary" style={{ fontSize: "0.8rem", marginTop: -4 }}>من آخر أرشفة · المجموع <b className="tabular-num">{total.toFixed(2)} JD</b></p>
-      {rows.map((r) => (
-        <div key={r.name} className="exp-br">
-          <div className="exp-br-h">
-            <span>{r.name}</span>
-            <span className="tabular-num">{r.amount.toFixed(2)} JD <small>({Math.round((r.amount / total) * 100)}٪)</small></span>
+      {groups.map((g) => (
+        <div key={g.period} className="exp-grp">
+          <div className="exp-grp-h">
+            <span>{g.period === "other" ? "غير مصنّفة" : `مصاريف ${PERIOD_LABEL[g.period]}`}</span>
+            <b className="tabular-num">{g.total.toFixed(2)} JD</b>
           </div>
-          <div className="exp-br-track"><div style={{ width: `${Math.max(4, (r.amount / max) * 100)}%` }} /></div>
+          {g.list.map((r) => (
+            <div key={r.key} className="exp-br">
+              <button type="button" className="exp-br-h" onClick={() => setOpen(open === r.key ? null : r.key)}>
+                <span>{r.name} <small>({r.days.length} مرة)</small></span>
+                <span className="tabular-num">{r.amount.toFixed(2)} JD <small>({Math.round((r.amount / total) * 100)}٪)</small></span>
+              </button>
+              <div className="exp-br-track"><div style={{ width: `${Math.max(4, (r.amount / max) * 100)}%` }} /></div>
+              {open === r.key && (
+                <div className="exp-days">
+                  {[...r.days].sort((a, b) => (a.date < b.date ? 1 : -1)).map((d, i) => (
+                    <div key={i} className="exp-day tabular-num"><span>{shortDay(d.date)}</span><span>{d.amount.toFixed(2)} JD</span></div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       ))}
     </div>

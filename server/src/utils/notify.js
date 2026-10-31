@@ -148,3 +148,19 @@ export async function notifyCouponSale({ customerId, customerName, packageName, 
       .catch((e) => console.error("push error:", e.message));
   }
 }
+
+// سداد دين (من قائمة الديون أو الكابتن): إشعار للإدارة اللي بتتابع الجرد/الديون
+export async function notifyDebtPayment({ customerId, customerName, amount, balanceAfter, actorId = null }) {
+  const by = actorId ? (await query("SELECT full_name FROM users WHERE id = $1", [actorId])).rows[0]?.full_name : null;
+  const message = `💳 ${customerName || "زبون"} سدّد ${Number(amount).toFixed(2)} JD${by ? ` — قبضها ${by}` : ""}${Number(balanceAfter) > 0 ? ` · باقي عليه ${Number(balanceAfter).toFixed(2)}` : " · خلّص دينه ✓"}`;
+  const recipients = await activeUsersWhere((u) => can(u, "jard", "view") || can(u, "debts", "view"));
+  for (const u of recipients) {
+    if (u.id === actorId) continue;
+    await query(
+      `INSERT INTO notifications (type, message, related_customer_id, target_user_id) VALUES ('DEBT_PAYMENT', $1, $2, $3)`,
+      [message, customerId, u.id]
+    );
+    sendPushToUser(u.id, { title: "سداد دين 💳", body: message, url: "/jard" })
+      .catch((e) => console.error("push error:", e.message));
+  }
+}
