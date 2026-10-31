@@ -2901,3 +2901,15 @@ button.stop-row:active { background: var(--surface-2); }
 .ch-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-secondary); min-height: 22px; }
 .ch-wa { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--whatsapp); text-decoration: none; background: rgba(37, 211, 102, 0.1); border-radius: 99px; padding: 3px 10px; flex-shrink: 0; }
 .ch-more { width: 100%; margin-top: 10px; font: inherit; font-weight: 700; font-size: 0.85rem; color: var(--primary); background: var(--primary-soft); border: none; border-radius: 14px; padding: 10px; cursor: pointer; }
+
+/* الجرد: الكوبونات */
+.jd-cp { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.jd-cp-box { border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+.jd-cp-box span { font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); }
+.jd-cp-box b { font-size: 1.6rem; font-weight: 800; line-height: 1.2; }
+.jd-cp-box small { font-size: 0.72rem; color: var(--text-secondary); }
+.jd-cp-box.out { background: var(--surface-2); }
+.jd-cp-box.in { background: linear-gradient(135deg, #E3EEFF, #DDF5FB); }
+.jd-cp-box.in b { color: #0A66F5; }
+[data-theme="dark"] .jd-cp-box.in { background: rgba(10, 102, 245, 0.16); }
+.jd-cp-note { font-size: 0.75rem; color: var(--urgent); margin-top: 8px; }

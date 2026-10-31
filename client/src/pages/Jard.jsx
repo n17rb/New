@@ -63,8 +63,10 @@ export default function Jard() {
     "",
     s.debt_added ? `📝 ديون جديدة: ${money(s.debt_added)} JD` : null,
     s.debt_collected ? `✔️ ديون انسدّت: ${money(s.debt_collected)} JD` : null,
-    s.coupons_used ? `🎫 كوبونات انستخدمت: ${s.coupons_used}` : null,
-    ...d.drivers.map((x) => `• ${x.driver_name}: ${x.delivered} طلب، معه ${money(x.cash)} JD`),
+    s.coupons_used ? `🎫 كوبونات انخصمت: ${s.coupons_used} (إلكتروني ${s.coupons_electronic}${s.coupons_paper ? ` · ورقي ${s.coupons_paper}` : ""})` : null,
+    s.packages_sold ? `🎟️ باقات انباعت: ${s.packages_sold} (${s.coupons_sold} كوبون) · قبضنا ${money(s.coupon_sales_cash)} من ${money(s.coupon_sales_value)} JD` : null,
+    "",
+    ...d.drivers.map((x) => `• ${x.driver_name}: ${x.delivered ? `${x.delivered} طلب` : "بالمحل"}${x.pkg_count ? ` + ${x.pkg_count} باقة` : ""}، معه ${money(x.total_cash)} JD`),
   ].filter((x) => x !== null).join("\n") : "";
 
   return (
@@ -109,9 +111,30 @@ export default function Jard() {
             </div>
           </div>
 
+          {(s.coupons_used > 0 || s.packages_sold > 0) && (
+            <div className="card">
+              <h2 className="title-md" style={{ marginTop: 0 }}>الكوبونات</h2>
+              <div className="jd-cp">
+                <div className="jd-cp-box out">
+                  <span>انخصم</span>
+                  <b className="tabular-num">{s.coupons_used}</b>
+                  <small>{s.coupons_used ? `إلكتروني ${s.coupons_electronic}${s.coupons_paper ? ` · ورقي ${s.coupons_paper}` : ""}` : "ولا كوبون"}</small>
+                </div>
+                <div className="jd-cp-box in">
+                  <span>انباع</span>
+                  <b className="tabular-num">{s.coupons_sold}</b>
+                  <small>{s.packages_sold ? `${s.packages_sold} باقة · ${money(s.coupon_sales_value)} JD` : "ولا باقة"}</small>
+                </div>
+              </div>
+              {s.packages_sold > 0 && s.coupon_sales_value > s.coupon_sales_cash && (
+                <div className="jd-cp-note tabular-num">قبضنا {money(s.coupon_sales_cash)} JD، والباقي {money(s.coupon_sales_value - s.coupon_sales_cash)} JD صار دين</div>
+              )}
+            </div>
+          )}
+
           {d.drivers.length > 0 && (
             <>
-              <div className="section-title">الكباتن — كل واحد كم معه</div>
+              <div className="section-title">الكباتن والموظفين — كل واحد كم معه</div>
               <div className="list-group">
                 {d.drivers.map((x) => (
                   <div key={x.driver_id || 0} className="fc-row">
@@ -120,13 +143,19 @@ export default function Jard() {
                       <div style={{ flex: 1 }}>
                         <div className="fc-name">{x.driver_name}</div>
                         <div className="fc-sub">
-                          {x.delivered} طلب{x.coupons ? ` · ${x.coupons} كوبون` : ""}{x.empties ? ` · ${x.empties} فارغ` : ""}
+                          {x.delivered ? `سلّم ${x.delivered} طلب` : "ما سلّم طلبات"}{x.coupons ? ` · خصم ${x.coupons} كوبون${x.paper_coupons ? ` (${x.paper_coupons} ورقي)` : ""}` : ""}{x.empties ? ` · ${x.empties} فارغ` : ""}
                           {x.debt_added ? ` · دين ${money(x.debt_added)}` : ""}{x.debt_paid ? ` · قبض ديون ${money(x.debt_paid)}` : ""}
                         </div>
+                        {x.pkg_count > 0 && (
+                          <div className="fc-sub" style={{ color: "var(--primary)", fontWeight: 700 }}>
+                            🎫 باع {x.pkg_count} باقة ({x.pkg_coupons} كوبون) · قبض {money(x.pkg_cash)}
+                          </div>
+                        )}
                       </div>
                       <div style={{ textAlign: "left" }}>
-                        <div className="tabular-num" style={{ fontWeight: 800 }}>{money(x.cash)}</div>
+                        <div className="tabular-num" style={{ fontWeight: 800 }}>{money(x.total_cash)}</div>
                         <div className="fc-sub">معه كاش</div>
+                        {x.pkg_cash > 0 && x.cash > 0 && <div className="fc-sub tabular-num" style={{ fontSize: "0.68rem" }}>{money(x.cash)} توصيل + {money(x.pkg_cash)} باقات</div>}
                       </div>
                     </div>
                   </div>
@@ -180,7 +209,7 @@ export default function Jard() {
                   <div key={x.id} className="list-row" style={{ cursor: "default" }}>
                     <span className="list-text">
                       <span className="list-title">{x.customer_name}</span>
-                      <div className="list-sub">{x.package_name_snapshot} · باعها {x.sold_by_name || "—"}</div>
+                      <div className="list-sub">{x.package_name_snapshot} · باعها {x.sold_by_name || "—"} · {x.trip_id ? "من الرحلة" : "بالمحل"} · {time(x.created_at)}</div>
                     </span>
                     <strong className="tabular-num">{money(x.paid)}{x.paid < x.price ? <div style={{ fontSize: "0.7rem", color: "var(--urgent)" }}>من {money(x.price)}</div> : null}</strong>
                   </div>

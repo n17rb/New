@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePerm } from "../permissions.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 import { ensureWalletToken } from "./invoices.js";
+import { notifyCouponSale } from "../utils/notify.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -126,6 +127,8 @@ export async function sellCouponPackage({ customerId, packageId, paidAmount, use
       userId, action: "SELL_COUPON_PACKAGE", recordType: "customer", recordId: customerId,
       newValue: { package: pkg.name, coupons: totalCoupons, price, paid, unpaid, trip_id: tripId },
     });
+    notifyCouponSale({ customerId, customerName: c.name, packageName: pkg.name, coupons: totalCoupons, price, paid, actorId: userId, tripId })
+      .catch((e) => console.error("notify error:", e.message));
     return { sale, coupon_balance: newCoupons, debt_balance: newDebt };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

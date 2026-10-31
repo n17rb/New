@@ -25,6 +25,7 @@ router.get("/", async (req, res) => {
               COUNT(*)::int AS delivered,
               COALESCE(SUM(ts.cash_collected), 0)::float AS cash,
               COALESCE(SUM(ts.coupons_collected), 0)::int AS coupons,
+              COALESCE(SUM(ts.paper_coupons), 0)::int AS paper_coupons,
               COALESCE(SUM(ts.debt_added), 0)::float AS debt_added,
               COALESCE(SUM(ts.debt_paid), 0)::float AS debt_paid,
               COALESCE(SUM(ts.amount_due), 0)::float AS amount_due,
@@ -52,7 +53,7 @@ router.get("/", async (req, res) => {
     ),
     query(
       `SELECT s.id, c.name AS customer_name, s.package_name_snapshot, s.coupons, s.price::float AS price,
-              s.paid_amount::float AS paid, u.full_name AS sold_by_name, s.created_at
+              s.paid_amount::float AS paid, s.sold_by, s.trip_id, u.full_name AS sold_by_name, s.created_at
        FROM coupon_sales s JOIN customers c ON c.id = s.customer_id LEFT JOIN users u ON u.id = s.sold_by
        WHERE ${DAY_SQL("s.created_at")} ORDER BY s.created_at`,
       [date]
@@ -84,7 +85,22 @@ router.get("/", async (req, res) => {
     ),
   ]);
 
-  const drivers = byDriver.rows;
+  // كل واحد كم معه: كاش التوصيل + كاش الباقات اللي باعها (من الرحلة أو بالمحل)
+  const drivers = byDriver.rows.map((d) => ({ ...d, pkg_count: 0, pkg_coupons: 0, pkg_cash: 0 }));
+  for (const sale of couponSales.rows) {
+    let d = drivers.find((x) => x.driver_id != null && x.driver_id === sale.sold_by);
+    if (!d) {
+      d = { driver_id: sale.sold_by, driver_name: sale.sold_by_name || "بدون اسم", delivered: 0, cash: 0, coupons: 0, paper_coupons: 0,
+        debt_added: 0, debt_paid: 0, amount_due: 0, empties: 0, pkg_count: 0, pkg_coupons: 0, pkg_cash: 0, no_trip: true };
+      drivers.push(d);
+    }
+    d.pkg_count += 1;
+    d.pkg_coupons += sale.coupons;
+    d.pkg_cash = n(d.pkg_cash + sale.paid);
+  }
+  for (const d of drivers) d.total_cash = n(d.cash + d.pkg_cash);
+  const couponsUsed = drivers.reduce((s, d) => s + d.coupons, 0);
+  const couponsPaper = drivers.reduce((s, d) => s + (d.paper_coupons || 0), 0);
   const tripCash = n(drivers.reduce((s, d) => s + d.cash, 0));
   const shopDebtPayments = n(debtPayments.rows.filter((p) => !p.trip_id).reduce((s, p) => s + p.amount, 0));
   const couponCash = n(couponSales.rows.reduce((s, x) => s + x.paid, 0));
@@ -101,7 +117,12 @@ router.get("/", async (req, res) => {
       delivered: drivers.reduce((s, d) => s + d.delivered, 0),
       sales_value: n(drivers.reduce((s, d) => s + d.amount_due, 0)),
       trip_cash: tripCash,
-      coupons_used: drivers.reduce((s, d) => s + d.coupons, 0),
+      coupons_used: couponsUsed,
+      coupons_paper: couponsPaper,
+      coupons_electronic: couponsUsed - couponsPaper,
+      packages_sold: couponSales.rows.length,
+      coupons_sold: couponSales.rows.reduce((s, x) => s + x.coupons, 0),
+      coupon_sales_value: n(couponSales.rows.reduce((s, x) => s + x.price, 0)),
       debt_added: n(newDebts.rows.reduce((s, x) => s + x.amount, 0)),
       debt_collected: n(debtPayments.rows.reduce((s, x) => s + x.amount, 0)),
       coupon_sales_cash: couponCash,

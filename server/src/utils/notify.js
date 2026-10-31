@@ -128,3 +128,22 @@ export async function notifyNewOrder({ orderId, actorId = null }) {
       .catch((e) => console.error("push error:", e.message));
   }
 }
+
+// انباعت باقة كوبونات: بيوصل إشعار للإدارة (اللي بيشوفوا الكوبونات)، إلا اللي باعها
+export async function notifyCouponSale({ customerId, customerName, packageName, coupons, price, paid, actorId = null, tripId = null }) {
+  const seller = actorId ? (await query("SELECT full_name FROM users WHERE id = $1", [actorId])).rows[0]?.full_name : null;
+  const unpaid = Math.round((Number(price) - Number(paid)) * 100) / 100;
+  const money = (x) => Number(x).toFixed(2);
+  const message = `🎫 ${seller || "انباعت"}${seller ? " باع" : ""} باقة لـ${customerName || "زبون"}: ${packageName} (${coupons} كوبون) — قبض ${money(paid)} JD${unpaid > 0 ? ` والباقي ${money(unpaid)} دين` : ""}${tripId ? " · من الرحلة" : ""}`;
+  const recipients = await activeUsersWhere((u) => can(u, "coupons", "view") || can(u, "jard", "view"));
+  for (const u of recipients) {
+    if (u.id === actorId) continue;
+    await query(
+      `INSERT INTO notifications (type, message, related_customer_id, related_trip_id, target_user_id)
+       VALUES ('COUPON_SALE', $1, $2, $3, $4)`,
+      [message, customerId, tripId, u.id]
+    );
+    sendPushToUser(u.id, { title: "انباعت باقة كوبونات 🎫", body: message, url: "/coupons" })
+      .catch((e) => console.error("push error:", e.message));
+  }
+}
