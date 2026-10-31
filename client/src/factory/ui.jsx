@@ -39,11 +39,26 @@ export function StatusPill({ map, value }) {
 }
 
 export function Sheet({ title, onClose, children }) {
+  // زر الرجوع بالتلفون بيسكّر الشاشة المفتوحة خطوة خطوة (مش بيطلع من الصفحة كلها)
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const onKey = (e) => e.key === "Escape" && closeRef.current?.();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const depth = (window.history.state?.fxDepth || 0) + 1;
+    let poppedByBack = false;
+    try { window.history.pushState({ ...(window.history.state || {}), fxDepth: depth }, ""); } catch { /* */ }
+    const onPop = (e) => {
+      if ((e.state?.fxDepth || 0) < depth) { poppedByBack = true; closeRef.current?.(); }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
+      // تسكّرت بزر ✕ أو بعد الحفظ؟ بنشيل خطوتها من تاريخ الرجوع (إلا إذا التطبيق انتقل لصفحة ثانية)
+      if (!poppedByBack && window.history.state?.fxDepth === depth) { try { window.history.back(); } catch { /* */ } }
+    };
+  }, []);
   return (
     <div className="fx-sheet-wrap">
       <div className="fx-scrim" onClick={onClose} />
@@ -238,7 +253,7 @@ function SignScreen({ title, onCancel, onDone }) {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const back = () => onCancel();
-    history.pushState({ fxSign: 1 }, "");
+    history.pushState({ ...(history.state || {}), fxSign: 1 }, "");
     window.addEventListener("popstate", back);
     return () => {
       window.removeEventListener("resize", onR);
