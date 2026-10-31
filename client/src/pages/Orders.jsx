@@ -240,10 +240,11 @@ function OrderDetail({ orderId, user, onBack }) {
     setBusy(true);
     setError("");
     try {
-      await fn();
+      const r = await fn();
       setSheet(null);
       await load();
-      if (msg) flash(msg);
+      const text = typeof msg === "function" ? msg(r) : msg;
+      if (text) flash(text);
     } catch (err) {
       setError(err.message);
       setSheet(null);
@@ -412,12 +413,22 @@ function OrderDetail({ orderId, user, onBack }) {
         </>
       )}
 
-      {(order.status === "POSTPONED" || order.status === "FAILED") && canEditOrders && (
+      {["POSTPONED", "FAILED", "CANCELLED"].includes(order.status) && canEditOrders && (
         <button className="btn-primary icon-row" style={{ justifyContent: "center", marginTop: 12 }} disabled={busy}
-          onClick={() => run(() => api.reactivateOrder(order.id), "✅ رجع لقائمة التوزيع")}>
-          <FiRotateCcw aria-hidden="true" /> رجّعه لقائمة التوزيع
+          onClick={() => setSheet("reactivate")}>
+          <FiRotateCcw aria-hidden="true" /> {order.status === "CANCELLED" ? "إعادة تفعيل الطلب" : "رجّعه لقائمة التوزيع"}
         </button>
       )}
+
+      <ConfirmSheet
+        open={sheet === "reactivate"}
+        title={order.status === "CANCELLED" ? "إعادة تفعيل الطلب؟" : "ترجيع الطلب؟"}
+        text={`طلب ${order.customer_name} (#${order.order_number}) رح يرجع شغّال — وإذا في رحلة شغّالة بينضاف إلها وبتترتب من جديد.`}
+        confirmLabel={order.status === "CANCELLED" ? "نعم، فعّله" : "نعم، رجّعه"}
+        busy={busy}
+        onConfirm={() => run(() => api.reactivateOrder(order.id), (r) => r?.message || "✅ رجع الطلب")}
+        onClose={() => setSheet(null)}
+      />
 
       {/* إلغاء: تأكيد بس */}
       <ConfirmSheet

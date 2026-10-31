@@ -2,7 +2,7 @@ import { Router } from "express";
 import { pool, query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can, canAction, canAny } from "../permissions.js";
-import { tryAutoAddToActiveTrip, rescheduleOrder, tripForNewOrder, addNewOrderToTrip } from "./trips.js";
+import { tryAutoAddToActiveTrip, rescheduleOrder, tripForNewOrder, addNewOrderToTrip, reoptimizeTrip } from "./trips.js";
 import { cleanSchedule } from "../utils/schedule.js";
 import { computeFinalTotal, replaceOrderItems } from "../utils/orderEdit.js";
 import { notifyNewOrder } from "../utils/notify.js";
@@ -383,13 +383,56 @@ router.post("/:id/postpone", async (req, res) => {
   res.json(order);
 });
 
+// إعادة تفعيل طلب ملغي/متعذّر/مؤجّل:
+// - لو كان على رحلة لسا شغّالة: بيرجع عليها وبتترتب الرحلة من جديد
+// - غير هيك: بيرجع «جديد» لقائمة التوزيع (وبينضاف لحاله للرحلة الشغّالة إذا في وحدة)
 router.post("/:id/reactivate", async (req, res) => {
-  const result = await query(
-    "UPDATE orders SET status = 'NEW', updated_at = now() WHERE id = $1 RETURNING *",
-    [req.params.id]
-  );
-  if (!result.rows[0]) return res.status(404).json({ error: "الطلب غير موجود." });
-  res.json(result.rows[0]);
+  const order = (await query("SELECT * FROM orders WHERE id = $1", [req.params.id])).rows[0];
+  if (!order) return res.status(404).json({ error: "الطلب غير موجود." });
+  if (!["CANCELLED", "FAILED", "POSTPONED"].includes(order.status)) {
+    return res.status(400).json({ error: "هذا الطلب مش ملغي — ما في داعي تفعّله." });
+  }
+
+  const stop = (await query(
+    `SELECT ts.id, ts.trip_id, ts.delivered_at, t.status AS trip_status
+     FROM trip_stops ts JOIN trips t ON t.id = ts.trip_id
+     WHERE ts.order_id = $1 ORDER BY ts.id DESC LIMIT 1`,
+    [order.id]
+  )).rows[0];
+
+  let backToTrip = null;
+  if (stop && stop.trip_status === "STARTED" && !stop.delivered_at) {
+    await query(
+      "UPDATE orders SET status = 'IN_ROUTE', cancelled_reason = NULL, failed_reason = NULL, updated_at = now() WHERE id = $1",
+      [order.id]
+    );
+    await reoptimizeTrip(stop.trip_id).catch((e) => console.error("reoptimize error:", e.message));
+    backToTrip = stop.trip_id;
+  } else {
+    await query(
+      "UPDATE orders SET status = 'NEW', cancelled_reason = NULL, failed_reason = NULL, updated_at = now() WHERE id = $1",
+      [order.id]
+    );
+  }
+
+  await logActivity({
+    userId: req.user.id,
+    action: "REACTIVATE_ORDER",
+    recordType: "order",
+    recordId: order.id,
+    oldValue: { status: order.status },
+    newValue: { back_to_trip: backToTrip },
+  });
+
+  let addedToTrip = !!backToTrip;
+  if (!backToTrip) {
+    addedToTrip = await tryAutoAddToActiveTrip(order.id, req.user.id).catch(() => false);
+  }
+  const fresh = (await query("SELECT * FROM orders WHERE id = $1", [order.id])).rows[0];
+  res.json({
+    ...fresh,
+    message: addedToTrip ? "✅ رجع الطلب وانضاف للرحلة الشغّالة" : "✅ رجع الطلب لقائمة التوزيع",
+  });
 });
 
 export default router;
