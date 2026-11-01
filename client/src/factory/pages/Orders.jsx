@@ -4,7 +4,9 @@ import { fapi } from "../fapi.js";
 import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, StatusPill, ORDER_STATUS, SendMessages, ProductArt, bonusPreview, money, num, time, date, today, DateInput } from "../ui.jsx";
 import { StopSheet } from "./StopSheet.jsx";
 import { PlaceChips, matchPlace, placeName, ZonesEditor, zonesFor } from "../RegionFilter.jsx";
-import { FiGift } from "react-icons/fi";
+import { FiGift, FiMap } from "react-icons/fi";
+import { lazy, Suspense } from "react";
+const RoutePlan = lazy(() => import("../RoutePlan.jsx"));
 
 const tomorrow = () => new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
 
@@ -151,14 +153,21 @@ export default function Orders() {
       )}
 
       {dispatch && sel.length > 0 && (
-        <div className="fx-selbar">
-          <span className="fx-grow"><b>{sel.length}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة{selPlaces.length > 1 && <small className="fx-sel-places">{selPlaces.map(([k, n]) => `${n} ${k}`).join(" · ")}</small>}</span>
-          <button className="fx-btn sm" onClick={() => setSel([])}>إلغاء</button>
-          {canList && <button className="fx-btn sm" onClick={() => setSheet({ kind: "list" })}><FiList /> منطقة</button>}
-          <button className="fx-btn pri" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}><FiTruck /> حطها على سيارة</button>
+        <div className="fx-selbar sb2">
+          <div className="sb2-top">
+            <span className="sb2-sum"><b>{num(sel.length)}</b> طلب · <b className="fx-num">{num(selCartons)}</b> كرتونة</span>
+            {selPlaces.length > 1 && <small className="sb2-places">{selPlaces.length} مناطق</small>}
+            <button className="fx-link" onClick={() => setSel([])}>إلغاء</button>
+          </div>
+          <div className="sb2-acts">
+            <button className="fx-btn sm" onClick={() => setSheet({ kind: "route" })}><FiMap /> الخط</button>
+            {canList && <button className="fx-btn sm" onClick={() => setSheet({ kind: "list" })}><FiList /> منطقة</button>}
+            <button className="fx-btn pri sm fx-grow" data-hl="build-trip" onClick={() => setSheet({ kind: "trip" })}><FiTruck /> حطها على سيارة</button>
+          </div>
         </div>
       )}
 
+      {sheet?.kind === "route" && <Suspense fallback={null}><RoutePlan ids={sel} pool={free.map((o) => o.id)} onApply={(ids) => setSel(ids)} onTrip={() => setSheet({ kind: "trip" })} onClose={() => setSheet(null)} /></Suspense>}
       {sheet?.kind === "carops" && <CarOrderOps o={sheet.o} g={sheet.g} onClose={() => setSheet(null)} onMove={() => setSheet({ kind: "move", o: sheet.o })} onDone={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "zones" && <ZonesEditor gov={sheet.g} onClose={() => setSheet(null)} />}
       {sheet?.kind === "list" && <ListSheet gov={region.gov} orders={all.filter((o) => sel.includes(o.id))} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await fx.reloadBoot?.(); reload(); }} />}

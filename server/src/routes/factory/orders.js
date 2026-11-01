@@ -84,6 +84,71 @@ router.get("/orders", viewOrders, async (req, res) => {
   res.json(await loadOrders(where, params));
 });
 
+// ---------- خط الرحلة للطلبات المحددة + اقتراح أوفر ----------
+// ids = المحددين، pool = باقي الطلبات المعروضة (عشان نقترح بدائل أقرب على بعض)
+const dk = (a, b) => {
+  const R = 6371, r = (x) => (x * Math.PI) / 180;
+  const h = Math.sin(r(b[0] - a[0]) / 2) ** 2 + Math.cos(r(a[0])) * Math.cos(r(b[0])) * Math.sin(r(b[1] - a[1]) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h)) * 1.25; // الطرق مش خط مستقيم
+};
+function tour(start, pts) {
+  // الأقرب فالأقرب، وبعدين تحسين 2-opt (بيفك التقاطعات)
+  const left = pts.map((_, i) => i); const ord = []; let at = start;
+  while (left.length) { let bi = 0; left.forEach((x, i) => { if (dk(at, pts[x]) < dk(at, pts[left[bi]])) bi = i; }); const [n] = left.splice(bi, 1); ord.push(n); at = pts[n]; }
+  const len = (o) => o.reduce((t, x, i) => t + dk(i ? pts[o[i - 1]] : start, pts[x]), 0) + (o.length ? dk(pts[o[o.length - 1]], start) : 0);
+  let best = len(ord), improved = true, guard = 0;
+  while (improved && guard++ < 50) {
+    improved = false;
+    for (let i = 0; i < ord.length - 1; i++) for (let j = i + 1; j < ord.length; j++) {
+      const t = [...ord.slice(0, i), ...ord.slice(i, j + 1).reverse(), ...ord.slice(j + 1)];
+      const l = len(t); if (l < best - 1e-6) { ord.splice(0, ord.length, ...t); best = l; improved = true; }
+    }
+  }
+  return { ord, km: best };
+}
+router.post("/orders/route-plan", viewOrders, async (req, res) => {
+  const ids = [...new Set((req.body?.ids || []).map(Number).filter((x) => x > 0))].slice(0, 60);
+  const pool = [...new Set((req.body?.pool || []).map(Number).filter((x) => x > 0 && !ids.includes(x)))].slice(0, 200);
+  if (!ids.length) return bad(res, "اختار طلبات.");
+  const rows = (await query(
+    `SELECT o.id, o.urgent, c.name, c.city, c.lat, c.lng,
+            (SELECT COALESCE(SUM(i.qty),0)::int FROM f_order_items i WHERE i.order_id = o.id) AS cartons
+     FROM f_orders o JOIN f_customers c ON c.id = o.customer_id WHERE o.id = ANY($1::int[])`, [[...ids, ...pool]]
+  )).rows.map((r) => ({ ...r, p: pointOf(r), exact: r.lat != null }));
+  const start = await factoryPoint();
+  const by = new Map(rows.map((r) => [r.id, r]));
+  const plan = (set) => { const list = set.map((id) => by.get(id)).filter((r) => r?.p); const t = tour(start, list.map((r) => r.p)); return { list: t.ord.map((i) => list[i]), km: t.km }; };
+  const sel = ids.filter((id) => by.has(id));
+  const cur = plan(sel);
+  let at = start;
+  const stops = cur.list.map((r, i) => { const leg = dk(at, r.p); at = r.p; return { id: r.id, seq: i + 1, name: r.name, city: r.city, lat: r.p[0], lng: r.p[1], exact: r.exact, cartons: r.cartons, urgent: r.urgent, leg_km: Math.round(leg * 10) / 10 }; });
+  const noLoc = sel.filter((id) => !by.get(id)?.p).map((id) => by.get(id)?.name);
+  // اقتراح: بدّل طلب (مش مستعجل) بطلب ثاني من المعروضين إذا الرحلة بتقصر كثير — لحد ٣ تبديلات
+  let set = [...sel], bestKm = cur.km; const swaps = [];
+  const cand = pool.filter((id) => by.get(id)?.p);
+  for (let round = 0; round < 3 && cand.length; round++) {
+    let best = null;
+    for (const out of set) {
+      if (by.get(out).urgent || !by.get(out).p) continue;
+      for (const inn of cand) {
+        if (set.includes(inn)) continue;
+        // نفس الحجم تقريبًا عشان السيارة ما تفضى أو تنضغط
+        const a = by.get(out).cartons || 1, b = by.get(inn).cartons || 1;
+        if (b < a * 0.5 || b > a * 1.6) continue;
+        const k = plan(set.map((x) => (x === out ? inn : x))).km;
+        if (!best || k < best.km) best = { out, inn, km: k };
+      }
+    }
+    if (!best || best.km > bestKm - Math.max(2, bestKm * 0.08)) break;
+    set = set.map((x) => (x === best.out ? best.inn : x)); bestKm = best.km; swaps.push(best);
+  }
+  const suggestion = swaps.length ? {
+    ids: set, km: Math.round(bestKm), saved_km: Math.round(cur.km - bestKm),
+    swaps: swaps.map((w) => ({ out: by.get(w.out).name, in: by.get(w.inn).name, out_city: by.get(w.out).city, in_city: by.get(w.inn).city })),
+  } : null;
+  res.json({ start, stops, km: Math.round(cur.km), no_location: noLoc.filter(Boolean), suggestion });
+});
+
 // البونص تلقائي من القواعد، أو يدوي من حساب عنده صلاحية «إعطاء بونص»
 export async function buildItems(customerId, rawItems, user) {
   const items = [];

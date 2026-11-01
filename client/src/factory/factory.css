@@ -1346,3 +1346,28 @@ input[dir="ltr"].fx-has-x { padding-inline-end: 12px !important; padding-left: 4
 .gs-row span { flex: 1; }
 .gs-row b { font-size: 16px; }
 .gs-row small { color: var(--fx-ok); font-weight: 600; }
+
+/* شريط المحددين: سطر واحد للمجموع، وتحته الأزرار */
+.fx-selbar.sb2 { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 14px; }
+.sb2-top { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.sb2-sum { flex: 1; font-size: 15px; }
+.sb2-sum b { font-size: 17px; }
+.sb2-places { color: var(--fx-muted); }
+.sb2-acts { display: flex; gap: 8px; }
+.sb2-acts .fx-btn { white-space: nowrap; }
+
+/* خط الرحلة */
+.rp-map { height: 46vh; min-height: 280px; border-radius: 16px; overflow: hidden; border: 1px solid var(--fx-line); }
+.rp-km { display: flex; align-items: baseline; gap: 8px; }
+.rp-km b { font-size: 22px; color: var(--fx-navy, #0846b8); }
+.rp-list { display: grid; gap: 0; background: #fff; border-radius: 14px; padding: 4px 12px; box-shadow: 0 1px 8px rgba(16, 48, 77, .06); }
+.rp-stop { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--fx-line); }
+.rp-stop:first-child { border-top: 0; }
+.rp-n { width: 26px; height: 26px; border-radius: 50%; background: #0a66f5; color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; flex: none; }
+.rp-stop .t { flex: 1; display: grid; }
+.rp-stop small { color: var(--fx-muted); }
+.rp-sug { background: #fff8e6; border-radius: 14px; padding: 12px; display: grid; gap: 8px; }
+.rp-sug b.h { color: #8a5a00; }
+.rp-sw { font-size: 14px; }
+.rp-sw s { color: var(--fx-crit); }
+.rp-sw ins { color: var(--fx-ok); text-decoration: none; font-weight: 700; }
