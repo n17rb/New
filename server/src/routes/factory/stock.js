@@ -18,7 +18,7 @@ const editStock = need("f_stock", "edit");
 const editProd = need("f_production", "edit");
 
 const BAL_SQL = `
-  SELECT p.id, p.name, p.per_carton, p.min_stock, p.price,
+  SELECT p.id, p.name, p.image_url, p.per_carton, p.min_stock, p.price,
     COALESCE(SUM(CASE
       WHEN m.kind = 'production' THEN m.qty
       WHEN m.kind = 'load' THEN -m.qty
