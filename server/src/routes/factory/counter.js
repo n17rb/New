@@ -18,7 +18,7 @@ router.get("/counter/info", guard, async (req, res) => {
   const cid = Number(req.query.customer_id) || null;
   const prices = {};
   for (const p of bal) prices[p.id] = cid ? await priceFor(cid, p.id) : Number(p.price);
-  res.json({ stock: bal.map((p) => ({ id: p.id, name: p.name, balance: p.balance, price: prices[p.id] })), can_credit: canAction(req.user, "give_credit") });
+  res.json({ stock: bal.map((p) => ({ id: p.id, name: p.name, image_url: p.image_url, balance: p.balance, price: prices[p.id] })), can_credit: canAction(req.user, "give_credit") });
 });
 
 router.post("/counter/sale", guard, once(async (req, res) => {

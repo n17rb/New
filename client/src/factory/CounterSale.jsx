@@ -96,7 +96,7 @@ export default function CounterSaleSheet({ onClose, onDone }) {
         {stock.map((p) => (
           <div key={p.id} className={`cs-prod ${Number(qty[p.id]) > 0 ? "on" : ""}`}>
             <div className="r1">
-              <ProductArt p={p} size={40} />
+              <ProductArt p={p} size={56} />
               <span className="t"><b>{p.name}</b><small>{money(p.price)} د.أ · بالمستودع {num(p.balance)}</small></span>
               {step(qty[p.id], (v) => setQty({ ...qty, [p.id]: v }))}
             </div>
