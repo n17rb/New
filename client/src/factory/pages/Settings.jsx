@@ -431,6 +431,7 @@ export function Bonus() {
   return (
     <div className="fx-stack">
       <Tip id="bonus">البونص = كراتين ببلاش مع الطلب. مثلًا «كل 100 كرتونة → 5 بونص»: الزبون بيستلم 105 وبيدفع حق 100، والسائق بيحمّلها وبيسلّمها، والفاتورة بتطلع فيها «بونص ببلاش».</Tip>
+      <ReserveCard />
       <button className="fx-btn pri" onClick={() => setEdit({})}><FiPlus /> قاعدة بونص جديدة</button>
       <div className="fx-list">
         {rules.length === 0 && <div className="fx-item"><span className="fx-muted">ما في بونص لسا.</span></div>}
@@ -447,6 +448,27 @@ export function Bonus() {
       </div>
       <p className="fx-muted" style={{ margin: 0 }}>إذا في أكثر من قاعدة بتنطبق، بتمشي الأدق: الخاصة بالزبون أولًا، بعدين الخاصة بالمنتج. وأي طلب بتقدر تغيّر بونصه يدويًا لما تسجّله.</p>
       {edit && <BonusSheet r={edit} onClose={() => setEdit(null)} />}
+    </div>
+  );
+}
+
+// البونص من السائق: أمين المستودع بيحمّل زيادة، والسائق بيكتب كم أعطى، والباقي برجع بالجرد
+function ReserveCard() {
+  const fx = useFx();
+  const cur = fx.boot.bonus_reserve_pct ?? 5;
+  const [v, setV] = useState(String(cur));
+  const can = fx.can("f_settings", "edit") || fx.can("f_home");
+  return (
+    <div className="fx-card fx-stack" style={{ gap: 8 }}>
+      <b>🎁 زيادة البونص على السيارة</b>
+      <small className="fx-muted">مع كل رحلة بيوصل إشعار لأمين المستودع يحمّل زيادة للبونص. السائق بيعطي منها وبيكتب كم أعطى كل زبون، واللي بيرجع بينعدّ بالمرتجع والجرد بيطلع مظبوط.</small>
+      <div className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
+        <span>لكل ١٠٠ كرتونة</span>
+        <input className="fx-input fx-num" style={{ width: 80, textAlign: "center" }} type="number" inputMode="numeric" value={v} disabled={!can} onChange={(e) => setV(e.target.value)} />
+        <span className="fx-grow">كرتونة زيادة</span>
+        {can && String(cur) !== v && <Act className="fx-btn pri sm" onClick={async () => { await fapi.saveSettings({ bonus_reserve_pct: Number(v) || 0 }); await fx.reloadBoot(); fx.toast("انحفظ"); }}>احفظ</Act>}
+      </div>
+      <small className="fx-muted">{Number(v) > 0 ? `مثال: رحلة ٥٠٠ كرتونة ← بيحمّل ${num(Math.ceil(500 * Number(v) / 100))} زيادة للبونص.` : "صفر = بدون زيادة."}</small>
     </div>
   );
 }

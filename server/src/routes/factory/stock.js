@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, logActivity } from "../../db.js";
 import { canAction, can } from "../../permissions.js";
-import { need, needAny, bad, round2, jordanDate, alert, pushTo, pushManagers } from "./lib.js";
+import { need, needAny, bad, round2, jordanDate, alert, pushTo, pushManagers, bonusReservePct, bonusExtraFor } from "./lib.js";
 import { confirmLoad } from "./driver.js";
 import { loadTrips } from "./orders.js";
 
@@ -185,12 +185,15 @@ router.post("/stock/adjust", editStock, async (req, res) => {
 router.get("/stock/loading", viewStock, async (req, res) => {
   const trips = await loadTrips("t.status IN ('planned','active','returned') AND t.trip_date <= $1", [jordanDate()]);
   const names = new Map((await query("SELECT id, full_name FROM users WHERE id = ANY($1::int[])", [[...new Set(trips.map((t) => t.load_confirmed_by).filter(Boolean))]])).rows.map((u) => [u.id, u.full_name]));
+  const pct = await bonusReservePct();
   res.json(trips.map((t) => {
     const per = new Map();
     for (const o of t.stops.filter((s) => s.status !== "cancelled")) for (const i of o.items) per.set(i.product_id, { product_id: i.product_id, name: i.name, qty: (per.get(i.product_id)?.qty || 0) + i.qty + (i.bonus_qty || 0) });
     return {
       id: t.id, vehicle_name: t.vehicle_name, driver_name: t.driver_name, status: t.status, trip_date: t.trip_date, capacity: t.capacity, load: t.load,
       load_confirmed_at: t.load_confirmed_at, items: [...per.values()], extra_items: t.extra_items,
+      // زيادة مقترحة للبونص (السائق بيعطي منها وبيكتب كم)
+      bonus_extra: t.load_confirmed_at ? [] : bonusExtraFor(t.stops.filter((s) => s.status !== "cancelled").flatMap((o) => o.items), pct), bonus_pct: pct,
       returns_expected: t.status === "returned" ? expectedReturns(t) : null, returns_received: !!t.returns_received_at,
       exchanged: exchangedPer(t),
       loaded: (t.loaded_per || []).filter((x) => x.qty > 0).map((x) => ({ product_id: x.product_id, name: x.name, qty: x.qty })),

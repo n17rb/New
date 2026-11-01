@@ -199,4 +199,6 @@ initDbIfNeeded().then(() => {
   setInterval(() => forEachTenant("مراقبة المصنع", () => factoryWatch(), { plan: "factory" }), 10 * 60 * 1000);
   // تقسيم الزباين لمناطق التوصيل أول ما يشتغل السيرفر
   forEachTenant("مناطق التوصيل", () => import("./utils/factoryZones.js").then((m) => m.autoZoneAll()), { plan: "factory" });
+  // البونص المحسوب للطلبات اللي لسا ما تحمّلت = حسب القواعد الحالية (لو قاعدة انحذفت بينشال)
+  forEachTenant("بونص الطلبات", () => import("./routes/factory/lib.js").then((m) => m.rebonusOpen()), { plan: "factory" });
 });

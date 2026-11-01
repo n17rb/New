@@ -89,7 +89,8 @@ export async function confirmLoad(tripId, userId, extra = []) {
   for (const e of extra) {
     const q = Math.round(Number(e.qty));
     if (e.product_id && q > 0) {
-      await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,'زيادة للبيع',$5)", [e.product_id, q, tripId, t.vehicle_id, userId]);
+      const why = e.kind === "bonus" ? "زيادة للبونص" : "زيادة للبيع";
+      await query("INSERT INTO f_stock_moves (product_id, kind, qty, trip_id, vehicle_id, reason, created_by) VALUES ($1,'load',$2,$3,$4,$6,$5)", [e.product_id, q, tripId, t.vehicle_id, userId, why]);
       extraTotal += q;
     }
   }
