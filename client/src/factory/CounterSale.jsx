@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FiSearch, FiX, FiUserPlus } from "react-icons/fi";
 import { fapi } from "./fapi.js";
 import { useFx, useLoad, Sheet, Err, Loading, Act, ProductArt, CliqBox, ChequeBox, chequeReady, SignaturePad, money, num } from "./ui.jsx";
@@ -7,6 +7,38 @@ import { InvoiceSheet } from "./pages/StopSheet.jsx";
 // ============================================================
 // بيع على أرض المصنع: زبون إجا عالمصنع — بتختار مين، شو اشترى، وكم دفع. الكراتين بتطلع من المستودع والفاتورة جاهزة
 // ============================================================
+// زر + و − سريع: الكبسة بتنحسب فورًا (بدون تأخير التلفون)، والضغط المطوّل بيزيد لحاله وبيسرّع
+function HoldBtn({ label, onStep }) {
+  const timer = useRef(null);
+  const fired = useRef(false);
+  const stop = () => { clearTimeout(timer.current); clearInterval(timer.current); timer.current = null; };
+  useEffect(() => stop, []);
+  const start = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    fired.current = true;
+    onStep(1);
+    let n = 0;
+    timer.current = setTimeout(() => { timer.current = setInterval(() => { n++; onStep(n > 15 ? 5 : 1); }, 90); }, 380);
+  };
+  return (
+    <button type="button" dir="ltr" className="cs-hold"
+      onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop} onContextMenu={(e) => e.preventDefault()}
+      onClick={() => { if (!fired.current) onStep(1); fired.current = false; }}>{label}</button>
+  );
+}
+function FastStep({ value, onChange }) {
+  const cur = useRef(Number(value) || 0);
+  cur.current = Number(value) || 0;
+  const bump = (d) => { const n = Math.max(0, cur.current + d); cur.current = n; onChange(n); };
+  return (
+    <div className="fx-stepper cs-step">
+      <HoldBtn label="−" onStep={(k) => bump(-k)} />
+      <input className="fx-input" type="number" inputMode="numeric" min="0" value={value ?? ""} placeholder="0" onFocus={(e) => e.target.select()} onChange={(e) => onChange(e.target.value)} />
+      <HoldBtn label="+" onStep={(k) => bump(k)} />
+    </div>
+  );
+}
+
 export default function CounterSaleSheet({ onClose, onDone }) {
   const fx = useFx();
   const [who, setWho] = useState({ mode: "walkin" }); // walkin | new | existing
@@ -38,13 +70,7 @@ export default function CounterSaleSheet({ onClose, onDone }) {
   const chqN = chqOn ? Number(chq.amount) || 0 : 0;
   const cashN = cashEdit === null ? Math.max(0, total - cliqN - chqN) : Number(cashEdit) || 0;
   const debt = Math.max(0, Math.round((total - cashN - cliqN - chqN) * 100) / 100);
-  const step = (v, set) => (
-    <div className="fx-stepper">
-      <button type="button" dir="ltr" onClick={() => set(Math.max(0, (Number(v) || 0) - 1))}>−</button>
-      <input className="fx-input" type="number" inputMode="numeric" min="0" value={v ?? ""} placeholder="0" onChange={(e) => set(e.target.value)} />
-      <button type="button" dir="ltr" onClick={() => set((Number(v) || 0) + 1)}>+</button>
-    </div>
-  );
+  const step = (v, set) => <FastStep value={v} onChange={set} />;
   async function sell(confirmShort = false) {
     setErr("");
     try {

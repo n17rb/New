@@ -1371,3 +1371,9 @@ input[dir="ltr"].fx-has-x { padding-inline-end: 12px !important; padding-left: 4
 .rp-sw { font-size: 14px; }
 .rp-sw s { color: var(--fx-crit); }
 .rp-sw ins { color: var(--fx-ok); text-decoration: none; font-weight: 700; }
+
+/* الكبس على التلفون: بدون تأخير الزوم وبدون الوميض الرمادي */
+.fx button, .fx a, .fx input, .fx select, .fx label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.cs-step .cs-hold { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: transform .06s, background-color .06s; }
+.cs-step .cs-hold:active { transform: scale(.92); background: var(--fx-sky-soft); border-color: #b9e1f7; }
+.cs-prod, .cs-prod.on { transition: none; }
