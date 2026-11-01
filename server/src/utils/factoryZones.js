@@ -74,9 +74,26 @@ export async function ensureZones(q = query) {
       if (same) { await q("UPDATE f_lines SET zone_key = $1, governorate = COALESCE(governorate, $2) WHERE id = $3", [z.key, z.gov, same.id]); r = { id: same.id, active: same.active }; }
       else r = (await q("INSERT INTO f_lines (name, governorate, zone_key) VALUES ($1,$2,$3) RETURNING id, active", [z.name, z.gov, z.key])).rows[0];
     }
-    if (r.active) map[z.key] = r.id;
+    // المناطق ثابتة: لو انحذفت بترجع (وزباينها معها)
+    if (!r.active) await q("UPDATE f_lines SET active = true, name = $2, governorate = $3 WHERE id = $1", [r.id, z.name, z.gov]);
+    // قائمة ثانية انكتبت باليد بنفس الاسم؟ منجمعها بالمنطقة الثابتة
+    const dups = (await q("SELECT id, name FROM f_lines WHERE zone_key IS NULL AND id <> $1", [r.id])).rows.filter((x) => sameZoneName(x.name, z.name));
+    for (const d of dups) {
+      await q("UPDATE f_customers SET line_id = $1 WHERE line_id = $2", [r.id, d.id]);
+      await q("UPDATE f_lines SET active = false WHERE id = $1", [d.id]);
+    }
+    map[z.key] = r.id;
   }
   return map;
+}
+
+// «الشجره الطره مراوه ذنيبه» = «الشجرة والطرة وعمراوة والذنيبة»: كلمتين أو أكثر مشتركات (أو نفس الاسم)
+const toks = (n) => String(n || "").split(/[\s،,\-–/]+/).map((w) => nk(w.replace(/^و(?=ال)/, ""))).filter((w) => w.length > 1 && !["منطقه", "لواء", "طرف", "وسط"].includes(w));
+function sameZoneName(a, b) {
+  if (nk(a) === nk(b)) return true;
+  const A = toks(a), B = toks(b);
+  const hit = A.filter((w) => B.some((x) => x === w || (w.length > 3 && (x.includes(w) || w.includes(x))))).length;
+  return hit >= 2;
 }
 
 const ZONE_GOV = Object.fromEntries(ZONES.map((z) => [z.key, z.gov]));
