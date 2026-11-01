@@ -253,6 +253,8 @@ export const fapi = {
   reports: (p) => get(`/reports${qs(p)}`),
   sampleInfo: () => get("/sample"),
   clearSample: () => post("/sample/remove", { confirm: "امسح" }),
+  resetInfo: () => get("/reset"),
+  resetAll: (confirm) => post("/reset", { confirm }),
 
   // صفحات الزبون العامة
   track: (token) => request(`/public/f/track/${encodeURIComponent(token)}`),

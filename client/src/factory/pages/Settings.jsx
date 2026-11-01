@@ -94,6 +94,40 @@ export function Brand({ compact = false }) {
         fx.toast("انحفظ");
       }}>احفظ</Act>
       {!compact && fx.isOwner && <SampleCard />}
+      {!compact && fx.isOwner && <ResetCard />}
+    </div>
+  );
+}
+
+// تصفير كل شغل التجربة: بيضل الزباين والمنتجات والسيارات والموظفين
+export function ResetCard() {
+  const fx = useFx();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [done, setDone] = useState(null);
+  if (done) return <div className="fx-note ok">✓ تصفّر كل إشي: انمسح {num(done.orders)} طلب و{num(done.trips)} رحلة. الزباين والمنتجات والسيارات والموظفين ضلّوا، وكل الأرصدة صارت صفر. انحفظت نسخة احتياطية من اللي انمسح.</div>;
+  return (
+    <div className="fx-card fx-stack" id="reset" style={{ borderColor: "var(--fx-crit)" }}>
+      <button className="fx-row fx-plain" style={{ justifyContent: "space-between", font: "inherit", textAlign: "start" }} onClick={() => setOpen(!open)}>
+        <b style={{ color: "var(--fx-crit)" }}>🧹 تصفير كل إشي والبداية على نظيف</b>
+        <span className="fx-muted">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fx-card soft" style={{ fontSize: 13.5, lineHeight: 1.8 }}>
+            <b>بينمسح:</b> كل الطلبات والرحلات والفواتير، الدفعات والديون والشيكات، الصندوق والمصاريف والضيافة، حسابات السائقين، حركة المستودع والجرد والإنتاج، حركة المواد، الصيانة والأعطال والفحوصات، العدادات، الاتفاقيات، الرواتب والسلف والدوام، والتنبيهات. وكل الأرصدة بترجع صفر، والترقيم بيرجع من ١.<br />
+            <b>بيضل:</b> الزباين (معلوماتهم وأسعارهم ومناطقهم)، المنتجات، السيارات، الموظفين وحساباتهم، أسماء المواد والمكنات والشركات، والإعدادات والشعار.
+          </div>
+          <div className="fx-note warn">ما برجع. بس قبل المسح بتنحفظ نسخة احتياطية من كل اللي انمسح.</div>
+          <label className="fx-field">اكتب «صفر» للتأكيد<input className="fx-input" value={typed} onChange={(e) => setTyped(e.target.value)} /></label>
+          <Act className="fx-btn danger block fx-big" disabled={typed.trim().replace(/[\u064B-\u0652]/g, "") !== "صفر"} onClick={async () => {
+            const r = await fapi.resetAll(typed.trim());
+            setDone(r);
+            await refresh(fx);
+            fx.toast("تصفّر كل إشي");
+          }}>🧹 صفّر كل إشي</Act>
+        </>
+      )}
     </div>
   );
 }
