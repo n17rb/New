@@ -281,11 +281,14 @@ async function roundSummary(round) {
      GROUP BY s.coupons ORDER BY s.coupons`,
     [round.driver_id, round.opened_at, round.closed_at]
   )).rows;
+  const expenses = (await query("SELECT id, name, amount::float AS amount, created_at FROM st_shift_expenses WHERE round_id = $1 ORDER BY created_at", [round.id])).rows;
+  const expTotal = r2(expenses.reduce((a, x) => a + x.amount, 0));
   return {
     lines, ...money,
     packages: pk,
     package_cash: r2(pk.reduce((s, x) => s + x.paid, 0)),
-    total_cash: r2(money.cash + pk.reduce((s, x) => s + x.paid, 0)),
+    expenses, expenses_total: expTotal,
+    total_cash: r2(money.cash + pk.reduce((s, x) => s + x.paid, 0) - expTotal),
   };
 }
 
@@ -359,7 +362,8 @@ router.get("/vehicles/:id", feature("vehicles"), wrap(async (req, res) => {
   }
   const list = [];
   for (const r of rounds) list.push({ ...r, summary: await roundSummary(r) });
-  res.json({ vehicle: v, rounds: list, can_edit: can(req.user, "station", "edit") });
+  const cur = rounds[0]?.status === "open" ? rounds[0] : null;
+  res.json({ vehicle: v, rounds: list, can_edit: can(req.user, "station", "edit"), can_expense: !!cur && (can(req.user, "station", "edit") || cur.driver_id === req.user.id) });
 }));
 
 // تحميل جولة جديدة (موظف المحطة): السائق + الكميات
@@ -700,6 +704,36 @@ router.post("/shift/open", feature("cashier"), perm("cashier", "edit"), wrap(asy
   res.status(201).json(sh);
 }));
 
+// مصروف (من الدرج أو بالجولة): بيوصل إشعار للإدارة
+async function notifyExpense(req, { name, amount, where }) {
+  const by = await userName(req.user.id);
+  await notifyUsers((u) => u.role === "super_admin" || can(u, "jard", "view") || can(u, "station", "edit"), {
+    type: "STATION_EXPENSE", title: "مصروف جديد 🧾", url: where.url, actorId: req.user.id,
+    message: `🧾 ${by || "موظف"} صرف ${Number(amount).toFixed(2)} JD على «${name}» ${where.label}`,
+  });
+}
+
+router.post("/rounds/:id/expense", feature("vehicles"), wrap(async (req, res) => {
+  const round = await roundRow(req.params.id);
+  if (!round || round.status !== "open") throw fail(400, "الجولة مش مفتوحة.");
+  if (!(can(req.user, "station", "edit") || round.driver_id === req.user.id)) throw fail(403, "غير مصرح.");
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  const amount = r2(req.body?.amount);
+  if (!name) throw fail(400, "على شو انصرفت؟");
+  if (!Number.isFinite(amount) || amount <= 0) throw fail(400, "اكتب المبلغ.");
+  await query("INSERT INTO st_shift_expenses (round_id, user_id, name, amount) VALUES ($1,$2,$3,$4)", [round.id, round.driver_id || req.user.id, name, amount]);
+  await notifyExpense(req, { name, amount, where: { label: `بـ«${round.vehicle_name}» جولة ${round.round_no}${round.driver_name ? ` (${round.driver_name})` : ""}`, url: `/vehicles/${round.vehicle_id}` } });
+  res.status(201).json({ ok: true });
+}));
+
+router.delete("/rounds/:id/expense/:eid", feature("vehicles"), wrap(async (req, res) => {
+  const round = await roundRow(req.params.id);
+  if (!round || round.status !== "open") throw fail(400, "الجولة مسكّرة.");
+  if (!(can(req.user, "station", "edit") || round.driver_id === req.user.id)) throw fail(403, "غير مصرح.");
+  await query("DELETE FROM st_shift_expenses WHERE id = $1 AND round_id = $2", [req.params.eid, round.id]);
+  res.json({ ok: true });
+}));
+
 router.post("/shift/expense", feature("cashier"), perm("cashier", "edit"), wrap(async (req, res) => {
   const sh = (await query("SELECT * FROM st_shifts WHERE user_id = $1 AND status = 'open'", [req.user.id])).rows[0];
   if (!sh) throw fail(400, "ابدأ الوردية أول.");
@@ -708,6 +742,7 @@ router.post("/shift/expense", feature("cashier"), perm("cashier", "edit"), wrap(
   if (!name) throw fail(400, "على شو انصرفت؟");
   if (!Number.isFinite(amount) || amount <= 0) throw fail(400, "اكتب المبلغ.");
   await query("INSERT INTO st_shift_expenses (shift_id, user_id, name, amount) VALUES ($1,$2,$3,$4)", [sh.id, req.user.id, name, amount]);
+  await notifyExpense(req, { name, amount, where: { label: "من درج المحطة", url: "/cashier" } });
   res.status(201).json({ ok: true });
 }));
 

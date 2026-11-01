@@ -59,7 +59,7 @@ export default function Jard() {
     `⬇️ المجموع داخل: ${money(s.money_in)} JD`,
     s.expenses ? `🧾 صرفيات: ${money(s.expenses)} JD` : null,
     s.payroll_out ? `👷 رواتب وسحوبات: ${money(s.payroll_out)} JD` : null,
-    s.station_expenses ? `🧾 مصاريف المحطة: ${money(s.station_expenses)} JD` : null,
+    s.station_expenses ? `🧾 مصاريف المحطة والسيارات: ${money(s.station_expenses)} JD` : null,
     `⬆️ المجموع طالع: ${money(s.money_out)} JD`,
     `✅ الصافي: ${money(s.net_cash)} JD`,
     "",
@@ -110,7 +110,7 @@ export default function Jard() {
             <div className="mini-ledger" style={{ marginTop: 0 }}>
               <Row label="صرفيات المحل" value={money(s.expenses)} sub={d.expenses_notes || null} />
               <Row label="رواتب وسحوبات" value={money(s.payroll_out)} />
-              {s.station_expenses > 0 && <Row label="مصاريف المحطة" value={money(s.station_expenses)} sub={d.station_expenses.map((e) => `${e.name} ${money(e.amount)}${e.full_name ? ` (${e.full_name})` : ""}`).join(" · ")} />}
+              {s.station_expenses > 0 && <Row label="مصاريف المحطة والسيارات" value={money(s.station_expenses)} sub={d.station_expenses.map((e) => `${e.name} ${money(e.amount)}${e.full_name ? ` (${e.full_name})` : ""}`).join(" · ")} />}
               <Row label="المجموع" value={money(s.money_out)} strong color="var(--urgent)" />
             </div>
           </div>

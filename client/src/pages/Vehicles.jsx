@@ -218,12 +218,16 @@ export function VehicleDetail() {
               ))}
             </tbody>
           </table>
-          <RoundMoney s={cur.summary} />
+          <RoundMoney s={cur.summary} onDelExpense={d.can_expense ? (eid) => run(() => api.stDelRoundExpense(cur.id, eid), "انحذف المصروف") : null} />
+          {d.can_expense && !d.can_edit && (
+            <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => open("expense")}>+ مصروف (ديزل، بنشر…)</button>
+          )}
           {d.can_edit && (
             <div className="vh-acts">
               <button className="btn-primary icon-row" style={{ justifyContent: "center" }} onClick={() => open("close")}><FiCornerDownLeft aria-hidden="true" /> رجعت السيارة — سجّل المرتجع</button>
               <div className="vh-acts2">
-                <button className="btn-secondary" onClick={() => open("add")}><FiPlus aria-hidden="true" /> تحميل زيادة</button>
+                <button className="btn-secondary" onClick={() => open("add")}><FiPlus aria-hidden="true" /> زيادة</button>
+                <button className="btn-secondary" onClick={() => open("expense")}>+ مصروف</button>
                 {stock && <button className="btn-secondary" onClick={() => open("damage")}><FiAlertTriangle aria-hidden="true" /> تالف</button>}
               </div>
             </div>
@@ -308,6 +312,15 @@ export function VehicleDetail() {
         </Sheet>
       )}
 
+      {/* مصروف بالجولة */}
+      {cur && (
+        <Sheet open={sheet === "expense"} title="مصروف بالجولة" onClose={() => setSheet(null)}>
+          {error && <div className="error-box">{error}</div>}
+          <ExpenseForm busy={busy} onCancel={() => setSheet(null)}
+            onSave={(body) => run(() => api.stRoundExpense(cur.id, body), "✅ انسجّل المصروف ووصل إشعار للإدارة")} />
+        </Sheet>
+      )}
+
       {/* تالف من السيارة */}
       {cur && (
         <Sheet open={sheet === "damage"} title="تالف بالسيارة" onClose={() => setSheet(null)}>
@@ -352,7 +365,29 @@ function DamageForm({ lines, roundId, busy, run, onCancel }) {
   );
 }
 
-function RoundMoney({ s }) {
+const EXP_QUICK = ["ديزل", "بنزين", "بنشر", "أكل", "غسيل سيارة"];
+function ExpenseForm({ busy, onSave, onCancel }) {
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  return (
+    <>
+      <div className="exp-quick" style={{ marginTop: 0 }}>
+        {EXP_QUICK.map((q) => <button key={q} type="button" className={name === q ? "on" : ""} onClick={() => setName(q)}>{q}</button>)}
+      </div>
+      <label className="pr-field"><span>على شو؟</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلًا ديزل" maxLength={80} /></label>
+      <label className="pr-field">
+        <span>المبلغ</span>
+        <span className="pr-money"><input type="number" inputMode="decimal" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" dir="ltr" /><em>JD</em></span>
+      </label>
+      <div className="sheet-actions">
+        <button className="btn-primary" disabled={busy || !name.trim() || !(Number(amount) > 0)} onClick={() => onSave({ name: name.trim(), amount: Number(amount) })}>سجّل المصروف</button>
+        <button className="btn-secondary" onClick={onCancel}>رجوع</button>
+      </div>
+    </>
+  );
+}
+
+function RoundMoney({ s, onDelExpense = null }) {
   return (
     <div className="vh-sum">
       <div><span>كاش التوصيل</span><b className="tabular-num">{money(s.cash)}</b></div>
@@ -367,6 +402,12 @@ function RoundMoney({ s }) {
           </span>
         </div>
       )}
+      {(s.expenses || []).map((e) => (
+        <div key={e.id} className="sh-exp">
+          <span>{e.name}{onDelExpense && <button type="button" onClick={() => onDelExpense(e.id)} aria-label="احذف">×</button>}</span>
+          <b className="tabular-num red">− {money(e.amount)}</b>
+        </div>
+      ))}
       <div className="vh-sum-total"><span>المجموع مع السائق</span><b className="tabular-num">{money(s.total_cash)} JD</b></div>
     </div>
   );

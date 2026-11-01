@@ -1577,3 +1577,7 @@ CREATE TABLE IF NOT EXISTS st_shift_expenses (
   amount NUMERIC(10,2) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- مصاريف السائق بالجولة (ديزل، بنشر…) بنفس جدول مصاريف المحطة
+ALTER TABLE st_shift_expenses ALTER COLUMN shift_id DROP NOT NULL;
+ALTER TABLE st_shift_expenses ADD COLUMN IF NOT EXISTS round_id INTEGER REFERENCES st_rounds(id) ON DELETE CASCADE;
