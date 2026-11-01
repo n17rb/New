@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FiPlus, FiMapPin, FiUpload, FiChevronLeft, FiGift, FiRefreshCw } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, Sheet, Tip, Err, Act, LocationPicker, ProductArt, money, num, date, today, DateInput } from "../ui.jsx";
+import { useFx, Sheet, Tip, Err, Act, DeleteBtn, LocationPicker, ProductArt, money, num, date, today, DateInput } from "../ui.jsx";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const VSTATUS = { active: "شغالة", workshop: "بالصيانة", inactive: "موقفة" };
@@ -281,6 +281,7 @@ function ProductSheet({ p, onClose, onFix }) {
             else onClose();
           } catch (e) { setErr(e.message); }
         }}>احفظ</Act>
+        {p.id && <DeleteBtn label="احذف المنتج" onDelete={async () => { try { await fapi.deleteProduct(p.id); await refresh(fx); fx.toast(`انحذف «${p.name}»`); onClose(); } catch (e) { setErr(e.message); } }} />}
       </div>
     </Sheet>
   );
@@ -353,6 +354,7 @@ function VehicleSheet({ v, onClose }) {
           setErr("");
           try { await fapi.saveVehicle({ ...f, id: v.id }); await refresh(fx); fx.toast("انحفظت السيارة"); onClose(); } catch (e) { setErr(e.message); }
         }}>احفظ</Act>
+        {v.id && <DeleteBtn label="احذف السيارة" onDelete={async () => { try { await fapi.deleteVehicle(v.id); await refresh(fx); fx.toast(`انحذفت «${v.name}»`); onClose(); } catch (e) { setErr(e.message); } }} />}
       </div>
     </Sheet>
   );
@@ -413,7 +415,11 @@ export function Machines() {
     <div className="fx-stack">
       <Tip id="machines">المكنات عشان تسجّلوا أعطالها وكم خرب بسببها.</Tip>
       <div className="fx-sec"><h2>المكنات</h2></div>
-      <div className="fx-list">{fx.boot.machines.map((m) => <div key={m.id} className="fx-item"><span className="t"><b>{m.name}</b></span></div>)}</div>
+      <div className="fx-list">{fx.boot.machines.map((m) => (
+        <div key={m.id} className="fx-item"><span className="t"><b>{m.name}</b></span>
+          <DeleteBtn className="fx-btn sm danger" label="احذف" confirm="متأكد؟" onDelete={async () => { try { await fapi.deleteMachine(m.id); await refresh(fx); fx.toast(`انحذفت «${m.name}»`); } catch (e) { fx.toast(e.message); } }} />
+        </div>
+      ))}</div>
       <div className="fx-row" style={{ flexWrap: "nowrap" }}>
         <input className="fx-input" value={mName} onChange={(e) => setMName(e.target.value)} placeholder="اسم الماكنة" />
         <Act className="fx-btn pri" disabled={!mName.trim()} onClick={async () => { await fapi.saveMachine({ name: mName }); setMName(""); await refresh(fx); }}>ضيف</Act>

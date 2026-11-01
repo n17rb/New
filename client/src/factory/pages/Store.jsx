@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { FiSearch, FiPlus, FiDownload, FiUpload, FiClipboard, FiChevronLeft, FiEdit2, FiX } from "react-icons/fi";
 import { fapi } from "../fapi.js";
-import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, Reload, DateInput, waLink, money, num, date, dateTime, today } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, DeleteBtn, PhotoInput, Reload, DateInput, waLink, money, num, date, dateTime, today } from "../ui.jsx";
 import { smartFilter } from "../smartSearch.js";
 
 // ============================================================
@@ -164,7 +164,7 @@ export default function Store() {
       {data && view === "moves" && <Moves data={data} />}
       {data && view === "setup" && <Setup data={data} reload={reload} />}
 
-      {sheet?.kind === "item" && <ItemSheet id={sheet.id} data={data} onClose={() => setSheet(null)} onEdit={(m) => setSheet({ kind: "edit", m })} onAct={(k, m) => setSheet({ kind: k, pre: m })} />}
+      {sheet?.kind === "item" && <ItemSheet id={sheet.id} data={data} onClose={() => setSheet(null)} onEdit={(m) => setSheet({ kind: "edit", m })} onAct={(k, m) => setSheet({ kind: k, pre: m })} onDeleted={() => { setSheet(null); reload(); }} />}
       {sheet?.kind === "edit" && <ItemEdit m={sheet.m} data={data} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "take" && <TakeSheet data={data} kind={sheet.pre?.kind || kind} pre={sheet.pre} line0={typeof line === "number" && line ? line : null} onClose={() => setSheet(null)} onDone={done} />}
       {sheet?.kind === "receive" && <ReceiveSheet data={data} kind={sheet.pre?.kind || kind} pre={sheet.pre} onClose={() => setSheet(null)} onDone={done} />}
@@ -176,9 +176,10 @@ export default function Store() {
 }
 
 // ---------- صنف واحد: كل تفاصيله وحركته ----------
-function ItemSheet({ id, data, onClose, onEdit, onAct }) {
+function ItemSheet({ id, data, onClose, onEdit, onAct, onDeleted }) {
   const m = data.items.find((x) => x.id === id);
   const { data: moves } = useLoad(() => fapi.storeItemMoves(id), [id]);
+  const fx = useFx();
   if (!m) return null;
   const C = data.can;
   const canTake = m.kind === "part" ? C.take_part : C.take_material;
@@ -204,6 +205,7 @@ function ItemSheet({ id, data, onClose, onEdit, onAct }) {
           {C.store && <button className="fx-btn" onClick={() => onEdit(m)}><FiEdit2 /> عدّل التفاصيل</button>}
           {C.store && <button className="fx-btn" onClick={() => onAct("adjust", m)}>تعديل الكمية</button>}
         </div>
+        {C.store && <DeleteBtn label={m.kind === "part" ? "احذف القطعة" : "احذف المادة"} onDelete={async () => { await fapi.deleteStoreItem(m.id); fx.toast(`انحذفت «${m.name}»`); onDeleted?.(); }} />}
         <b>الحركة</b>
         {!moves && <Loading />}
         {moves?.length === 0 && <div className="fx-muted">ما في حركة لسا.</div>}

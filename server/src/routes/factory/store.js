@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query, pool } from "../../db.js";
+import { query, pool, logActivity } from "../../db.js";
 import { can } from "../../permissions.js";
 import { needAny, bad, round2, alert, jordanDate } from "./lib.js";
 
@@ -138,6 +138,19 @@ router.post("/store/items", editStore, async (req, res) => {
     );
   }
   res.status(201).json(r.rows[0]);
+});
+
+// حذف مادة أو قطعة: إذا إلها حركة بتنخفى (والتاريخ بيضل)، وإلا بتنحذف نهائي
+router.delete("/store/items/:id", editStore, async (req, res) => {
+  const id = Number(req.params.id);
+  const m = (await query("SELECT id, name FROM f_materials WHERE id = $1", [id])).rows[0];
+  if (!m) return bad(res, "الصنف غير موجود.", 404);
+  const used = Number((await query("SELECT COUNT(*) AS n FROM f_material_moves WHERE material_id = $1", [id])).rows[0].n);
+  await query("DELETE FROM f_recipes WHERE material_id = $1", [id]).catch(() => {});
+  if (used > 0) await query("UPDATE f_materials SET active = false WHERE id = $1", [id]);
+  else await query("DELETE FROM f_materials WHERE id = $1", [id]).catch(async () => { await query("UPDATE f_materials SET active = false WHERE id = $1", [id]); });
+  await logActivity({ userId: req.user.id, action: "F_DELETE_MATERIAL", recordType: "f_material", recordId: id, newValue: { name: m.name } });
+  res.json({ ok: true });
 });
 
 router.put("/store/items/:id", editStore, async (req, res) => {
