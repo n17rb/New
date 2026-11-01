@@ -17,11 +17,11 @@ const int = (v, d = 0) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : 
 // كل اللي بيحتاجه التطبيق عند الفتح
 router.get("/bootstrap", async (req, res) => {
   const [products, vehicles, lines, machines, materials, drivers, counts, s] = await Promise.all([
-    query("SELECT * FROM f_products ORDER BY active DESC, sort_order, id"),
+    query("SELECT * FROM f_products WHERE deleted_at IS NULL ORDER BY active DESC, sort_order, id"),
     query(
       `SELECT v.*, u.full_name AS driver_name, to_char(v.license_expires, 'YYYY-MM-DD') AS license_expires,
               to_char(v.insurance_expires, 'YYYY-MM-DD') AS insurance_expires
-       FROM f_vehicles v LEFT JOIN users u ON u.id = v.driver_id
+       FROM f_vehicles v LEFT JOIN users u ON u.id = v.driver_id WHERE v.deleted_at IS NULL
        ORDER BY v.status = 'inactive', v.id`
     ),
     query("SELECT l.*, v.name AS vehicle_name FROM f_lines l LEFT JOIN f_vehicles v ON v.id = l.vehicle_id WHERE l.active ORDER BY l.governorate, l.name"),
@@ -101,6 +101,23 @@ router.put("/products/:id", edit, async (req, res) => {
   }
   await logActivity({ userId: req.user.id, action: "F_UPDATE_PRODUCT", recordType: "f_product", recordId: r.rows[0].id, newValue: p });
   res.json({ ...r.rows[0], repriced, old_price: prev ? Number(prev.price) : null });
+});
+// حذف منتج: إذا إله طلبات أو حركة بينخفى (والفواتير القديمة بتضل)، وإلا بينحذف نهائي
+router.delete("/products/:id", edit, async (req, res) => {
+  const id = Number(req.params.id);
+  const p = (await query("SELECT id, name FROM f_products WHERE id = $1 AND deleted_at IS NULL", [id])).rows[0];
+  if (!p) return bad(res, "المنتج غير موجود.", 404);
+  const open = (await query("SELECT COUNT(DISTINCT o.id)::int n FROM f_order_items i JOIN f_orders o ON o.id = i.order_id WHERE i.product_id = $1 AND o.status IN ('new','assigned','onway','delayed')", [id])).rows[0].n;
+  if (open) return bad(res, `«${p.name}» موجود بـ${open} طلب مفتوح — سلّمهم أو شيله منهم أول.`);
+  const used = (await query("SELECT (SELECT COUNT(*) FROM f_order_items WHERE product_id = $1) + (SELECT COUNT(*) FROM f_stock_moves WHERE product_id = $1) AS n", [id])).rows[0].n;
+  if (Number(used) > 0) {
+    await query("UPDATE f_products SET active = false, deleted_at = now() WHERE id = $1", [id]);
+  } else {
+    for (const t of ["f_recipes", "f_customer_prices", "f_bonus_rules"]) await query(`DELETE FROM ${t} WHERE product_id = $1`, [id]).catch(() => {});
+    await query("DELETE FROM f_products WHERE id = $1", [id]).catch(async () => { await query("UPDATE f_products SET active = false, deleted_at = now() WHERE id = $1", [id]); });
+  }
+  await logActivity({ userId: req.user.id, action: "F_DELETE_PRODUCT", recordType: "f_product", recordId: id, newValue: { name: p.name } });
+  res.json({ ok: true });
 });
 // صورة المنتج
 router.post("/products/:id/image", edit, uploadSingleImage, async (req, res) => {
@@ -227,6 +244,19 @@ router.delete("/lines/:id", editLines, async (req, res) => {
   res.json({ ok: true });
 });
 
+// حذف سيارة: ما بتنحذف وعليها رحلة شغالة
+router.delete("/vehicles/:id", edit, async (req, res) => {
+  const id = Number(req.params.id);
+  const v = (await query("SELECT id, name FROM f_vehicles WHERE id = $1 AND deleted_at IS NULL", [id])).rows[0];
+  if (!v) return bad(res, "السيارة غير موجودة.", 404);
+  const busy = (await query("SELECT COUNT(*)::int n FROM f_trips WHERE vehicle_id = $1 AND (status IN ('planned','active') OR (status = 'returned' AND settled_at IS NULL))", [id])).rows[0].n;
+  if (busy) return bad(res, `«${v.name}» عليها رحلة لسا ما خلصت — خلّصها أول.`);
+  await query("UPDATE f_vehicles SET status = 'inactive', deleted_at = now(), driver_id = NULL WHERE id = $1", [id]);
+  await query("UPDATE f_lines SET vehicle_id = NULL WHERE vehicle_id = $1", [id]);
+  await logActivity({ userId: req.user.id, action: "F_DELETE_VEHICLE", recordType: "f_vehicle", recordId: id, newValue: { name: v.name } });
+  res.json({ ok: true });
+});
+
 // ---------- المكنات والمواد الخام ----------
 router.post("/machines", edit, async (req, res) => {
   const name = str(req.body?.name, 80);
@@ -239,6 +269,13 @@ router.put("/machines/:id", edit, async (req, res) => {
   if (!name) return bad(res, "اكتب اسم الماكنة.");
   const r = await query("UPDATE f_machines SET name = $1, active = $2 WHERE id = $3 RETURNING *", [name, req.body?.active !== false, req.params.id]);
   res.json(r.rows[0]);
+});
+// حذف ماكنة: بتنخفى (أعطالها القديمة بتضل)
+router.delete("/machines/:id", needAny(["f_fleet", "edit"], ["f_store", "edit"], ["f_machines", "edit"]), async (req, res) => {
+  const r = await query("UPDATE f_machines SET active = false WHERE id = $1 RETURNING name", [req.params.id]);
+  if (!r.rows[0]) return bad(res, "الماكنة غير موجودة.", 404);
+  await logActivity({ userId: req.user.id, action: "F_DELETE_MACHINE", recordType: "f_machine", recordId: Number(req.params.id), newValue: { name: r.rows[0].name } });
+  res.json({ ok: true });
 });
 router.post("/materials", edit, async (req, res) => {
   const name = str(req.body?.name, 80);

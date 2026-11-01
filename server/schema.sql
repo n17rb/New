@@ -1581,3 +1581,7 @@ CREATE TABLE IF NOT EXISTS st_shift_expenses (
 -- مصاريف السائق بالجولة (ديزل، بنشر…) بنفس جدول مصاريف المحطة
 ALTER TABLE st_shift_expenses ALTER COLUMN shift_id DROP NOT NULL;
 ALTER TABLE st_shift_expenses ADD COLUMN IF NOT EXISTS round_id INTEGER REFERENCES st_rounds(id) ON DELETE CASCADE;
+
+-- الحذف: المنتج/السيارة اللي إلها تاريخ بتنخفى (وسجلّاتها القديمة بتضل)
+ALTER TABLE f_products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;

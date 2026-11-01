@@ -147,6 +147,15 @@ export function useLoad(fn, deps = []) {
 }
 
 // زر بيعمل إجراء وبيمنع الضغط المكرر
+// زر حذف بكبستين: الأولى بتسأل «متأكد؟»، الثانية بتحذف
+export function DeleteBtn({ label = "احذف", confirm = "متأكد؟ اكبس كمان مرة للحذف", onDelete, className = "fx-btn danger block" }) {
+  const [ask, setAsk] = useState(false);
+  useEffect(() => { if (!ask) return undefined; const t = setTimeout(() => setAsk(false), 4000); return () => clearTimeout(t); }, [ask]);
+  return ask
+    ? <Act className={className} onClick={async () => { await onDelete(); setAsk(false); }}>🗑️ {confirm}</Act>
+    : <button type="button" className={className} style={{ opacity: 0.85 }} onClick={() => setAsk(true)}>🗑️ {label}</button>;
+}
+
 export function Act({ onClick, children, className = "fx-btn", disabled, ...rest }) {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false); // كبستين ورا بعض بسرعة (قبل ما الزر ينطفي) = وحدة بس
