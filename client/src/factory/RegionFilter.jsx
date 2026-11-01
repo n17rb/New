@@ -329,9 +329,15 @@ export function ZonesEditor({ gov: g, onClose }) {
         <div className="fx-note sky">اكتب المناطق اللي بتشتغل فيها بـ{g} مثل ما بتحكيها: وسط {g}، أطراف {g}، صريح، الرمثا… الزبون اللي بلده نفس اسم المنطقة بيدخل فيها لحاله، والباقي بتحطه من الطلبات: حدد طلبات واكبس «منطقة».</div>
         {zs.map((z) => (
           <div key={z.id} className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
-            <input className="fx-input fx-grow" value={names[z.id] ?? ""} onChange={(e) => setNames({ ...names, [z.id]: e.target.value })}
-              onBlur={() => { const n = (names[z.id] || "").trim(); if (n && n !== z.name) run(() => fapi.saveLine({ ...z, name: n })); }} />
-            <button className="fx-icon-btn" disabled={busy} aria-label="احذف" onClick={() => run(() => fapi.deleteLine(z.id))}><FiX /></button>
+            {z.zone_key ? (
+              <div className="fx-input fx-grow" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--fx-surface-2)" }}>
+                <span>{z.name}</span><small style={{ color: "var(--fx-muted)" }}>🔒 ثابتة</small>
+              </div>
+            ) : (<>
+              <input className="fx-input fx-grow" value={names[z.id] ?? ""} onChange={(e) => setNames({ ...names, [z.id]: e.target.value })}
+                onBlur={() => { const n = (names[z.id] || "").trim(); if (n && n !== z.name) run(() => fapi.saveLine({ ...z, name: n })); }} />
+              <button className="fx-icon-btn" disabled={busy} aria-label="احذف" onClick={() => run(() => fapi.deleteLine(z.id))}><FiX /></button>
+            </>)}
           </div>
         ))}
         <div className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>

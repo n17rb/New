@@ -196,11 +196,15 @@ router.post("/lines", editLines, async (req, res) => {
 });
 router.put("/lines/:id", editLines, async (req, res) => {
   let l; try { l = cleanLine(req.body || {}); } catch (e) { return bad(res, e.message); }
+  // مناطق التوصيل الثابتة (إربد والرمثا): الاسم والمحافظة ما بيتغيّروا
+  const fixed = (await query("SELECT name, governorate FROM f_lines WHERE id = $1 AND zone_key IS NOT NULL", [req.params.id])).rows[0];
+  if (fixed) Object.assign(l, { name: fixed.name, governorate: fixed.governorate });
   const r = await query("UPDATE f_lines SET name=$1, governorate=$2, vehicle_id=$3, days=$4 WHERE id=$5 RETURNING *", [l.name, l.governorate, l.vehicle_id, l.days, req.params.id]);
   if (!r.rows[0]) return bad(res, "الخط غير موجود.", 404);
   res.json(r.rows[0]);
 });
 router.delete("/lines/:id", editLines, async (req, res) => {
+  if ((await query("SELECT 1 FROM f_lines WHERE id = $1 AND zone_key IS NOT NULL", [req.params.id])).rows.length) return bad(res, "هاي منطقة ثابتة وما بتنحذف.");
   await query("UPDATE f_lines SET active = false WHERE id = $1", [req.params.id]);
   res.json({ ok: true });
 });
