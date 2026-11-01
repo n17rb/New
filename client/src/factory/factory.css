@@ -1319,3 +1319,5 @@ input[dir="ltr"].fx-has-x { padding-inline-end: 12px !important; padding-left: 4
 @media (min-width: 1400px) {
   .fx-page { max-width: 1120px; }
 }
+.hm-quick .pay { grid-column: 1 / -1; }
+.hm-quick .pay span { background: #edf5fd; color: var(--fx-navy); font-size: 15px; }
