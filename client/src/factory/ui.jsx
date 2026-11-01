@@ -38,6 +38,8 @@ export function StatusPill({ map, value }) {
   return <span className={`fx-pill ${tone}`}>{label}</span>;
 }
 
+// شاشة سكّرت ومكانها رح تفتح شاشة ثانية بنفس اللحظة (مثلًا تفاصيل الطلب ← تعديله): الثانية بتاخذ خطوتها بدل ما نرجع
+let releasing = null;
 export function Sheet({ title, onClose, children }) {
   // زر الرجوع بالتلفون بيسكّر الشاشة المفتوحة خطوة خطوة (مش بيطلع من الصفحة كلها)
   const closeRef = useRef(onClose);
@@ -45,9 +47,15 @@ export function Sheet({ title, onClose, children }) {
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeRef.current?.();
     window.addEventListener("keydown", onKey);
-    const depth = (window.history.state?.fxDepth || 0) + 1;
+    const cur = window.history.state?.fxDepth || 0;
+    let depth;
+    if (releasing && releasing.depth === cur && cur > 0) {
+      clearTimeout(releasing.timer); releasing = null; depth = cur; // بناخذ خطوة الشاشة اللي سكّرت
+    } else {
+      depth = cur + 1;
+      try { window.history.pushState({ ...(window.history.state || {}), fxDepth: depth }, ""); } catch { /* */ }
+    }
     let poppedByBack = false;
-    try { window.history.pushState({ ...(window.history.state || {}), fxDepth: depth }, ""); } catch { /* */ }
     const onPop = (e) => {
       if ((e.state?.fxDepth || 0) < depth) { poppedByBack = true; closeRef.current?.(); }
     };
@@ -55,8 +63,12 @@ export function Sheet({ title, onClose, children }) {
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("popstate", onPop);
-      // تسكّرت بزر ✕ أو بعد الحفظ؟ بنشيل خطوتها من تاريخ الرجوع (إلا إذا التطبيق انتقل لصفحة ثانية)
-      if (!poppedByBack && window.history.state?.fxDepth === depth) { try { window.history.back(); } catch { /* */ } }
+      // تسكّرت بزر ✕ أو بعد الحفظ؟ بنشيل خطوتها — بعد لحظة، لو ما فتحت شاشة ثانية مكانها
+      if (!poppedByBack && window.history.state?.fxDepth === depth) {
+        const r = { depth, timer: 0 };
+        r.timer = setTimeout(() => { if (releasing === r) releasing = null; if (window.history.state?.fxDepth === depth) { try { window.history.back(); } catch { /* */ } } }, 30);
+        releasing = r;
+      }
     };
   }, []);
   return (
