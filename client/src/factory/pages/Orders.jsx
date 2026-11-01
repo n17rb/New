@@ -86,6 +86,8 @@ export default function Orders() {
 
           {all.length > 0 && <PlaceChips items={all} value={region} onChange={(r) => setRegion(r)} noun="طلب" lines={fx.boot.lines || []} onEditZones={canList ? (g) => setSheet({ kind: "zones", g }) : undefined} />}
 
+          {cur !== "done" && <GoodsSum orders={sel.length ? all.filter((o) => sel.includes(o.id)) : open} picked={sel.length > 0} where={region.gov} onClear={() => setSel([])} />}
+
           {cur === "free" && (
             <>
               {dispatch && free.length > 0 && (
@@ -205,6 +207,46 @@ function OrderRow({ o, selectable, on, onToggle, onInfo }) {
 
 // ---------- طلب جديد / تعديل ----------
 const OPEN_ST = ["new", "assigned", "onway", "delayed"];
+// كم بدهم بضاعة: مجموع كل صنف بالطلبات المعروضة (المنطقة) أو المحددة
+function GoodsSum({ orders, picked, where, onClear }) {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem("fx-goods-open") !== "0"; } catch { return true; } });
+  const flip = () => { setOpen(!open); try { localStorage.setItem("fx-goods-open", open ? "0" : "1"); } catch { /* */ } };
+  const rows = useMemo(() => {
+    const m = new Map();
+    for (const o of orders) for (const i of o.items || []) {
+      const k = i.product_id || i.name;
+      const r = m.get(k) || { name: i.name, qty: 0, bonus: 0 };
+      r.qty += Number(i.qty) || 0; r.bonus += Number(i.bonus_qty) || 0;
+      m.set(k, r);
+    }
+    return [...m.values()].filter((r) => r.qty || r.bonus).sort((a, b) => b.qty - a.qty);
+  }, [orders]);
+  if (!orders.length) return null;
+  const total = rows.reduce((t, r) => t + r.qty, 0);
+  const bonus = rows.reduce((t, r) => t + r.bonus, 0);
+  return (
+    <div className={`gs ${picked ? "picked" : ""}`}>
+      <button className="gs-h" onClick={flip}>
+        <span>📦 {picked ? `بضاعة ${num(orders.length)} طلب محدد` : `بضاعة ${num(orders.length)} طلب${where ? ` · ${where}` : ""}`}</span>
+        <b className="fx-num">{num(total)}</b><small>كرتونة{bonus ? ` +${num(bonus)} بونص` : ""}</small>
+        <FiChevronLeft className={`gs-ar ${open ? "on" : ""}`} />
+      </button>
+      {open && (
+        <div className="gs-list">
+          {rows.map((r) => (
+            <div key={r.name} className="gs-row">
+              <span>{r.name}</span>
+              <b className="fx-num">{num(r.qty)}</b>
+              {r.bonus > 0 && <small>+{num(r.bonus)} بونص</small>}
+            </div>
+          ))}
+          {picked && <button className="fx-link" onClick={onClear}>رجّع لكل الطلبات</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const toItems = (o) => o.items.filter((i) => i.qty > 0).map((i) => ({ product_id: i.product_id, qty: i.qty, bonus_qty: i.bonus_manual ? i.bonus_qty : undefined, bonus_manual: !!i.bonus_manual }));
 // أسطر «بونص حر» (صنف ببلاش بدون شراء)
 const toFree = (o) => Object.fromEntries((o?.items || []).filter((i) => i.qty === 0 && i.bonus_qty > 0).map((i) => [i.product_id, i.bonus_qty]));

@@ -1331,3 +1331,18 @@ input[dir="ltr"].fx-has-x { padding-inline-end: 12px !important; padding-left: 4
 .zm-zones small { color: var(--fx-muted); }
 .leaflet-tooltip.zm-label { background: rgba(255,255,255,.88); border: 0; box-shadow: 0 1px 6px rgba(16,48,77,.15); font-weight: 700; font-size: 12px; color: #10304d; padding: 2px 8px; border-radius: 8px; }
 .leaflet-tooltip.zm-label::before { display: none; }
+
+/* كم بدهم بضاعة */
+.gs { background: #fff; border-radius: 16px; box-shadow: 0 1px 8px rgba(16, 48, 77, .06); overflow: hidden; }
+.gs.picked { box-shadow: 0 0 0 2px var(--fx-sky) inset; background: var(--fx-sky-soft); }
+.gs-h { width: 100%; display: flex; align-items: baseline; gap: 6px; border: 0; background: none; padding: 12px 14px; font: inherit; color: var(--fx-ink); cursor: pointer; text-align: start; }
+.gs-h span { flex: 1; font-weight: 700; font-size: 14.5px; }
+.gs-h b { font-size: 20px; color: var(--fx-navy, #0846b8); }
+.gs-h small { color: var(--fx-muted); }
+.gs-ar { align-self: center; color: var(--fx-muted); transition: transform .2s; }
+.gs-ar.on { transform: rotate(-90deg); }
+.gs-list { display: grid; gap: 2px; padding: 0 14px 12px; }
+.gs-row { display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-top: 1px solid var(--fx-line); }
+.gs-row span { flex: 1; }
+.gs-row b { font-size: 16px; }
+.gs-row small { color: var(--fx-ok); font-weight: 600; }
