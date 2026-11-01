@@ -1528,3 +1528,11 @@ CREATE TABLE IF NOT EXISTS st_custody_log (
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- الشيكات: البنك، الحالة (بالانتظار/انصرف/راجع)، وإمتى استلمنا الشيك الورقي من السائق
+ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_bank VARCHAR(80);
+ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_status VARCHAR(12);
+ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_status_at TIMESTAMPTZ;
+ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_status_by INTEGER;
+ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_in_hand_at TIMESTAMPTZ;
+UPDATE f_ledger SET cheque_status = 'pending', cheque_in_hand_at = COALESCE(cheque_in_hand_at, created_at) WHERE method = 'cheque' AND cheque_status IS NULL;

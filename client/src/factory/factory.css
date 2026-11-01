@@ -1266,3 +1266,25 @@ a.fx-pill { text-decoration: none; }
 .cs-prod .fx-stepper button { width: 36px; height: 36px; }
 .cs-prod .fx-stepper input { width: 64px; font-size: 17px; padding: 5px; }
 .cs-prod .r2 { display: flex; align-items: center; justify-content: space-between; background: #effaf3; border-radius: 12px; padding: 6px 10px; color: #14653a; font-weight: 700; font-size: 13.5px; }
+
+/* الشيكات */
+.ch { display: grid; gap: 12px; min-width: 0; }
+.ch-tot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ch-tot > div { background: #fff; border-radius: 18px; padding: 12px 6px; display: grid; justify-items: center; gap: 1px; box-shadow: 0 1px 8px rgba(16, 48, 77, .05); }
+.ch-tot small { font-size: 11.5px; color: var(--fx-muted); }
+.ch-tot b { font-size: 17px; color: #10304d; font-variant-numeric: tabular-nums; }
+.ch-tot .warn { background: #fff7e4; } .ch-tot .warn b { color: #8a5a00; }
+.ch-card { display: flex; gap: 12px; background: #fff; border-radius: 18px; padding: 12px; box-shadow: 0 1px 10px rgba(16, 48, 77, .05); border-inline-start: 4px solid #d5e0eb; }
+.ch-card.soon { border-inline-start-color: #f0b43c; } .ch-card.due { border-inline-start-color: #e8743b; background: #fffaf3; }
+.ch-card.ok { border-inline-start-color: #57c48a; } .ch-card.bad { border-inline-start-color: #d64545; }
+.ch-card .ph { flex: none; width: 74px; height: 56px; border-radius: 10px; overflow: hidden; border: 0; padding: 0; background: #f2f6fa; display: grid; place-items: center; cursor: pointer; font-size: 24px; }
+.ch-card .ph img { width: 100%; height: 100%; object-fit: cover; }
+.ch-card .t { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ch-card .r1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.ch-card .r1 b { font-size: 15px; color: #10304d; }
+.ch-card .amt { font-size: 18px; font-weight: 800; color: #10304d; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ch-card small { color: #4a6077; font-size: 12.5px; }
+.ch-card .dt { font-weight: 700; color: #10304d; }
+.ch-card.due .dt { color: #b4521c; } .ch-card.bad .dt { color: #c43d3d; } .ch-card.ok .dt { color: #1f9d55; }
+.ch-card .by { color: var(--fx-muted); font-size: 11.5px; }
+.ch-card .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

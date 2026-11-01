@@ -357,16 +357,18 @@ router.post("/customers/:id/payments", needAny(["f_money", "edit"], ["f_customer
     if (!t) return bad(res, "ما في رحلة شغالة إلك — بلّش رحلتك (أو اشتغل مندوب) عشان الدفعة تنحسب مع كاشك.");
     tripId = t.id;
   }
-  const method = tripId ? (req.body?.method === "cliq" ? "cliq" : "cash") : ["cash", "cheque", "transfer", "cliq"].includes(req.body?.method) ? req.body.method : "cash";
+  const method = tripId ? (["cliq", "cheque"].includes(req.body?.method) ? req.body.method : "cash") : ["cash", "cheque", "transfer", "cliq"].includes(req.body?.method) ? req.body.method : "cash";
   if (method === "cliq" && !req.body?.photo_url) return bad(res, "صوّر وصل الكليك.");
   if (method === "cheque" && !req.body?.cheque_no) return bad(res, "اكتب رقم الشيك.");
+  if (method === "cheque" && !/^\d{4}-\d{2}-\d{2}$/.test(req.body?.cheque_date || "")) return bad(res, "اكتب تاريخ صرف الشيك.");
+  if (method === "cheque" && tripId && !req.body?.photo_url) return bad(res, "صوّر الشيك.");
   const c = (await query("SELECT id, name, balance FROM f_customers WHERE id = $1", [req.params.id])).rows[0];
   if (!c) return bad(res, "الزبون غير موجود.", 404);
   // السائق قبض أكثر من الدين؟ غالبًا رقم غلط
   if (tripId && amount > Math.max(0, Number(c.balance) || 0) + 0.009) return bad(res, `عليه ${Math.max(0, Number(c.balance) || 0).toFixed(2)} بس — تأكد من المبلغ.`);
   const balance = await postLedger(null, {
-    customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null, tripId,
-    chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300) || (tripId ? (method === "cliq" ? `كليك — صوّره ${req.user.full_name}` : `قبضها ${req.user.full_name}`) : null), userId: req.user.id,
+    customerId: c.id, kind: "payment", amount: -amount, method, chequeNo: req.body?.cheque_no || null, chequeBank: str(req.body?.cheque_bank, 80) || null, tripId,
+    chequeDate: req.body?.cheque_date || null, note: str(req.body?.note, 300) || (tripId ? (method === "cliq" ? `كليك — صوّره ${req.user.full_name}` : method === "cheque" ? `شيك — استلمه ${req.user.full_name}` : `قبضها ${req.user.full_name}`) : null), userId: req.user.id,
     photoUrl: req.body?.photo_url || null,
   });
   if (method === "cliq") await alert({ level: "info", kind: "cliq", ref: c.id, title: `📲 كليك ${amount.toFixed(2)} د.أ من ${c.name}`, body: `${req.user.full_name} صوّر الوصل — تأكد إنها وصلت الحساب. الصورة: ${req.body.photo_url}` });

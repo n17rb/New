@@ -776,6 +776,37 @@ export function CliqBox({ on, setOn, amount, setAmount, photo, setPhoto, max }) 
   );
 }
 
+// دفع بشيك: المبلغ، رقم الشيك، البنك، تاريخ الصرف، وصورة الشيك (لازم)
+export function ChequeBox({ on, setOn, value, onChange, max }) {
+  const v = value || {};
+  const set = (k) => (e) => onChange({ ...v, [k]: e?.target ? e.target.value : e });
+  const missing = on && Number(v.amount) > 0 && (!v.no || !v.date || !v.photo);
+  return (
+    <div className="fx-card fx-stack" style={{ gap: 8, padding: 12 }}>
+      <label className="fx-row" style={{ gap: 8 }}>
+        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+        <b>🧾 دفع بشيك</b>
+      </label>
+      {on && (
+        <>
+          <label className="fx-field">مبلغ الشيك{max ? <small className="fx-muted"> (من {money(max)})</small> : null}
+            <input className="fx-input fx-num" type="number" inputMode="decimal" value={v.amount ?? ""} onChange={set("amount")} />
+          </label>
+          <div className="fx-grid2">
+            <label className="fx-field">رقم الشيك<input className="fx-input" dir="ltr" inputMode="numeric" value={v.no ?? ""} onChange={set("no")} /></label>
+            <label className="fx-field">البنك<input className="fx-input" value={v.bank ?? ""} onChange={set("bank")} placeholder="مثلًا: الإسكان" /></label>
+          </div>
+          <div className="fx-field">تاريخ الصرف<DateInput value={v.date || ""} onChange={set("date")} ariaLabel="تاريخ صرف الشيك" /></div>
+          <PhotoInput label="صوّر الشيك" hint="لازم — بيضل محفوظ بقائمة الشيكات" value={v.photo || null} onChange={set("photo")} kind="cheque" />
+          {missing && <small style={{ color: "var(--fx-crit)" }}>كمّل رقم الشيك وتاريخه وصوّره.</small>}
+          <small className="fx-muted">الشيك ما بينحسب على الكاش اللي معك — سلّمه للمحاسب.</small>
+        </>
+      )}
+    </div>
+  );
+}
+export const chequeReady = (on, v) => !on || !(Number(v?.amount) > 0) || (v.no && v.date && v.photo);
+
 // موقع الزبون مش محفوظ: السائق لازم يحفظه (من مكانه عند الزبون) قبل الفاتورة
 export function LocationGuard({ customerId, name, onSaved }) {
   const fx = useFx();

@@ -3,7 +3,7 @@ import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { km, chainNearest } from "../../utils/factoryGeo.js";
 import { smartFilter } from "../../utils/fuzzySearch.js";
-import { need, bad, round2, jordanDate, postLedger, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once, pushTo } from "./lib.js";
+import { need, bad, round2, jordanDate, postLedger, parseCheque, queueMessage, ensureTrackToken, itemsText, alert, publicToken, pushManagers, priceFor, bonusFor, once, pushTo } from "./lib.js";
 import { cleanCustomer, nextSeq, findSameCustomer } from "./customers.js";
 import { loadTrips, loadOrders, recomputeEta } from "./orders.js";
 import { factoryPoint } from "./lib.js";
@@ -293,13 +293,15 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
   // كليك: الزبون حوّل — ما بينحسب على كاش السائق، ولازم صورة الحوالة
   const cliq = Math.max(0, round2(b.cliq) || 0);
   if (cliq > 0 && !b.cliq_photo) return bad(res, "صوّر وصل الكليك من تلفون الزبون.");
-  const debt = round2(total - cash - cliq);
+  let chq; try { chq = parseCheque(b.cheque); } catch (e) { return bad(res, e.message); }
+  const chqAmt = chq ? chq.amount : 0;
+  const debt = round2(total - cash - cliq - chqAmt);
   const c = (await query("SELECT * FROM f_customers WHERE id = $1", [o.customer_id])).rows[0];
   // موقع الزبون مش محفوظ؟ لازم ينحفظ مع أول فاتورة (من موقع السائق عنده)
   if (c.lat == null && !(Number(b.lat) && Number(b.lng))) return res.status(400).json({ error: "موقع الزبون مش محفوظ — شغّل الموقع على تلفونك واحفظه قبل الفاتورة.", code: "NEED_LOCATION" });
   // رقم غلط بالكاش (صفر زيادة مثلًا)؟ المبلغ ما بيصير أكثر من الفاتورة + دينه القديم
   const maxPay = round2(total + Math.max(0, Number(c.balance) || 0));
-  if (round2(cash + cliq) > maxPay + 0.009) return bad(res, `المبلغ ${round2(cash + cliq).toFixed(2)} أكثر من الفاتورة ودينه القديم (${maxPay.toFixed(2)}) — تأكد من الرقم.`);
+  if (round2(cash + cliq + chqAmt) > maxPay + 0.009) return bad(res, `المبلغ ${round2(cash + cliq + chqAmt).toFixed(2)} أكثر من الفاتورة ودينه القديم (${maxPay.toFixed(2)}) — تأكد من الرقم.`);
   const newBal = round2(Number(c.balance) + debt);
   let overLimit = false;
   if (debt > 0) {
@@ -350,6 +352,7 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
       balance = await postLedger(client, { customerId: c.id, kind: "payment", amount: -cliq, orderId: o.id, tripId: t.id, method: "cliq", note: `كليك — صوّره ${t.driver_name || "السائق"}`, userId: req.user.id, photoUrl: b.cliq_photo });
       await client.query("UPDATE f_orders SET cliq_paid = $1, cliq_photo = $2 WHERE id = $3", [cliq, b.cliq_photo, o.id]);
     }
+    if (chq) balance = await postLedger(client, { customerId: c.id, kind: "payment", amount: -chq.amount, orderId: o.id, tripId: t.id, method: "cheque", chequeNo: chq.no, chequeDate: chq.date, chequeBank: chq.bank, photoUrl: chq.photo, note: `شيك — استلمه ${t.driver_name || "السائق"}`, userId: req.user.id });
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -386,13 +389,14 @@ async function deliverOrder(req, res, o, t, b, { sale = false } = {}) {
     await query("UPDATE f_customers SET lat = $1, lng = $2 WHERE id = $3", [Number(b.lat), Number(b.lng), c.id]);
   }
   if (extraBonus.length) await alert({ level: "info", kind: "bonus_given", ref: o.id, title: `🎁 ${t.driver_name || "السائق"} أعطى بونص لـ ${c.name}`, body: `${extraBonus.join("، ")} ببلاش (فوق قاعدة البونص) — فاتورة #${o.id}.` });
+  if (chq) await alert({ level: "info", kind: "cheque", ref: o.id, title: `🧾 شيك ${chq.amount.toFixed(2)} د.أ من ${c.name}`, body: `رقم ${chq.no}${chq.bank ? ` · ${chq.bank}` : ""} · بيتصرف ${chq.date} · مع ${t.driver_name || "السائق"} — استلمه منه.` });
   if (cliq > 0) await alert({ level: "info", kind: "cliq", ref: o.id, title: `📲 كليك ${cliq.toFixed(2)} د.أ من ${c.name}`, body: `صوّر الوصل ${t.driver_name || "السائق"} — تأكد إنها وصلت الحساب. الصورة: ${b.cliq_photo}` });
   if (debt > 0 && !overLimit) await alert({ level: "warn", kind: "new_debt", ref: c.id, title: `💳 ${c.name} دفع ${cash.toFixed(2)} من ${total.toFixed(2)}`, body: `صار عليه دين ${debt.toFixed(2)} د.أ — رصيده الكلي ${balance.toFixed(2)}. مع ${t.driver_name || "السائق"}.` });
   if (overLimit) await alert({ level: "crit", kind: "credit", ref: c.id, title: `دين فوق السقف — ${c.name}`, body: `صار عليه ${balance.toFixed(2)} د.أ بعد تسليم طلب #${o.id} مع ${t.driver_name || "السائق"}.` });
   const track = await ensureTrackToken(c.id);
   const msg = await queueMessage({
     customerId: c.id, orderId: o.id, kind: "delivered",
-    data: { cliq, order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name, bonus: a.bonus }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: round2(cash + cliq), balance, invoice: token, track }, userId: req.user.id,
+    data: { cliq, order: o.id, items: itemsText([...lines.filter((l) => l.dq > 0 || l.db > 0).map((l) => ({ qty: l.dq, name: l.name, bonus: l.db })), ...added.map((a) => ({ qty: a.qty, name: a.name, bonus: a.bonus }))]) + (exchanges.length ? `\n🔁 استبدال تالف: ${exchanges.map((x) => `${x.qty} ${x.name}`).join("، ")} (أخذنا التالف وأعطيناك بداله جديد)` : ""), total, paid: round2(cash + cliq + chqAmt), balance, invoice: token, track }, userId: req.user.id,
   });
   const left = (await query("SELECT COUNT(*)::int AS n FROM f_orders WHERE trip_id = $1 AND status IN ('assigned','onway')", [t.id])).rows[0].n;
   await logActivity({ userId: req.user.id, action: "F_DELIVER", recordType: "f_order", recordId: o.id, newValue: { total, cash, debt } });

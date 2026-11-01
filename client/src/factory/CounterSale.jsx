@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { FiSearch, FiX, FiUserPlus } from "react-icons/fi";
 import { fapi } from "./fapi.js";
-import { useFx, useLoad, Sheet, Err, Loading, Act, ProductArt, CliqBox, SignaturePad, money, num } from "./ui.jsx";
+import { useFx, useLoad, Sheet, Err, Loading, Act, ProductArt, CliqBox, ChequeBox, chequeReady, SignaturePad, money, num } from "./ui.jsx";
 import { InvoiceSheet } from "./pages/StopSheet.jsx";
 
 // ============================================================
@@ -33,8 +33,11 @@ export default function CounterSaleSheet({ onClose, onDone }) {
   const lines = stock.filter((p) => Number(qty[p.id]) > 0 || Number(bon[p.id]) > 0);
   const total = Math.round(stock.reduce((a, p) => a + (Number(qty[p.id]) || 0) * p.price, 0) * 100) / 100;
   const cliqN = cliqOn ? Number(cliq) || 0 : 0;
-  const cashN = cashEdit === null ? Math.max(0, total - cliqN) : Number(cashEdit) || 0;
-  const debt = Math.max(0, Math.round((total - cashN - cliqN) * 100) / 100);
+  const [chqOn, setChqOn] = useState(false);
+  const [chq, setChq] = useState({});
+  const chqN = chqOn ? Number(chq.amount) || 0 : 0;
+  const cashN = cashEdit === null ? Math.max(0, total - cliqN - chqN) : Number(cashEdit) || 0;
+  const debt = Math.max(0, Math.round((total - cashN - cliqN - chqN) * 100) / 100);
   const step = (v, set) => (
     <div className="fx-stepper">
       <button type="button" dir="ltr" onClick={() => set(Math.max(0, (Number(v) || 0) - 1))}>−</button>
@@ -48,7 +51,7 @@ export default function CounterSaleSheet({ onClose, onDone }) {
       const r = await fapi.counterSale({
         customer_id: cid || undefined, new_name: who.mode === "new" ? who.name : undefined, new_phone: who.mode === "new" ? who.phone : undefined,
         items: lines.map((p) => ({ product_id: p.id, qty: Number(qty[p.id]) || 0, bonus: Number(bon[p.id]) || 0 })),
-        cash: cashN, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined, signature: sig || undefined, note, confirm_short: confirmShort,
+        cash: cashN, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined, cheque: chqN > 0 ? { ...chq, amount: chqN } : undefined, signature: sig || undefined, note, confirm_short: confirmShort,
       });
       fx.toast(`انباع ${money(r.total)} د.أ لـ${r.customer_name}`);
       setInv({ o: { id: r.order_id, invoice_token: r.invoice_token, customer_name: r.customer_name, phone: r.phone } });
@@ -107,16 +110,17 @@ export default function CounterSaleSheet({ onClose, onDone }) {
           <>
             <div className="fx-pay-total"><span>المجموع</span><b>{money(total)} <small>د.أ</small></b></div>
             <label className="fx-field">قديش دفع كاش؟
-              <input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" value={cashEdit ?? String(Math.max(0, total - cliqN))} onChange={(e) => setCashEdit(e.target.value)} />
+              <input className="fx-input fx-num" style={{ fontSize: 20, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" value={cashEdit ?? String(Math.max(0, total - cliqN - chqN))} onChange={(e) => setCashEdit(e.target.value)} />
             </label>
             <CliqBox on={cliqOn} setOn={setCliqOn} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={total} />
+            {who.mode !== "walkin" && <ChequeBox on={chqOn} setOn={(v) => { setChqOn(v); if (v && !chq.amount) setChq({ ...chq, amount: String(Math.max(0, total - cliqN)) }); }} value={chq} onChange={setChq} max={total} />}
             {debt > 0 && <div className="fx-note warn">باقي عليه <b>{money(debt)}</b> دينار — بينسجّل دين على حسابه.</div>}
             <SignaturePad onChange={setSig} label="توقيع الزبون (اختياري)" />
             <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
           </>
         )}
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={!lines.length || (who.mode === "new" && !who.name?.trim()) || who.mode === "pick" || (cliqN > 0 && !cliqPhoto)} onClick={() => sell(false)}>
+        <Act className="fx-btn ok block fx-huge" disabled={!lines.length || (who.mode === "new" && !who.name?.trim()) || who.mode === "pick" || (cliqN > 0 && !cliqPhoto) || !chequeReady(chqOn, chq)} onClick={() => sell(false)}>
           {lines.length ? `✓ بيع ${money(total)} د.أ` : "اختار شو اشترى"}
         </Act>
       </div>
