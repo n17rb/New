@@ -259,7 +259,8 @@ function Loading_() {
             </div>
             <div>
               {t.items.map((i) => <div key={i.product_id} className="fx-kv"><span>{i.name}</span><b>{num(i.qty)}</b></div>)}
-              {t.extra_items.map((i) => <div key={`x${i.product_id}`} className="fx-kv"><span>{i.name} (زيادة للبيع)</span><b>{num(i.qty)}</b></div>)}
+              {t.extra_items.map((i) => <div key={`x${i.product_id}-${i.reason}`} className="fx-kv"><span>{i.name} ({i.reason === "زيادة للبونص" ? "🎁 زيادة للبونص" : "زيادة للبيع"})</span><b>{num(i.qty)}</b></div>)}
+              {!t.load_confirmed_at && t.bonus_extra?.length > 0 && t.bonus_extra.map((i) => <div key={`b${i.product_id}`} className="fx-kv" style={{ color: "var(--fx-ok)" }}><span>🎁 {i.name} — زيادة للبونص</span><b>+{num(i.qty)}</b></div>)}
               <div className="fx-kv total"><span>المجموع</span><b>{num(t.load)} من {num(t.capacity)}</b></div>
             </div>
             {t.load_confirmed_at && (
@@ -302,11 +303,25 @@ ${t.driver_ack_note ? `<p style="color:#b00"><b>ملاحظة السائق:</b> $
 function LoadSheet({ t, onClose, onDone }) {
   const fx = useFx();
   const [extra, setExtra] = useState({});
+  // زيادة البونص: مقترحة حسب النسبة، وأمين المستودع بيقدر يغيّرها
+  const [bx, setBx] = useState(() => Object.fromEntries((t.bonus_extra || []).map((i) => [i.product_id, String(i.qty)])));
+  const bonusRows = [...(t.bonus_extra || []), ...t.items.filter((i) => !(t.bonus_extra || []).some((b) => b.product_id === i.product_id)).map((i) => ({ ...i, qty: 0 }))];
   const room = t.capacity - t.load;
+  const bxTotal = Object.values(bx).reduce((s, q) => s + (Number(q) || 0), 0);
   return (
     <Sheet title={`تحميل ${t.vehicle_name}`} onClose={onClose}>
       <div className="fx-stack">
         {t.items.map((i) => <div key={i.product_id} className="fx-kv"><span>{i.name}</span><b>{num(i.qty)}</b></div>)}
+        <div className="fx-card fx-stack" style={{ gap: 8, padding: 12, background: "var(--fx-ok-soft)", border: "none" }}>
+          <b>🎁 زيادة للبونص {bxTotal ? `· ${num(bxTotal)} كرتونة` : ""}</b>
+          <small className="fx-muted">السائق بيعطي منها بونص للزباين وبيكتب كم أعطى كل واحد. اللي ما انعطى برجع معه وبينعدّ بالمرتجع.</small>
+          {bonusRows.map((i) => (
+            <label key={i.product_id} className="fx-row" style={{ flexWrap: "nowrap" }}>
+              <span className="fx-grow">{i.name}</span>
+              <input className="fx-input fx-num" style={{ width: 100 }} type="number" inputMode="numeric" value={bx[i.product_id] ?? ""} placeholder="0" onChange={(e) => setBx({ ...bx, [i.product_id]: e.target.value })} />
+            </label>
+          ))}
+        </div>
         {room > 0 && (
           <details>
             <summary className="fx-link">زيادة للبيع من السيارة (في مجال لـ{num(room)})</summary>
@@ -321,7 +336,10 @@ function LoadSheet({ t, onClose, onDone }) {
           </details>
         )}
         <Act className="fx-btn pri block" onClick={async () => {
-          await fapi.confirmLoad(t.id, Object.entries(extra).filter(([, q]) => Number(q) > 0).map(([product_id, qty]) => ({ product_id: Number(product_id), qty: Number(qty) })));
+          await fapi.confirmLoad(t.id, [
+            ...Object.entries(extra).filter(([, q]) => Number(q) > 0).map(([product_id, qty]) => ({ product_id: Number(product_id), qty: Number(qty) })),
+            ...Object.entries(bx).filter(([, q]) => Number(q) > 0).map(([product_id, qty]) => ({ product_id: Number(product_id), qty: Number(qty), kind: "bonus" })),
+          ]);
           fx.toast("تأكد التحميل وانخصم من المستودع");
           onDone();
         }}>عدّيت الكراتين — أكّد</Act>

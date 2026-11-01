@@ -88,6 +88,58 @@ export async function pushManagers({ title, body, url = "/", tag, approvers = fa
   } catch { /* الإشعار ما بيوقف الشغل */ }
 }
 
+// ---------- البونص من السائق: زيادة على السيارة ----------
+// النسبة (كم كرتونة بونص لكل ١٠٠) — أمين المستودع بيحمّلها زيادة، والسائق بيكتب كم أعطى
+export async function bonusReservePct() {
+  const s = await settings(["bonus_reserve_pct"]);
+  const n = Number(s.bonus_reserve_pct);
+  return Number.isFinite(n) && n >= 0 ? n : 5;
+}
+// كم زيادة لكل صنف: من الكمية المطلوبة (بدون البونص المحسوب)
+export function bonusExtraFor(items, pct) {
+  if (!(pct > 0)) return [];
+  const per = new Map();
+  for (const i of items) { const x = per.get(i.product_id) || { product_id: i.product_id, name: i.name, qty: 0, bonus: 0 }; x.qty += Number(i.qty) || 0; x.bonus += Number(i.bonus_qty) || 0; per.set(i.product_id, x); }
+  return [...per.values()].map((x) => ({ product_id: x.product_id, name: x.name, qty: Math.max(0, Math.ceil((x.qty * pct) / 100) - x.bonus) })).filter((x) => x.qty > 0);
+}
+// إشعار لكل اللي بيحمّلوا (صلاحية المستودع): هالسيارة بدها تتحمّل، ومعها زيادة للبونص
+export async function notifyLoader(tripId) {
+  const t = (await query("SELECT t.id, t.load_confirmed_at, v.name FROM f_trips t JOIN f_vehicles v ON v.id = t.vehicle_id WHERE t.id = $1", [tripId])).rows[0];
+  if (!t || t.load_confirmed_at) return;
+  const items = (await query(
+    `SELECT i.product_id, p.name, i.qty, i.bonus_qty FROM f_orders o JOIN f_order_items i ON i.order_id = o.id JOIN f_products p ON p.id = i.product_id
+     WHERE o.trip_id = $1 AND o.status IN ('assigned','onway','delayed')`, [tripId]
+  )).rows;
+  const total = items.reduce((s, i) => s + i.qty + (i.bonus_qty || 0), 0);
+  const extra = bonusExtraFor(items, await bonusReservePct());
+  const ex = extra.reduce((s, x) => s + x.qty, 0);
+  const b = await brand();
+  const users = await query("SELECT id, role, permissions FROM users WHERE status = 'active'");
+  for (const u of users.rows) {
+    if (!can(u, "f_stock", "edit")) continue;
+    sendPushToUser(u.id, {
+      title: `📦 حمّل ${t.name}: ${total} كرتونة${ex ? ` + ${ex} للبونص` : ""}`,
+      body: ex ? `زيادة للبونص: ${extra.map((x) => `${x.qty} ${x.name}`).join("، ")} — السائق بيكتب كم أعطى، والباقي برجع.` : "افتح التحميل.",
+      url: "/f/stock?tab=load", tag: `load-${t.id}`, icon: b.icon || undefined,
+    }).catch(() => {});
+  }
+}
+
+// البونص المحسوب للطلبات اللي لسا ما تحمّلت: بيتحدّث لما تتغير قواعد البونص (أو تنحذف)
+export async function rebonusOpen() {
+  const rows = (await query(
+    `SELECT i.id, i.product_id, i.qty, i.bonus_qty, o.customer_id FROM f_order_items i JOIN f_orders o ON o.id = i.order_id
+     LEFT JOIN f_trips t ON t.id = o.trip_id
+     WHERE o.status IN ('new','assigned','delayed') AND NOT COALESCE(i.bonus_manual, false) AND t.load_confirmed_at IS NULL`
+  )).rows;
+  let n = 0;
+  for (const r of rows) {
+    const b = r.qty > 0 ? await bonusFor(r.customer_id, r.product_id, r.qty) : r.bonus_qty;
+    if (b !== (r.bonus_qty || 0)) { await query("UPDATE f_order_items SET bonus_qty = $1 WHERE id = $2", [b, r.id]); n++; }
+  }
+  return n;
+}
+
 // إشعار لموظف واحد (السائق مثلًا) بأيقونة المصنع
 export async function pushTo(userId, { title, body, url = "/", tag }) {
   if (!userId) return;

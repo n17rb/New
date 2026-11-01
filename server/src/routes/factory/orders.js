@@ -330,8 +330,8 @@ export async function loadTrips(where, params = []) {
     loadOrders("o.trip_id = ANY($1::int[])", [ids]),
     query("SELECT * FROM f_expenses WHERE trip_id = ANY($1::int[]) ORDER BY id", [ids]),
     query(
-      `SELECT m.trip_id, m.product_id, p.name, SUM(m.qty)::int AS qty FROM f_stock_moves m JOIN f_products p ON p.id = m.product_id
-       WHERE m.trip_id = ANY($1::int[]) AND m.kind = 'load' AND m.reason = 'زيادة للبيع' GROUP BY m.trip_id, m.product_id, p.name`,
+      `SELECT m.trip_id, m.product_id, p.name, m.reason, SUM(m.qty)::int AS qty FROM f_stock_moves m JOIN f_products p ON p.id = m.product_id
+       WHERE m.trip_id = ANY($1::int[]) AND m.kind = 'load' AND m.reason IN ('زيادة للبيع','زيادة للبونص') GROUP BY m.trip_id, m.product_id, p.name, m.reason`,
       [ids]
     ),
     // اللي طلع فعلًا على السيارة، واللي تلف فيها — منهم بنحسب المرتجع حتى لو الطلب تعدّل أو انلغى بعد التحميل
@@ -528,6 +528,8 @@ router.post("/trips", dispatch, async (req, res) => {
   await logActivity({ userId: req.user.id, action: "F_BUILD_TRIP", recordType: "f_trip", recordId: tripId, newValue: { vehicle: pv.vehicle.id, orders: orderIds } });
   // طلبات ثابتة لزباين خط هالسيارة بنفس اليوم بتنضاف لحالها
   await (await import("./recurring.js")).attachPending().catch(() => {});
+  // أمين المستودع: حمّل هالسيارة + زيادة للبونص
+  await (await import("./lib.js")).notifyLoader(tripId).catch((e) => console.error("loader push:", e.message));
   res.status(201).json({ trip_id: tripId, message_ids: msgIds });
 });
 

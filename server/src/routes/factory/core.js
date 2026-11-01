@@ -3,7 +3,7 @@ import { query, logActivity } from "../../db.js";
 import { uploadSingleImage, saveCompressedImage } from "../../middleware/upload.js";
 import { can } from "../../permissions.js";
 import { CITIES, GOVERNORATES } from "../../utils/factoryGeo.js";
-import { need, needAny, bad, brand, settings, factoryPoint, round2, checkVehicleDocs } from "./lib.js";
+import { need, needAny, bad, brand, settings, factoryPoint, round2, checkVehicleDocs, rebonusOpen } from "./lib.js";
 
 // ============================================================
 // المصنع: الإعدادات الأساسية — المنتجات، السيارات، الخطوط، المكنات، المواد الخام، هوية المصنع
@@ -38,7 +38,7 @@ router.get("/bootstrap", async (req, res) => {
               (SELECT COUNT(*)::int FROM users WHERE status = 'active' AND role <> 'super_admin') AS staff,
               (SELECT COUNT(*)::int FROM f_customers WHERE is_sample) AS sample_customers`
     ),
-    settings(["shop_latitude", "shop_longitude", "factory_city", "ss_employee_rate", "f_setup_done"]),
+    settings(["shop_latitude", "shop_longitude", "factory_city", "ss_employee_rate", "f_setup_done", "bonus_reserve_pct"]),
   ]);
   const recipes = await query("SELECT * FROM f_recipes");
   const bonusRules = await query(
@@ -60,6 +60,7 @@ router.get("/bootstrap", async (req, res) => {
     governorates: GOVERNORATES,
     factory: { point: await factoryPoint(), city: s.factory_city || null, has_location: !!(s.shop_latitude && s.shop_longitude) },
     ss_rate: Number(s.ss_employee_rate) || 7.5,
+    bonus_reserve_pct: s.bonus_reserve_pct == null || s.bonus_reserve_pct === "" ? 5 : Number(s.bonus_reserve_pct),
     counts: counts.rows[0],
     setup_done: s.f_setup_done === "1",
   });
@@ -135,16 +136,20 @@ router.post("/bonus-rules", edit, async (req, res) => {
   let x; try { x = cleanBonus(req.body || {}); } catch (e) { return bad(res, e.message); }
   const r = await query("INSERT INTO f_bonus_rules (name, product_id, customer_id, every_qty, bonus_qty, active) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [x.name, x.product_id, x.customer_id, x.every_qty, x.bonus_qty, x.active]);
   await logActivity({ userId: req.user.id, action: "F_BONUS_RULE", recordType: "f_bonus", recordId: r.rows[0].id, newValue: x });
+  await rebonusOpen();
   res.status(201).json(r.rows[0]);
 });
 router.put("/bonus-rules/:id", edit, async (req, res) => {
   let x; try { x = cleanBonus(req.body || {}); } catch (e) { return bad(res, e.message); }
   const r = await query("UPDATE f_bonus_rules SET name=$1, product_id=$2, customer_id=$3, every_qty=$4, bonus_qty=$5, active=$6 WHERE id=$7 RETURNING *", [x.name, x.product_id, x.customer_id, x.every_qty, x.bonus_qty, x.active, req.params.id]);
+  await rebonusOpen();
   res.json(r.rows[0]);
 });
 router.delete("/bonus-rules/:id", edit, async (req, res) => {
   await query("DELETE FROM f_bonus_rules WHERE id = $1", [req.params.id]);
-  res.json({ ok: true });
+  // الطلبات اللي لسا ما تحمّلت بتنشال منها البونص المحسوب
+  const n = await rebonusOpen();
+  res.json({ ok: true, orders_updated: n });
 });
 
 // ---------- السيارات ----------
@@ -273,6 +278,11 @@ router.put("/settings", edit, async (req, res) => {
     const r = Number(b.ss_employee_rate);
     if (!Number.isFinite(r) || r <= 0 || r >= 50) return bad(res, "نسبة الضمان غير صحيحة.");
     await set("ss_employee_rate", round2(r));
+  }
+  if (b.bonus_reserve_pct !== undefined) {
+    const r = Number(b.bonus_reserve_pct);
+    if (!Number.isFinite(r) || r < 0 || r > 50) return bad(res, "نسبة زيادة البونص غير صحيحة.");
+    await set("bonus_reserve_pct", round2(r));
   }
   if (b.setup_done !== undefined) await set("f_setup_done", b.setup_done ? "1" : null);
   await logActivity({ userId: req.user.id, action: "F_UPDATE_SETTINGS", recordType: "settings", recordId: null, newValue: b });
