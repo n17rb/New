@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { query, pool, logActivity } from "../../db.js";
 import { canAction, can } from "../../permissions.js";
-import { bad, round2, postLedger, priceFor, publicToken, ensureTrackToken, queueMessage, pushManagers, alert, once } from "./lib.js";
+import { bad, round2, postLedger, parseCheque, priceFor, publicToken, ensureTrackToken, queueMessage, pushManagers, alert, once } from "./lib.js";
 import { stockBalances } from "./stock.js";
 
 // ============================================================
@@ -54,8 +54,11 @@ router.post("/counter/sale", guard, once(async (req, res) => {
   const cash = b.cash === undefined || b.cash === "" || b.cash === null ? round2(total - cliq) : round2(b.cash);
   if (!(cash >= 0)) return bad(res, "المبلغ غير صحيح.");
   if (cliq > 0 && !b.cliq_photo) return bad(res, "صوّر وصل الكليك.");
-  if (round2(cash + cliq) > round2(total + Math.max(0, Number(c.balance) || 0)) + 0.009) return bad(res, "المبلغ أكثر من الفاتورة ودينه — تأكد من الرقم.");
-  const debt = round2(total - cash - cliq);
+  let chq; try { chq = parseCheque(b.cheque); } catch (e) { return bad(res, e.message); }
+  const chqAmt = chq ? chq.amount : 0;
+  if (chq && c.name === WALKIN) return bad(res, "الشيك لازم يكون من زبون باسمه — اختار «زبون جديد».");
+  if (round2(cash + cliq + chqAmt) > round2(total + Math.max(0, Number(c.balance) || 0)) + 0.009) return bad(res, "المبلغ أكثر من الفاتورة ودينه — تأكد من الرقم.");
+  const debt = round2(total - cash - cliq - chqAmt);
   if (debt > 0) {
     if (c.name === WALKIN) return bad(res, "الزبون النقدي ما بياخذ دين — اكتب اسمه وتلفونه.");
     if (!canAction(req.user, "give_credit")) return bad(res, "ما عندك صلاحية تبيع بالدين.");
@@ -80,6 +83,7 @@ router.post("/counter/sale", guard, once(async (req, res) => {
       balance = await postLedger(client, { customerId: c.id, kind: "payment", amount: -cliq, orderId, method: "cliq", note: "كليك — بيع بالمصنع", userId: req.user.id, photoUrl: b.cliq_photo });
       await client.query("UPDATE f_orders SET cliq_paid = $1, cliq_photo = $2 WHERE id = $3", [cliq, b.cliq_photo, orderId]);
     }
+    if (chq) balance = await postLedger(client, { customerId: c.id, kind: "payment", amount: -chq.amount, orderId, method: "cheque", chequeNo: chq.no, chequeDate: chq.date, chequeBank: chq.bank, photoUrl: chq.photo, note: "شيك — بيع بالمصنع", userId: req.user.id });
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
@@ -91,7 +95,7 @@ router.post("/counter/sale", guard, once(async (req, res) => {
   let message_id = null;
   if (c.phone) {
     const track = await ensureTrackToken(c.id);
-    message_id = await queueMessage({ customerId: c.id, orderId, kind: "delivered", data: { order: orderId, items: items.map((i) => `${i.qty} ${i.name}${i.bonus ? ` + ${i.bonus} بونص` : ""}`).join("، "), total, paid: round2(cash + cliq), balance, invoice: token, track }, userId: req.user.id }).catch(() => null);
+    message_id = await queueMessage({ customerId: c.id, orderId, kind: "delivered", data: { order: orderId, items: items.map((i) => `${i.qty} ${i.name}${i.bonus ? ` + ${i.bonus} بونص` : ""}`).join("، "), total, paid: round2(cash + cliq + chqAmt), balance, invoice: token, track }, userId: req.user.id }).catch(() => null);
   }
   await logActivity({ userId: req.user.id, action: "F_COUNTER_SALE", recordType: "f_order", recordId: orderId, newValue: { total, cash, cliq, debt } });
   res.status(201).json({ ok: true, order_id: orderId, invoice_token: token, total, cash, cliq, debt, balance, customer_name: c.name, phone: c.phone, message_id });

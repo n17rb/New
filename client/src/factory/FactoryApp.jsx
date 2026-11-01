@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers, FiClipboard, FiTool, FiLayers, FiActivity } from "react-icons/fi";
+import { FiArrowRight, FiHome, FiPackage, FiTruck, FiNavigation, FiBox, FiDollarSign, FiGrid, FiBell, FiHelpCircle, FiZap, FiUsers, FiClipboard, FiTool, FiLayers, FiActivity } from "react-icons/fi";
 import { canUser, canUserAction } from "../auth.jsx";
 import { fapi } from "./fapi.js";
 import { request } from "../api.js";
@@ -10,6 +10,7 @@ import { saveFactoryLogin } from "./FactoryLogin.jsx";
 import { applyBrandHead } from "./brandHead.js";
 import { endViewAs } from "../viewAs.js";
 import "./factory.css";
+import InputClear from "./InputClear.jsx";
 
 import Home from "./pages/Home.jsx";
 const Orders = lazy(() => import("./pages/Orders.jsx"));
@@ -192,11 +193,22 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
   const ctx = { user, shop, boot, reloadBoot, toast, show, can, canAction, isOwner, openHelp: () => setHelp(true), refreshMe: onRefresh };
   const brand = shop?.brand || {};
 
+  // زر الرجوع: خطوة خطوة — أول بيسكّر الشاشة المفتوحة، بعدين بيرجع للصفحة اللي قبل
+  const [, bump] = useState(0);
+  useEffect(() => { const f = () => setTimeout(() => bump((x) => x + 1), 40); window.addEventListener("popstate", f); window.addEventListener("click", f, true); return () => { window.removeEventListener("popstate", f); window.removeEventListener("click", f, true); }; }, []);
+  const sheetOpen = (window.history.state?.fxDepth || 0) > 0 && !!document.querySelector(".fx-sheet");
+  const canBack = sheetOpen || location.pathname !== home;
+  const goBack = () => {
+    if (sheetOpen || window.history.length > 1) window.history.back();
+    else navigate(home);
+  };
+
   return (
     <FxContext.Provider value={ctx}>
       <div className="fx">
         <div className="fx-shell">
           <header className="fx-top">
+            {canBack && <button className="fx-icon-btn fx-back" onClick={goBack} aria-label="رجوع"><FiArrowRight /></button>}
             <button className="fx-brand" onClick={() => navigate(home)} aria-label="الرئيسية">
               {brand.logo ? <img src={brand.logo} alt={brand.name} /> : <span className="mark">{(brand.name || "م").trim().charAt(0)}</span>}
               {!brand.logo && (
@@ -285,6 +297,7 @@ export default function FactoryApp({ user, shop, onLogout, onRefresh }) {
             />
           )}
           {toastMsg && <div className="fx-toast" role="status">{toastMsg}</div>}
+          <InputClear />
         </div>
       </div>
     </FxContext.Provider>

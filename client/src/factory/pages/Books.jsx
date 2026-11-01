@@ -22,7 +22,7 @@ const balColor = (b) => (b > 0.005 ? "var(--fx-crit)" : b < -0.005 ? "var(--fx-o
 
 export default function Books() {
   const [params, setParams] = useSearchParams();
-  const tabs = [["journal", "حركة المصاري"], ["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["handover", "التسليم"], ["summary", "الملخّص"]];
+  const tabs = [["journal", "حركة المصاري"], ["cheques", "الشيكات"], ["partners", "الشركات"], ["cash", "الصندوق"], ["utils", "الكهربا والمي"], ["handover", "التسليم"], ["summary", "الملخّص"]];
   const recycleOnly = params.get("tab") === "recycle";
   const tab = recycleOnly ? "recycle" : tabs.find((t) => t[0] === params.get("tab"))?.[0] || "journal";
   return (
@@ -30,6 +30,7 @@ export default function Books() {
       <h1 className="fx-h1">{recycleOnly ? "♻️ إعادة التدوير" : "الدفاتر"}</h1>
       {!recycleOnly && <div className="fx-tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setParams({ tab: k })}>{l}</button>)}</div>}
       {tab === "journal" && <Journal />}
+      {tab === "cheques" && <Cheques />}
       {tab === "partners" && <Partners />}
       {tab === "cash" && <Cash />}
       {tab === "utils" && <Utilities />}
@@ -934,6 +935,73 @@ function Journal() {
         </>
       )}
       {cash && <CashSheet kind={cash} cats={[]} onClose={() => setCash(null)} onDone={() => { setCash(null); reload(); }} />}
+    </div>
+  );
+}
+
+// ---------- الشيكات: مين، كم، رقمه، بنكه، إمتى بيتصرف، وصورته ----------
+const dayDiff = (a, b) => Math.round((Date.parse(`${a}T12:00:00Z`) - Date.parse(`${b}T12:00:00Z`)) / 86400000);
+function Cheques() {
+  const fx = useFx();
+  const edit = fx.can("f_money", "edit") || fx.can("f_home");
+  const [st, setSt] = useState("pending");
+  const { data, error, reload } = useLoad(() => fapi.cheques(st === "all" ? "" : st), [st]);
+  const [big, setBig] = useState(null);
+  const [bounce, setBounce] = useState(null);
+  const T = data?.totals;
+  const when = (d) => {
+    if (!d || !data) return "";
+    const n = dayDiff(d, data.today);
+    return n === 0 ? "بيتصرف اليوم" : n === 1 ? "بيتصرف بكرا" : n > 1 ? `بيتصرف بعد ${n} أيام` : `فات موعده بـ${-n} ${-n === 1 ? "يوم" : "أيام"}`;
+  };
+  return (
+    <div className="ch">
+      {T && (
+        <div className="ch-tot">
+          <div><small>بالانتظار</small><b>{money(T.pending)}</b><small>{num(T.pending_n)} شيك</small></div>
+          <div className={T.due_now_n ? "warn" : ""}><small>موعده إجا</small><b>{money(T.due_now)}</b><small>{num(T.due_now_n)} شيك</small></div>
+          <div><small>هالأسبوع</small><b>{money(T.week)}</b><small>{T.with_drivers ? `${T.with_drivers} مع السائقين` : "كلهم عنّا"}</small></div>
+        </div>
+      )}
+      <div className="pl-modes">
+        {[["pending", "بالانتظار"], ["cashed", "انصرفت"], ["bounced", "راجعة"], ["all", "الكل"]].map(([k, l]) => <button key={k} className={st === k ? "on" : ""} onClick={() => setSt(k)}>{l}</button>)}
+      </div>
+      <Err msg={error} />
+      {!data && !error && <Loading />}
+      {data && data.rows.length === 0 && <Empty title="ما في شيكات" text="أي شيك بيستلمه السائق أو المحاسب بيطلع هون مع صورته وموعد صرفه." />}
+      {data?.rows.map((c) => {
+        const n = c.cheque_date ? dayDiff(c.cheque_date, data.today) : null;
+        const tone = c.cheque_status === "cashed" ? "ok" : c.cheque_status === "bounced" ? "bad" : n != null && n <= 0 ? "due" : n != null && n <= 3 ? "soon" : "";
+        return (
+          <article key={c.id} className={`ch-card ${tone}`}>
+            {c.photo_url ? <button className="ph" onClick={() => setBig(c.photo_url)} aria-label="صورة الشيك"><img src={c.photo_url} alt="" /></button> : <span className="ph none">🧾</span>}
+            <div className="t">
+              <div className="r1"><b>{c.customer_name}</b><span className="amt">{money(c.amount)}</span></div>
+              <small>رقم {c.cheque_no || "—"}{c.cheque_bank ? ` · ${c.cheque_bank}` : ""}</small>
+              <small className="dt">{c.cheque_date ? `${date(c.cheque_date)} · ` : ""}{c.cheque_status === "pending" ? when(c.cheque_date) : c.cheque_status === "cashed" ? "انصرف ✓" : "رجع ✗"}</small>
+              <small className="by">استلمه {c.by_name || "—"} {dateTime(c.created_at)}{c.cheque_status !== "pending" && c.status_by_name ? ` · علّمه ${c.status_by_name}` : ""}</small>
+              {c.cheque_status === "pending" && edit && (
+                <div className="acts">
+                  {!c.cheque_in_hand_at && <Act className="fx-btn sm sky" onClick={async () => { await fapi.chequeInHand(c.id); fx.toast("انسجّل إنك استلمت الشيك الورقي"); reload(); }}>📥 استلمته من {c.by_name?.split(" ")[0] || "السائق"}</Act>}
+                  <Act className="fx-btn sm ok" onClick={async () => { await fapi.chequeStatus(c.id, "cashed"); fx.toast("انصرف ✓"); reload(); }}>✓ انصرف</Act>
+                  <button className="fx-btn sm danger" onClick={() => setBounce(c)}>✗ رجع</button>
+                </div>
+              )}
+              {c.cheque_status === "pending" && !c.cheque_in_hand_at && <span className="fx-pill warn" style={{ justifySelf: "start" }}>الشيك الورقي لسا مع {c.by_name || "السائق"}</span>}
+            </div>
+          </article>
+        );
+      })}
+      {big && <div className="fx-jard-zoom" onClick={() => setBig(null)} role="dialog" aria-label="صورة الشيك"><img src={big} alt="الشيك" /></div>}
+      {bounce && (
+        <Sheet title="الشيك رجع؟" onClose={() => setBounce(null)}>
+          <div className="fx-stack">
+            <div className="fx-note warn">شيك {bounce.customer_name} بـ{money(bounce.amount)} رقم {bounce.cheque_no} — المبلغ بيرجع دين على حسابه، وبيوصلك تنبيه.</div>
+            <Act className="fx-btn danger block fx-big" onClick={async () => { await fapi.chequeStatus(bounce.id, "bounced"); fx.toast("انسجّل راجع — رجع دين على الزبون"); setBounce(null); reload(); }}>✗ آه رجع</Act>
+            <button className="fx-btn block" onClick={() => setBounce(null)}>لا</button>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }

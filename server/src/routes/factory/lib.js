@@ -126,16 +126,29 @@ export async function closeAlerts(kind, ref, userId = null) {
 }
 
 // ---------- كشف حساب الزبون ----------
-export async function postLedger(client, { customerId, kind, amount, orderId = null, tripId = null, method = null, chequeNo = null, chequeDate = null, note = null, userId = null, photoUrl = null }) {
+export async function postLedger(client, { customerId, kind, amount, orderId = null, tripId = null, method = null, chequeNo = null, chequeDate = null, chequeBank = null, note = null, userId = null, photoUrl = null }) {
   const q = client ? (t, p) => client.query(t, p) : query;
   const r = await q("UPDATE f_customers SET balance = balance + $1 WHERE id = $2 RETURNING balance", [round2(amount), customerId]);
   const after = r.rows[0]?.balance ?? 0;
+  const chq = method === "cheque";
   await q(
-    `INSERT INTO f_ledger (customer_id, kind, amount, balance_after, order_id, trip_id, method, cheque_no, cheque_date, note, created_by, photo_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-    [customerId, kind, round2(amount), after, orderId, tripId, method, chequeNo, chequeDate || null, note, userId, photoUrl]
+    `INSERT INTO f_ledger (customer_id, kind, amount, balance_after, order_id, trip_id, method, cheque_no, cheque_date, note, created_by, photo_url, cheque_bank, cheque_status, cheque_in_hand_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    [customerId, kind, round2(amount), after, orderId, tripId, method, chequeNo, chequeDate || null, note, userId, photoUrl, chq ? chequeBank || null : null, chq ? "pending" : null, chq && !tripId ? new Date() : null]
   );
   return Number(after);
+}
+
+// شيك من زبون: المبلغ، الرقم، البنك، تاريخ الصرف، وصورته (لازم) — بيرجع null إذا ما في شيك
+export function parseCheque(c) {
+  if (!c || !(Number(c.amount) > 0)) return null;
+  const amount = round2(c.amount);
+  const no = String(c.no || "").trim().slice(0, 40);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(c.date || "") ? c.date : null;
+  if (!no) throw new Error("اكتب رقم الشيك.");
+  if (!date) throw new Error("اكتب تاريخ صرف الشيك.");
+  if (!c.photo) throw new Error("صوّر الشيك.");
+  return { amount, no, bank: String(c.bank || "").trim().slice(0, 80) || null, date, photo: String(c.photo).slice(0, 500) };
 }
 
 // ---------- السعر: سعر الزبون الخاص أو سعر المنتج ----------

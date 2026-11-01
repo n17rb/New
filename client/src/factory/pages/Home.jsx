@@ -21,7 +21,7 @@ export function AlertCard({ a, onClose }) {
     breakdown: "/f/trips", delay: "/f/trips", fuel_night: "/f/reports", km_mismatch: "/f/reports", carton_short: "/f/money?tab=drivers",
     material_low: "/f/store", postpone: "/f/orders", qcheck: "/f/line", cliq: "/f/debts",
     license30: "/f/settings?tab=vehicles", license7: "/f/settings?tab=vehicles", license0: "/f/settings?tab=vehicles",
-    insurance30: "/f/settings?tab=vehicles", insurance7: "/f/settings?tab=vehicles", insurance0: "/f/settings?tab=vehicles", downtime: "/f/stock?tab=prod", credit: "/f/money?tab=debts", failed: "/f/orders",
+    insurance30: "/f/settings?tab=vehicles", insurance7: "/f/settings?tab=vehicles", insurance0: "/f/settings?tab=vehicles", downtime: "/f/stock?tab=prod", credit: "/f/money?tab=debts", failed: "/f/orders", cheque: "/f/books?tab=cheques", cheque_due: "/f/books?tab=cheques", cheque_bounced: "/f/books?tab=cheques",
   }[a.kind] || (a.kind?.startsWith("maint_") ? "/f/maint" : a.kind?.startsWith("filter_") ? "/f/line" : undefined);
   return (
     <article className={`fx-alert ${a.level} ${a.closed_at ? "closed" : ""}`}>

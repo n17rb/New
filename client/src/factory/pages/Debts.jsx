@@ -138,6 +138,7 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
   const [method, setMethod] = useState("cash");
   const [chq, setChq] = useState("");
   const [chqDate, setChqDate] = useState("");
+  const [bank, setBank] = useState("");
   const [note, setNote] = useState("");
   const [photo, setPhoto] = useState(null);
   const [err, setErr] = useState("");
@@ -160,21 +161,26 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
           ? (
             <>
               <div className="fx-pay-modes">
-                <button type="button" className={method !== "cliq" ? "on" : ""} onClick={() => setMethod("cash")}>💵 كاش</button>
+                <button type="button" className={method === "cash" ? "on" : ""} onClick={() => setMethod("cash")}>💵 كاش</button>
                 <button type="button" className={method === "cliq" ? "on" : ""} onClick={() => setMethod("cliq")}>📲 كليك</button>
+                <button type="button" className={method === "cheque" ? "on" : ""} onClick={() => setMethod("cheque")}>🧾 شيك</button>
               </div>
-              {method === "cliq"
-                ? <PhotoInput label="صوّر وصل الكليك من تلفون الزبون" hint="لازم — بتوصل للمحاسب" value={photo} onChange={setPhoto} kind="cliq" />
-                : <div className="fx-note sky">المبلغ بينضاف على الكاش اللي معك، وبتسلّمه مع حساب رحلتك.</div>}
+              {method === "cliq" && <PhotoInput label="صوّر وصل الكليك من تلفون الزبون" hint="لازم — بتوصل للمحاسب" value={photo} onChange={setPhoto} kind="cliq" />}
+              {method === "cash" && <div className="fx-note sky">المبلغ بينضاف على الكاش اللي معك، وبتسلّمه مع حساب رحلتك.</div>}
             </>
           )
           : <div className="fx-chips">{METHODS.map(([k, l]) => <button key={k} type="button" className={`fx-chip ${method === k ? "on" : ""}`} onClick={() => setMethod(k)}>{l}</button>)}</div>}
         {!byDriver && method === "cliq" && <PhotoInput label="صورة وصل الكليك" value={photo} onChange={setPhoto} kind="cliq" />}
         {method === "cheque" && (
-          <div className="fx-grid2">
-            <label className="fx-field">رقم الشيك<input className="fx-input" value={chq} onChange={(e) => setChq(e.target.value)} /></label>
+          <>
+            <div className="fx-grid2">
+              <label className="fx-field">رقم الشيك<input className="fx-input" dir="ltr" value={chq} onChange={(e) => setChq(e.target.value)} /></label>
+              <label className="fx-field">البنك<input className="fx-input" value={bank} onChange={(e) => setBank(e.target.value)} placeholder="مثلًا: الإسكان" /></label>
+            </div>
             <div className="fx-field">تاريخ الصرف<DateInput value={chqDate} onChange={setChqDate} ariaLabel="تاريخ الصرف" /></div>
-          </div>
+            <PhotoInput label={byDriver ? "صوّر الشيك (لازم)" : "صورة الشيك"} value={photo} onChange={setPhoto} kind="cheque" />
+            {byDriver && <div className="fx-note sky">الشيك ما بينحسب على كاشك — سلّمه للمحاسب.</div>}
+          </>
         )}
         <label className="fx-field">ملاحظة (اختياري)<input className="fx-input" value={note} onChange={(e) => setNote(e.target.value)} /></label>
         <div className="fx-pay-sum">
@@ -182,10 +188,10 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
           {after > 0.005 ? <span className="debt">بيضل عليه <b>{money(after)}</b></span> : after < -0.005 ? <span className="ok">بيصير إله <b>{money(-after)}</b></span> : <span className="ok">سدّ كل الدين ✓</span>}
         </div>
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={!(amt > 0) || (method === "cheque" && !chq) || (method === "cliq" && !photo)} onClick={async () => {
+        <Act className="fx-btn ok block fx-huge" disabled={!(amt > 0) || (method === "cheque" && (!chq || !chqDate || (byDriver && !photo))) || (method === "cliq" && !photo)} onClick={async () => {
           setErr("");
           try {
-            const r = await fapi.payment(c.id, { amount: amt, method: byDriver && method !== "cliq" ? "cash" : method, photo_url: method === "cliq" ? photo : undefined, cheque_no: chq || undefined, cheque_date: chqDate || undefined, note, by_driver: byDriver || undefined });
+            const r = await fapi.payment(c.id, { amount: amt, method, photo_url: method === "cliq" || method === "cheque" ? photo || undefined : undefined, cheque_no: chq || undefined, cheque_date: chqDate || undefined, cheque_bank: bank || undefined, note, by_driver: byDriver || undefined });
             fx.toast(r.balance > 0.009 ? `انسجّلت — بيضل عليه ${money(r.balance)}` : "انسجّلت — سدّ كل الدين ✓");
             onDone(r);
           } catch (e) { setErr(e.message); }

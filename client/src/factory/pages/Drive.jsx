@@ -9,7 +9,7 @@ import { Who, navUrl } from "./Who.jsx";
 import { sendOrQueue, useOutbox, dismissFailed, flush } from "../outbox.js";
 import { PaySheet } from "./Debts.jsx";
 import { smartFilter } from "../smartSearch.js";
-import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, CliqBox, LocationGuard, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
+import { useFx, useLoad, Sheet, Tip, Err, Loading, Empty, Act, PhotoInput, SignaturePad, CliqBox, ChequeBox, chequeReady, LocationGuard, SendMessages, ProductArt, getLocation, waLink, money, num, time, today, bonusPreview } from "../ui.jsx";
 
 // ============================================================
 // شاشة السائق: كل إشي بكبسة — قبل ما يطلع، عند كل زبون، المصاريف، والرجعة
@@ -298,6 +298,9 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
   const [cliqPhoto, setCliqPhoto] = useState(null);
   const cliqN = cliqOn ? Math.min(cashN, Number(cliq) || 0) : 0;
   const cliqMissing = cliqN > 0 && !cliqPhoto;
+  const [chqOn, setChqOn] = useState(false);
+  const [chq, setChq] = useState({});
+  const chqN = chqOn ? Math.min(Math.max(0, cashN - cliqN), Number(chq.amount) || 0) : 0;
   const [sig, setSig] = useState(null);
   const [locSaved, setLocSaved] = useState(false);
   const needLoc = o.lat == null && !locSaved;
@@ -314,7 +317,8 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
           ...Object.entries(freeB).filter(([, q]) => Number(q) > 0).map(([product_id, q]) => ({ product_id: Number(product_id), qty: 0, bonus: Number(q) })),
         ],
         exchanges: exchangeList(exch),
-        cash: Math.round((cashN - cliqN) * 100) / 100, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined, signature: sig || undefined, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
+        cash: Math.round((cashN - cliqN - chqN) * 100) / 100, cliq: cliqN || undefined, cliq_photo: cliqN ? cliqPhoto : undefined,
+        cheque: chqN > 0 ? { ...chq, amount: chqN } : undefined, signature: sig || undefined, photo_url: photo, lat: loc?.lat, lng: loc?.lng, confirm_over_limit: true,
       } });
       if (q.queued) { fx.toast("📶 ما في شبكة — التسليم انحفظ على التلفون وبينبعت لحاله أول ما ترجع"); onDone({ queued: true }); return; }
       const r = q.data;
@@ -431,10 +435,13 @@ export function DeliverSheet({ o, canCredit, onClose, onDone }) {
         {cashN > 0 && (
           <CliqBox on={cliqOn} setOn={(v) => { setCliqOn(v); if (v && !cliq) setCliq(String(cashN)); }} amount={cliq} setAmount={setCliq} photo={cliqPhoto} setPhoto={setCliqPhoto} max={cashN} />
         )}
+        {cashN > 0 && (
+          <ChequeBox on={chqOn} setOn={(v) => { setChqOn(v); if (v && !chq.amount) setChq({ ...chq, amount: String(Math.max(0, cashN - cliqN)) }); }} value={chq} onChange={setChq} max={Math.max(0, cashN - cliqN)} />
+        )}
         <SignaturePad onChange={setSig} label="توقيع الزبون اللي استلم" />
         <PhotoInput label="صورة (اختياري)" value={photo} onChange={setPhoto} kind="proof" />
         <Err msg={err} />
-        <Act className="fx-btn ok block fx-huge" disabled={(debt > 0.005 && !canCredit) || cliqMissing || needLoc} onClick={send}>
+        <Act className="fx-btn ok block fx-huge" disabled={(debt > 0.005 && !canCredit) || cliqMissing || !chequeReady(chqOn, chq) || needLoc} onClick={send}>
           <FiCheck /> تم التسليم{debt > 0.005 ? ` · دين ${money(debt)}` : ""}
         </Act>
       </div>
