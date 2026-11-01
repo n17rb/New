@@ -1321,3 +1321,13 @@ input[dir="ltr"].fx-has-x { padding-inline-end: 12px !important; padding-left: 4
 }
 .hm-quick .pay { grid-column: auto; }
 .hm-quick .pay span { background: #edf5fd; color: var(--fx-navy); font-size: 15px; }
+
+/* خريطة المناطق */
+.zm-map { height: 52vh; min-height: 300px; border-radius: 16px; overflow: hidden; border: 1px solid var(--fx-line); }
+.zm-zones { display: flex; flex-wrap: wrap; gap: 8px; }
+.zm-zones button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--fx-line); background: #fff; border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 14px; color: var(--fx-ink); cursor: pointer; }
+.zm-zones button.on { border-color: var(--fx-sky); background: var(--fx-sky-soft); font-weight: 700; }
+.zm-zones i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.zm-zones small { color: var(--fx-muted); }
+.leaflet-tooltip.zm-label { background: rgba(255,255,255,.88); border: 0; box-shadow: 0 1px 6px rgba(16,48,77,.15); font-weight: 700; font-size: 12px; color: #10304d; padding: 2px 8px; border-radius: 8px; }
+.leaflet-tooltip.zm-label::before { display: none; }

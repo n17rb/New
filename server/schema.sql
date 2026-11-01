@@ -1552,3 +1552,6 @@ END $$;
 ALTER TABLE f_lines ADD COLUMN IF NOT EXISTS zone_key VARCHAR(40);
 -- الزبون اللي انحطّ بمنطقة باليد ما بنغيّره تلقائيًا
 ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS line_manual BOOLEAN NOT NULL DEFAULT false;
+
+-- حدود المنطقة مرسومة على الخريطة: [[lat,lng],...] — أي زبون جوّاها بيدخل فيها
+ALTER TABLE f_lines ADD COLUMN IF NOT EXISTS polygon JSONB;
