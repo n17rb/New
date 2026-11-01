@@ -1547,3 +1547,8 @@ DO $$ BEGIN
     INSERT INTO app_settings (key, value) VALUES ('mig_admin_full', '1') ON CONFLICT (key) DO NOTHING;
   END IF;
 END $$;
+
+-- مناطق التوصيل التلقائية (إربد والرمثا): كل زبون بيتقسم لمنطقته لحاله
+ALTER TABLE f_lines ADD COLUMN IF NOT EXISTS zone_key VARCHAR(40);
+-- الزبون اللي انحطّ بمنطقة باليد ما بنغيّره تلقائيًا
+ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS line_manual BOOLEAN NOT NULL DEFAULT false;

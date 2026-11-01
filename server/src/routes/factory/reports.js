@@ -273,6 +273,8 @@ export async function factoryWatch() {
   await (await import("./maint.js")).checkMaint().catch((e) => console.error("maint:", e.message));
   await (await import("./line.js")).checkLines().catch((e) => console.error("line:", e.message));
   await (await import("./cheques.js")).checkCheques().catch((e) => console.error("cheques:", e.message));
+  // زباين جداد/موقعهم تغيّر: منقسمهم لمناطق التوصيل
+  await (await import("../../utils/factoryZones.js")).autoZoneAll().catch((e) => console.error("zones:", e.message));
   // سائق متأخر عن موعد زبون أكثر من نص ساعة
   const late = (await query(
     `SELECT o.id, o.eta_at, c.name, v.name AS vehicle, u.full_name AS driver

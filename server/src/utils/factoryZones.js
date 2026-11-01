@@ -1,0 +1,118 @@
+// ============================================================
+// تقسيم الزباين لمناطق التوصيل تلقائيًا (إربد والرمثا)
+// منعتمد على اسم المنطقة (city) وعلى موقع المحل (lat/lng).
+// الزبون اللي انحطّ بمنطقة باليد (line_manual) ما منلمسه.
+// ============================================================
+import { query } from "../db.js";
+import { inferRegion } from "./jordanRegions.js";
+
+export const ZONES = [
+  { key: "irbid_sareeh", gov: "إربد", name: "صريح وبشرى وسال والحصن" },
+  { key: "irbid_kanana", gov: "إربد", name: "لواء بني كنانة" },
+  { key: "irbid_center", gov: "إربد", name: "وسط إربد" },
+  { key: "ramtha_villages", gov: "الرمثا", name: "الشجرة والطرة وعمراوة والذنيبة" },
+  { key: "ramtha_east", gov: "الرمثا", name: "طرف الرمثا الشرقي" },
+  { key: "ramtha_west", gov: "الرمثا", name: "طرف الرمثا الغربي" },
+  { key: "ramtha_center", gov: "الرمثا", name: "وسط الرمثا" },
+];
+
+const nk = (s) => String(s || "").trim()
+  .replace(/[ً-ْـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي")
+  .replace(/^ال/, "").replace(/\s+/g, " ");
+const words = (s) => String(s || "").split(/[\s،,\-–/()]+/).map(nk).filter(Boolean);
+const has = (text, list) => { const w = words(text); const full = nk(text); return list.some((x) => full === nk(x) || w.includes(nk(x))); };
+
+function dist(a, b) {
+  const R = 6371, rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const near = (p, pts, km) => p && pts.some((q) => dist(p, q) <= km);
+
+const SAREEH = { names: ["صريح", "بشرى", "سال", "الحصن"], pts: [[32.506, 35.897], [32.494, 35.873], [32.551, 35.917], [32.487, 35.880]], km: 2.8 };
+const KANANA = { names: ["سحم", "سحم الكفارات", "ملكا", "حرثا", "كفرسوم", "سما الروسان", "يبلا", "ام قيس", "المنصورة", "حريما", "سمر", "خرجا", "الرفيد", "عقربا", "كفر اسد", "زبدة", "بني كنانة"] };
+const IRBID_C = [32.5556, 35.85];
+const RAMTHA_V = { names: ["الشجرة", "الطرة", "عمراوة", "عمراوه", "الذنيبة"], pts: [[32.644, 35.942], [32.636, 35.989], [32.62, 35.96], [32.60, 35.97]], km: 2.5 };
+const RAMTHA_C = [32.559, 36.0069];
+const RAMTHA_CENTER_KM = 2.5;
+
+// المنطقة المناسبة لزبون (مفتاح) أو null
+export function zoneKeyFor(c) {
+  const city = c.city || "", addr = c.address || "";
+  const text = `${city} ${addr}`;
+  const p = c.lat != null && c.lng != null && Number(c.lat) ? [Number(c.lat), Number(c.lng)] : null;
+  let gov = c.governorate, district = c.district;
+  if (!gov) { const r = inferRegion(city); gov = r.governorate; district = district || r.district; }
+  const inRamtha = nk(district) === nk("الرمثا") || has(city, ["الرمثا", ...RAMTHA_V.names]) || (p && (dist(p, RAMTHA_C) <= 7 || near(p, RAMTHA_V.pts, RAMTHA_V.km)));
+  if (gov && nk(gov) !== nk("إربد") && nk(gov) !== nk("الرمثا") && !inRamtha) return null;
+
+  if (inRamtha) {
+    if (has(text, RAMTHA_V.names) || near(p, RAMTHA_V.pts, RAMTHA_V.km)) return "ramtha_villages";
+    if (!p) return "ramtha_center"; // بدون موقع: منحطه بالوسط لحد ما ينحدد موقعه
+    if (dist(p, RAMTHA_C) <= RAMTHA_CENTER_KM) return "ramtha_center";
+    return p[1] > RAMTHA_C[1] ? "ramtha_east" : "ramtha_west";
+  }
+  if (has(text, SAREEH.names) || near(p, SAREEH.pts, SAREEH.km)) return "irbid_sareeh";
+  if (String(district || "").includes("كنان") || has(text, KANANA.names)) return "irbid_kanana";
+  // بني كنانة تقريبًا: شمال غرب إربد
+  if (p && p[0] >= 32.63 && p[0] <= 32.73 && p[1] >= 35.65 && p[1] <= 35.86) return "irbid_kanana";
+  if (p && dist(p, IRBID_C) <= 6) return "irbid_center";
+  if (!p && (has(city, ["إربد", "اربد"]) || nk(district) === nk("قصبة إربد"))) return "irbid_center";
+  return null;
+}
+
+// بنعمل المناطق إذا مش موجودة. بترجّع { key: line_id } — المنطقة اللي انحذفت/توقفت ما منستعملها
+export async function ensureZones(q = query) {
+  const rows = (await q("SELECT id, zone_key, active FROM f_lines WHERE zone_key IS NOT NULL")).rows;
+  const map = {};
+  for (const z of ZONES) {
+    let r = rows.find((x) => x.zone_key === z.key);
+    if (!r) {
+      // في قائمة بنفس الاسم؟ منربطها بدل ما نكرر
+      const same = (await q("SELECT id, active FROM f_lines WHERE name = $1 AND zone_key IS NULL ORDER BY active DESC, id LIMIT 1", [z.name])).rows[0];
+      if (same) { await q("UPDATE f_lines SET zone_key = $1, governorate = COALESCE(governorate, $2) WHERE id = $3", [z.key, z.gov, same.id]); r = { id: same.id, active: same.active }; }
+      else r = (await q("INSERT INTO f_lines (name, governorate, zone_key) VALUES ($1,$2,$3) RETURNING id, active", [z.name, z.gov, z.key])).rows[0];
+    }
+    if (r.active) map[z.key] = r.id;
+  }
+  return map;
+}
+
+const ZONE_GOV = Object.fromEntries(ZONES.map((z) => [z.key, z.gov]));
+
+// زبون واحد (بعد الحفظ). customer = صف f_customers
+export async function autoZoneCustomer(id, q = query) {
+  const c = (await q("SELECT id, city, address, governorate, district, lat, lng, line_id, line_manual FROM f_customers WHERE id = $1", [id])).rows[0];
+  if (!c || c.line_manual) return null;
+  const map = await ensureZones(q);
+  return applyZone(c, map, q);
+}
+
+async function applyZone(c, map, q) {
+  const autoIds = new Set(Object.values(map));
+  // قائمة يدوية قديمة (مش منطقة تلقائية)؟ ما منلمسها
+  if (c.line_id && !autoIds.has(c.line_id)) return null;
+  const key = zoneKeyFor(c);
+  const lineId = key ? map[key] || null : null;
+  if (!key) return null;
+  if (lineId === c.line_id) return lineId;
+  // زبون الرمثا بدون لواء: منحطله «الرمثا» عشان يطلع تحت الرمثا
+  const district = ZONE_GOV[key] === "الرمثا" && !c.district ? "الرمثا" : c.district;
+  const governorate = c.governorate || "إربد";
+  await q("UPDATE f_customers SET line_id = $1, district = $2, governorate = $3 WHERE id = $4", [lineId, district, governorate, c.id]);
+  return lineId;
+}
+
+// كل الزباين (أول تشغيل وكل شوي): اللي مش يدوي
+export async function autoZoneAll(q = query) {
+  const map = await ensureZones(q);
+  const rows = (await q("SELECT id, city, address, governorate, district, lat, lng, line_id, line_manual FROM f_customers WHERE active AND NOT line_manual")).rows;
+  let n = 0;
+  for (const c of rows) {
+    const before = c.line_id;
+    const after = await applyZone(c, map, q);
+    if (after && after !== before) n++;
+  }
+  return n;
+}
