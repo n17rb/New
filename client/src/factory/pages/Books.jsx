@@ -5,6 +5,7 @@ import { fapi } from "../fapi.js";
 import { openPrint } from "../printView.js";
 import { useFx, useLoad, Sheet, Err, Loading, Empty, Act, PhotoInput, DateInput, SignaturePad, Reload, waLink, money, num, date, dateTime, today } from "../ui.jsx";
 import { smartFilter } from "../smartSearch.js";
+import QuickPay from "../QuickPay.jsx";
 
 // ============================================================
 // الدفاتر: الشركات (مين إله علينا ومين علينا إله) بفواتير رسمية، إعادة التدوير،
@@ -948,6 +949,7 @@ function Cheques() {
   const { data, error, reload } = useLoad(() => fapi.cheques(st === "all" ? "" : st), [st]);
   const [big, setBig] = useState(null);
   const [bounce, setBounce] = useState(null);
+  const [add, setAdd] = useState(false);
   const T = data?.totals;
   const when = (d) => {
     if (!d || !data) return "";
@@ -956,6 +958,8 @@ function Cheques() {
   };
   return (
     <div className="ch">
+      {edit && <button className="fx-btn pri block" onClick={() => setAdd(true)}><FiPlus /> سجّل شيك جديد</button>}
+      {add && <QuickPay method="cheque" title="شيك من زبون" onClose={() => setAdd(false)} onDone={() => { setAdd(false); reload(); }} />}
       {T && (
         <div className="ch-tot">
           <div><small>بالانتظار</small><b>{money(T.pending)}</b><small>{num(T.pending_n)} شيك</small></div>
