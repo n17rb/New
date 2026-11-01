@@ -95,6 +95,7 @@ export const fapi = {
 
   // الطلبات والرحلات
   orders: (p) => get(`/orders${qs(p)}`),
+  routePlan: (ids, pool) => post("/orders/route-plan", { ids, pool }),
   createOrder: (b) => post("/orders", b),
   updateOrder: (id, b) => put(`/orders/${id}`, b),
   cancelOrder: (id, reason) => post(`/orders/${id}/cancel`, { reason }),
