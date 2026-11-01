@@ -130,12 +130,13 @@ export function DebtsView({ page = false }) {
 
 // الزبون دفع من دينه: كامل أو جزء، كاش أو شيك أو تحويل — وبتطلع رسالة شكر فيها رصيده الجديد
 const METHODS = [["cash", "كاش"], ["cliq", "كليك"], ["cheque", "شيك"], ["transfer", "تحويل"]];
-export function PaySheet({ c, onClose, onDone, byDriver = false }) {
+export function PaySheet({ c, onClose, onDone, byDriver = false, initialMethod = "cash" }) {
   const fx = useFx();
   const bal = Number(c.balance) || 0;
-  const [full, setFull] = useState(true);
+  // ما عليه دين (أو بدنا شيك)؟ منفتح على «دفع جزء» عشان تكتب المبلغ
+  const [full, setFull] = useState(() => (Number(c.balance) || 0) > 0.009 && initialMethod === "cash");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("cash");
+  const [method, setMethod] = useState(initialMethod);
   const [chq, setChq] = useState("");
   const [chqDate, setChqDate] = useState("");
   const [bank, setBank] = useState("");
@@ -149,11 +150,11 @@ export function PaySheet({ c, onClose, onDone, byDriver = false }) {
       <div className="fx-stack">
         <div className="fx-pay-total"><span>عليه هلأ</span><b>{money(bal)} <small>د.أ</small></b></div>
         <div className="fx-pay-modes">
-          <button type="button" className={full ? "on" : ""} onClick={() => setFull(true)}>✓ دفع كامل</button>
+          <button type="button" className={full ? "on" : ""} disabled={!(bal > 0.009)} onClick={() => setFull(true)}>✓ دفع كامل</button>
           <button type="button" className={!full ? "on" : ""} onClick={() => setFull(false)}>دفع جزء</button>
         </div>
         {!full && (
-          <label className="fx-field">قديش دفع؟
+          <label className="fx-field">{method === "cheque" ? "مبلغ الشيك" : "قديش دفع؟"}
             <input className="fx-input fx-num" style={{ fontSize: 22, textAlign: "center", fontWeight: 800 }} type="number" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
           </label>
         )}
