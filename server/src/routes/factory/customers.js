@@ -3,6 +3,7 @@ import { resolveMapsLink } from "../../utils/mapsLink.js";
 import { query, pool, logActivity } from "../../db.js";
 import { can, canAction } from "../../permissions.js";
 import { inferRegion, validRegion, reverseRegion } from "../../utils/jordanRegions.js";
+import { autoZoneCustomer } from "../../utils/factoryZones.js";
 import { smartFilter } from "../../utils/fuzzySearch.js";
 import { need, needAny, bad, postLedger, round2, queueMessage, ensureTrackToken, trackLink, brand, pushManagers, alert, once } from "./lib.js";
 
@@ -258,9 +259,12 @@ router.post("/customers", edit, async (req, res) => {
     if (opening && can(req.user, "f_money", "edit")) {
       await postLedger(client, { customerId: id, kind: "opening", amount: opening, note: "رصيد افتتاحي", userId: req.user.id });
     }
+    if (c.line_id) await client.query("UPDATE f_customers SET line_manual = true WHERE id = $1", [id]);
     await client.query("COMMIT");
     await logActivity({ userId: req.user.id, action: "F_CREATE_CUSTOMER", recordType: "f_customer", recordId: id, newValue: c });
-    res.status(201).json(r.rows[0]);
+    // منطقة التوصيل بتنحط لحالها (إربد/الرمثا)
+    const z = await autoZoneCustomer(id).catch((e) => { console.error("zone:", e.message); return null; });
+    res.status(201).json(z ? { ...r.rows[0], line_id: z } : r.rows[0]);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
@@ -280,6 +284,7 @@ router.put("/customers/:id", edit, async (req, res) => {
     Object.assign(c, { line_id: old.line_id, pay_terms: old.pay_terms, credit_limit: Number(old.credit_limit), seq_no: old.seq_no });
     delete req.body.prices;
   }
+  const prevLine = (await query("SELECT line_id FROM f_customers WHERE id = $1", [req.params.id])).rows[0]?.line_id ?? null;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -294,9 +299,12 @@ router.put("/customers/:id", edit, async (req, res) => {
     );
     if (!r.rows[0]) { await client.query("ROLLBACK"); return bad(res, "الزبون غير موجود.", 404); }
     if (full) await savePrices(client, r.rows[0].id, req.body?.prices);
+    // غيّر المنطقة باليد؟ منثبّتها وما منغيّرها تلقائيًا
+    if (full && (c.line_id ?? null) !== prevLine) await client.query("UPDATE f_customers SET line_manual = $1 WHERE id = $2", [c.line_id != null, r.rows[0].id]);
     await client.query("COMMIT");
     await logActivity({ userId: req.user.id, action: "F_UPDATE_CUSTOMER", recordType: "f_customer", recordId: r.rows[0].id, newValue: c });
-    res.json(r.rows[0]);
+    const z = await autoZoneCustomer(r.rows[0].id).catch((e) => { console.error("zone:", e.message); return null; });
+    res.json(z ? { ...r.rows[0], line_id: z } : r.rows[0]);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
@@ -316,7 +324,8 @@ router.post("/customers/set-line", needAny(["f_customers", "edit"], ["f_dispatch
     const ex = (await query("SELECT id FROM f_lines WHERE active AND name = $1 LIMIT 1", [newName])).rows[0];
     lineId = ex ? ex.id : (await query("INSERT INTO f_lines (name, governorate) VALUES ($1,$2) RETURNING id", [newName, String(req.body?.governorate || "").trim().slice(0, 60) || null])).rows[0].id;
   } else if (lineId && !(await query("SELECT 1 FROM f_lines WHERE id = $1 AND active", [lineId])).rows.length) return bad(res, "القائمة غير موجودة.");
-  await query("UPDATE f_customers SET line_id = $1 WHERE id = ANY($2::int[])", [lineId, ids]);
+  // اختيار باليد: بيثبت (إلا «بدون منطقة» — بترجع تلقائي)
+  await query("UPDATE f_customers SET line_id = $1, line_manual = $3 WHERE id = ANY($2::int[])", [lineId, ids, lineId != null]);
   const line = lineId ? (await query("SELECT * FROM f_lines WHERE id = $1", [lineId])).rows[0] : null;
   res.json({ ok: true, line, count: ids.length });
 });
@@ -325,6 +334,7 @@ router.post("/customers/:id/location", edit, async (req, res) => {
   const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return bad(res, "الموقع غير صحيح.");
   await query("UPDATE f_customers SET lat = $1, lng = $2, maps_url = $4 WHERE id = $3", [lat, lng, req.params.id, `https://www.google.com/maps?q=${lat},${lng}`]);
+  await autoZoneCustomer(Number(req.params.id)).catch(() => null);
   res.json({ ok: true });
 });
 

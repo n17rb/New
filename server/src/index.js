@@ -197,4 +197,6 @@ initDbIfNeeded().then(() => {
   setInterval(() => forEachTenant("الطلبات بموعد", () => checkScheduledOrders()), 10 * 60 * 1000);
   // المصانع: سائق متأخر أو تتبع منقطع — كل ١٠ دقايق
   setInterval(() => forEachTenant("مراقبة المصنع", () => factoryWatch(), { plan: "factory" }), 10 * 60 * 1000);
+  // تقسيم الزباين لمناطق التوصيل أول ما يشتغل السيرفر
+  forEachTenant("مناطق التوصيل", () => import("./utils/factoryZones.js").then((m) => m.autoZoneAll()), { plan: "factory" });
 });
