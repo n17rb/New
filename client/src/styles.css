@@ -3079,3 +3079,25 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 .cs-line-t { min-width: 56px; text-align: left; }
 .cs-total { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 2px; font-weight: 700; }
 .cs-total b { font-size: 1.4rem; font-weight: 800; }
+
+/* وردية المحطة */
+.sh-start { display: flex; align-items: center; gap: 12px; width: 100%; text-align: start; font: inherit; color: inherit; background: linear-gradient(135deg, #EAF2FF, #E4F7FC); border: 1.5px dashed #9EC2FF; border-radius: 18px; padding: 14px; margin-bottom: 14px; cursor: pointer; font-size: 1.4rem; }
+.sh-start-t { display: flex; flex-direction: column; }
+.sh-start-t b { font-size: 1rem; color: #0A55D0; }
+.sh-start-t small { font-size: 0.78rem; color: var(--text-secondary); }
+[data-theme="dark"] .sh-start { background: rgba(10, 102, 245, 0.12); }
+.sh-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 12px 14px; margin-bottom: 14px; }
+.sh-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.sh-rows { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+.sh-rows > div { display: flex; justify-content: space-between; align-items: center; }
+.sh-rows span { color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+.sh-exp button { border: none; background: var(--urgent-soft); color: var(--urgent); border-radius: 8px; width: 22px; height: 22px; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.sh-total { border-top: 1px dashed var(--border); padding-top: 6px; }
+.sh-total span { color: var(--text) !important; font-weight: 700; }
+.sh-total b { font-size: 1.15rem; font-weight: 800; }
+.sh-done { display: flex; flex-direction: column; gap: 4px; border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; }
+.sh-done.ok { background: var(--success-soft); color: var(--success); }
+.sh-done.bad { background: var(--urgent-soft); color: var(--urgent); }
+.sh-done.warn { background: var(--warning-soft, #FFF4E0); color: #B26B00; }
+.sh-done span { font-size: 0.82rem; color: var(--text-secondary); }
+.exp-quick button.on { background: var(--primary); color: #fff; border-color: var(--primary); }

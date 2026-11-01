@@ -59,6 +59,7 @@ export default function Jard() {
     `⬇️ المجموع داخل: ${money(s.money_in)} JD`,
     s.expenses ? `🧾 صرفيات: ${money(s.expenses)} JD` : null,
     s.payroll_out ? `👷 رواتب وسحوبات: ${money(s.payroll_out)} JD` : null,
+    s.station_expenses ? `🧾 مصاريف المحطة: ${money(s.station_expenses)} JD` : null,
     `⬆️ المجموع طالع: ${money(s.money_out)} JD`,
     `✅ الصافي: ${money(s.net_cash)} JD`,
     "",
@@ -109,6 +110,7 @@ export default function Jard() {
             <div className="mini-ledger" style={{ marginTop: 0 }}>
               <Row label="صرفيات المحل" value={money(s.expenses)} sub={d.expenses_notes || null} />
               <Row label="رواتب وسحوبات" value={money(s.payroll_out)} />
+              {s.station_expenses > 0 && <Row label="مصاريف المحطة" value={money(s.station_expenses)} sub={d.station_expenses.map((e) => `${e.name} ${money(e.amount)}${e.full_name ? ` (${e.full_name})` : ""}`).join(" · ")} />}
               <Row label="المجموع" value={money(s.money_out)} strong color="var(--urgent)" />
             </div>
           </div>
@@ -152,6 +154,9 @@ export default function Jard() {
                           <div className="fc-sub" style={{ color: "var(--navy)", fontWeight: 700 }}>
                             🏪 باع بالمحل {money(x.shop_cash)} ({x.shop_count} بيعة)
                           </div>
+                        )}
+                        {x.st_expenses > 0 && (
+                          <div className="fc-sub" style={{ color: "var(--urgent)", fontWeight: 700 }}>🧾 صرف من الدرج {money(x.st_expenses)}</div>
                         )}
                         {x.custody > 0 && (
                           <div className="fc-sub" style={{ fontWeight: 700 }}>💼 معه عهدة {money(x.custody)} (مش من الكاش)</div>

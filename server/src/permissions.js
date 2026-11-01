@@ -61,6 +61,7 @@ export const ACTIONS = [
   { key: "factory_sale", label: "البيع على أرض المصنع (زبون إجا اشترى من المصنع)", plan: "factory" },
   { key: "self_attendance", label: "يسجّل حضوره بنفسه («وصلت»)" },
   { key: "approve_damage", label: "الموافقة على التوالف", features: ["station_stock"] },
+  { key: "give_custody", label: "إعطاء عهدة للموظفين وتعديلها", features: ["custody"] },
 ];
 
 export const LEVELS = ["none", "view", "edit"];
@@ -73,9 +74,9 @@ export const TEMPLATES = {
     sections: {
       dashboard: "view", customers: "edit", orders: "edit", delivery: "edit", trips: "edit",
       products: "edit", cash: "edit", driver_balances: "edit", reports: "view", settings: "edit",
-      debts: "edit", coupons: "edit", chat: "edit", activity_log: "none", backup: "none", jard: "view", payroll: "edit",
+      debts: "edit", coupons: "edit", chat: "edit", activity_log: "none", backup: "none", jard: "view", payroll: "edit", station: "edit", cashier: "view",
     },
-    actions: { discount: true, cancel_order: true, delete_customer: true, edit_prices: true, adjust_coupons: false, give_credit: true, chat_with_admin: true },
+    actions: { discount: true, cancel_order: true, delete_customer: true, edit_prices: true, adjust_coupons: false, give_credit: true, chat_with_admin: true, give_custody: true, approve_damage: true },
   },
   driver: {
     label: "كابتن توصيل",

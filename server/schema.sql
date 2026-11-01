@@ -1555,3 +1555,25 @@ ALTER TABLE f_customers ADD COLUMN IF NOT EXISTS line_manual BOOLEAN NOT NULL DE
 
 -- حدود المنطقة مرسومة على الخريطة: [[lat,lng],...] — أي زبون جوّاها بيدخل فيها
 ALTER TABLE f_lines ADD COLUMN IF NOT EXISTS polygon JSONB;
+
+-- وردية المحطة: كاش أول الوردية، المصاريف (أخذ دينار…)، والعدّ آخرها
+CREATE TABLE IF NOT EXISTS st_shifts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(10) NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+  opening_cash NUMERIC(10,2) NOT NULL DEFAULT 0,
+  expected_cash NUMERIC(10,2),
+  counted_cash NUMERIC(10,2),
+  note TEXT,
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_st_shifts_open ON st_shifts(user_id) WHERE status = 'open';
+CREATE TABLE IF NOT EXISTS st_shift_expenses (
+  id SERIAL PRIMARY KEY,
+  shift_id INTEGER NOT NULL REFERENCES st_shifts(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  name VARCHAR(80) NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

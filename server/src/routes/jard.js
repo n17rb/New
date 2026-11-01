@@ -18,6 +18,11 @@ router.get("/", async (req, res) => {
   const today = jordanDate();
   const date = isDate(req.query.date) && req.query.date <= today ? req.query.date : today;
 
+  const stExp = await query(
+    `SELECT e.user_id, u.full_name, e.name, e.amount::float AS amount, e.created_at
+     FROM st_shift_expenses e LEFT JOIN users u ON u.id = e.user_id WHERE ${DAY_SQL("e.created_at")} ORDER BY e.created_at`,
+    [date]
+  ).catch(() => ({ rows: [] }));
   const [shopSales, custody] = await Promise.all([
     query(
       `SELECT s.created_by, u.full_name AS by_name, COUNT(*)::int AS count, COALESCE(SUM(s.total), 0)::float AS total
@@ -131,7 +136,14 @@ router.get("/", async (req, res) => {
     const d = drivers.find((y) => y.driver_id === c.user_id);
     if (d) d.custody = n(c.amount);
   }
-  for (const d of drivers) d.total_cash = n(d.cash + d.pkg_cash + (d.debt_cash || 0) + (d.shop_cash || 0));
+  // مصاريف المحطة (أخذ دينار…): بتنقص من اللي معه
+  for (const e of stExp.rows) {
+    let d = drivers.find((y) => y.driver_id != null && y.driver_id === e.user_id);
+    if (!d) { d = blank(e.user_id, e.full_name); drivers.push(d); }
+    d.st_expenses = n((d.st_expenses || 0) + e.amount);
+  }
+  for (const d of drivers) d.total_cash = n(d.cash + d.pkg_cash + (d.debt_cash || 0) + (d.shop_cash || 0) - (d.st_expenses || 0));
+  const stExpTotal = n(stExp.rows.reduce((a, x) => a + x.amount, 0));
   const shopCash = n(shopSales.rows.reduce((a, x) => a + x.total, 0));
   const couponsUsed = drivers.reduce((s, d) => s + d.coupons, 0);
   const couponsPaper = drivers.reduce((s, d) => s + (d.paper_coupons || 0), 0);
@@ -142,7 +154,7 @@ router.get("/", async (req, res) => {
   const payrollOut = n(payroll.rows.reduce((s, x) => s + x.amount, 0));
 
   const moneyIn = n(tripCash + shopDebtPayments + couponCash + shopCash);
-  const moneyOut = n(Number(exp.expenses) + payrollOut);
+  const moneyOut = n(Number(exp.expenses) + payrollOut + stExpTotal);
 
   res.json({
     date,
@@ -165,6 +177,7 @@ router.get("/", async (req, res) => {
       shop_debt_payments: shopDebtPayments,
       expenses: n(exp.expenses),
       payroll_out: payrollOut,
+      station_expenses: stExpTotal,
       money_in: moneyIn,
       money_out: moneyOut,
       net_cash: n(moneyIn - moneyOut),
@@ -178,6 +191,7 @@ router.get("/", async (req, res) => {
     coupon_sales: couponSales.rows,
     payroll: payroll.rows,
     custody: custody.rows,
+    station_expenses: stExp.rows,
     expenses_notes: exp.notes,
     products: bottles.rows,
   });

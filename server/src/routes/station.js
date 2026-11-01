@@ -309,8 +309,8 @@ router.get("/vehicles", feature("vehicles"), wrap(async (req, res) => {
     const round = open.find((r) => r.vehicle_id === v.id) || null;
     if (mine && round?.driver_id !== req.user.id) continue;
     const today = (await query(
-      `SELECT COUNT(*)::int AS n FROM st_rounds WHERE vehicle_id = $1 AND ${DAY("opened_at")}`,
-      [new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Amman" })]
+      `SELECT COUNT(*)::int AS n FROM st_rounds WHERE vehicle_id = $2 AND ${DAY("opened_at")}`,
+      [new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }), v.id]
     )).rows[0].n;
     out.push({ ...v, round: round ? { ...round, summary: await roundSummary(round) } : null, rounds_today: today });
   }
@@ -533,18 +533,19 @@ router.post("/cashier/sales/:id/void", feature("cashier"), wrap(async (req, res)
 // ============================================================
 // العهدة
 // ============================================================
+const canGiveCustody = (u) => u.role === "super_admin" || canAction(u, "give_custody") || can(u, "station", "edit");
 router.get("/custody", feature("custody"), wrap(async (req, res) => {
-  const all = can(req.user, "station", "view");
+  const all = can(req.user, "station", "view") || canGiveCustody(req.user);
   const r = await query(
     `SELECT u.id AS user_id, u.full_name, u.role, COALESCE(c.amount, 0)::float AS amount, c.note, c.updated_at, ub.full_name AS updated_by_name
      FROM users u LEFT JOIN st_custody c ON c.user_id = u.id LEFT JOIN users ub ON ub.id = c.updated_by
      WHERE u.status = 'active' ${all ? "" : "AND u.id = $1"} ORDER BY COALESCE(c.amount, 0) DESC, u.full_name`,
     all ? [] : [req.user.id]
   );
-  res.json({ people: r.rows, total: r2(r.rows.reduce((a, x) => a + x.amount, 0)), can_edit: can(req.user, "station", "edit") });
+  res.json({ people: r.rows, total: r2(r.rows.reduce((a, x) => a + x.amount, 0)), can_edit: canGiveCustody(req.user) });
 }));
 
-router.put("/custody/:userId", feature("custody"), perm("station", "edit"), wrap(async (req, res) => {
+router.put("/custody/:userId", feature("custody"), (req, res, next) => (canGiveCustody(req.user) ? next() : res.status(403).json({ error: "ما عندك صلاحية تعطي عهدة." })), wrap(async (req, res) => {
   const amount = r2(req.body?.amount);
   if (!Number.isFinite(amount) || amount < 0) throw fail(400, "اكتب مبلغ صحيح.");
   const u = (await query("SELECT id, full_name FROM users WHERE id = $1", [req.params.userId])).rows[0];
@@ -565,7 +566,7 @@ router.put("/custody/:userId", feature("custody"), perm("station", "edit"), wrap
   res.json({ ok: true });
 }));
 
-router.get("/custody/:userId/log", feature("custody"), perm("station", "view"), wrap(async (req, res) => {
+router.get("/custody/:userId/log", feature("custody"), (req, res, next) => (canGiveCustody(req.user) || can(req.user, "station", "view") ? next() : res.status(403).json({ error: "غير مصرح." })), wrap(async (req, res) => {
   const r = await query(
     `SELECT l.*, u.full_name AS by_name FROM st_custody_log l LEFT JOIN users u ON u.id = l.created_by WHERE l.user_id = $1 ORDER BY l.created_at DESC LIMIT 50`,
     [req.params.userId]
@@ -652,6 +653,87 @@ router.get("/summary", (req, res, next) => (["vehicles", "station_stock", "cashi
     profit, profit_total: r2(profit.reduce((a, p) => a + p.profit, 0)),
     sales_total: r2(shop.total + vehicles.total),
   });
+}));
+
+// ============================================================
+// وردية المحطة (جرد الكاش): كاش أول الوردية + البيع + سداد الديون − المصاريف = المفروض، وآخرها العدّ
+// ============================================================
+async function shiftTotals(sh) {
+  const end = sh.closed_at || new Date();
+  const [sales, debts, pk, ex] = await Promise.all([
+    query("SELECT COUNT(*)::int AS n, COALESCE(SUM(total), 0)::float AS t FROM st_sales WHERE status = 'done' AND created_by = $1 AND created_at >= $2 AND created_at <= $3", [sh.user_id, sh.opened_at, end]),
+    query("SELECT COUNT(*)::int AS n, COALESCE(SUM(-change_amount), 0)::float AS t FROM customer_debt_ledger WHERE reason = 'payment' AND trip_id IS NULL AND created_by = $1 AND created_at >= $2 AND created_at <= $3", [sh.user_id, sh.opened_at, end]),
+    query("SELECT COUNT(*)::int AS n, COALESCE(SUM(paid_amount), 0)::float AS t FROM coupon_sales WHERE trip_id IS NULL AND sold_by = $1 AND created_at >= $2 AND created_at <= $3", [sh.user_id, sh.opened_at, end]),
+    query("SELECT id, name, amount::float AS amount, created_at FROM st_shift_expenses WHERE shift_id = $1 ORDER BY created_at", [sh.id]),
+  ]);
+  const expenses = ex.rows;
+  const expTotal = r2(expenses.reduce((a, x) => a + x.amount, 0));
+  const expected = r2(Number(sh.opening_cash) + sales.rows[0].t + debts.rows[0].t + pk.rows[0].t - expTotal);
+  return {
+    ...sh, opening_cash: Number(sh.opening_cash), counted_cash: sh.counted_cash != null ? Number(sh.counted_cash) : null,
+    sales: sales.rows[0], debts: debts.rows[0], packages: pk.rows[0], expenses, expenses_total: expTotal, expected,
+    diff: sh.counted_cash != null ? r2(Number(sh.counted_cash) - Number(sh.expected_cash ?? expected)) : null,
+  };
+}
+
+router.get("/shift", feature("cashier"), perm("cashier", "view"), wrap(async (req, res) => {
+  const open = (await query("SELECT s.*, u.full_name FROM st_shifts s JOIN users u ON u.id = s.user_id WHERE s.user_id = $1 AND s.status = 'open'", [req.user.id])).rows[0];
+  const last = (await query("SELECT counted_cash FROM st_shifts WHERE status = 'closed' ORDER BY closed_at DESC LIMIT 1")).rows[0];
+  const manager = req.user.role === "super_admin" || can(req.user, "station", "view");
+  const recent = manager
+    ? (await query(
+        `SELECT s.*, u.full_name FROM st_shifts s JOIN users u ON u.id = s.user_id
+         WHERE s.opened_at > now() - interval '3 days' ORDER BY s.opened_at DESC LIMIT 15`
+      )).rows
+    : [];
+  const list = [];
+  for (const sh of recent) list.push(await shiftTotals(sh));
+  res.json({ shift: open ? await shiftTotals(open) : null, suggested_opening: last ? Number(last.counted_cash) : 0, recent: list });
+}));
+
+router.post("/shift/open", feature("cashier"), perm("cashier", "edit"), wrap(async (req, res) => {
+  const opening = r2(req.body?.opening_cash);
+  if (!Number.isFinite(opening) || opening < 0) throw fail(400, "اكتب كم في كاش بالدرج.");
+  const ex = await query("SELECT id FROM st_shifts WHERE user_id = $1 AND status = 'open'", [req.user.id]);
+  if (ex.rows[0]) throw fail(400, "عندك وردية مفتوحة.");
+  const sh = (await query("INSERT INTO st_shifts (user_id, opening_cash, note) VALUES ($1,$2,$3) RETURNING *", [req.user.id, opening, String(req.body?.note || "").trim().slice(0, 200) || null])).rows[0];
+  res.status(201).json(sh);
+}));
+
+router.post("/shift/expense", feature("cashier"), perm("cashier", "edit"), wrap(async (req, res) => {
+  const sh = (await query("SELECT * FROM st_shifts WHERE user_id = $1 AND status = 'open'", [req.user.id])).rows[0];
+  if (!sh) throw fail(400, "ابدأ الوردية أول.");
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  const amount = r2(req.body?.amount);
+  if (!name) throw fail(400, "على شو انصرفت؟");
+  if (!Number.isFinite(amount) || amount <= 0) throw fail(400, "اكتب المبلغ.");
+  await query("INSERT INTO st_shift_expenses (shift_id, user_id, name, amount) VALUES ($1,$2,$3,$4)", [sh.id, req.user.id, name, amount]);
+  res.status(201).json({ ok: true });
+}));
+
+router.delete("/shift/expense/:id", feature("cashier"), perm("cashier", "edit"), wrap(async (req, res) => {
+  await query(
+    "DELETE FROM st_shift_expenses e USING st_shifts s WHERE e.id = $1 AND s.id = e.shift_id AND s.status = 'open' AND s.user_id = $2",
+    [req.params.id, req.user.id]
+  );
+  res.json({ ok: true });
+}));
+
+router.post("/shift/close", feature("cashier"), perm("cashier", "edit"), wrap(async (req, res) => {
+  const sh = (await query("SELECT * FROM st_shifts WHERE user_id = $1 AND status = 'open'", [req.user.id])).rows[0];
+  if (!sh) throw fail(400, "ما في وردية مفتوحة.");
+  const counted = r2(req.body?.counted_cash);
+  if (!Number.isFinite(counted) || counted < 0) throw fail(400, "اكتب كم عدّيت كاش.");
+  const t = await shiftTotals(sh);
+  await query("UPDATE st_shifts SET status = 'closed', closed_at = now(), expected_cash = $1, counted_cash = $2, note = COALESCE($3, note) WHERE id = $4",
+    [t.expected, counted, String(req.body?.note || "").trim().slice(0, 200) || null, sh.id]);
+  const diff = r2(counted - t.expected);
+  const by = await userName(req.user.id);
+  await notifyUsers((u) => u.role === "super_admin" || can(u, "jard", "view") || can(u, "station", "edit"), {
+    type: "SHIFT_CLOSED", title: "جرد المحطة", url: "/cashier", actorId: req.user.id,
+    message: `🧮 ${by || "موظف المحطة"} سكّر الوردية: المفروض ${t.expected.toFixed(2)} وعدّ ${counted.toFixed(2)} JD${diff === 0 ? " — مطابق ✓" : diff < 0 ? ` — ناقص ${(-diff).toFixed(2)} ⚠️` : ` — زايد ${diff.toFixed(2)}`}${t.expenses_total ? ` · مصاريف ${t.expenses_total.toFixed(2)}` : ""}`,
+  });
+  res.json(await shiftTotals({ ...sh, status: "closed", closed_at: new Date(), expected_cash: t.expected, counted_cash: counted }));
 }));
 
 export default router;
