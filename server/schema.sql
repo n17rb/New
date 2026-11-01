@@ -1536,3 +1536,14 @@ ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_status_at TIMESTAMPTZ;
 ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_status_by INTEGER;
 ALTER TABLE f_ledger ADD COLUMN IF NOT EXISTS cheque_in_hand_at TIMESTAMPTZ;
 UPDATE f_ledger SET cheque_status = 'pending', cheque_in_hand_at = COALESCE(cheque_in_hand_at, created_at) WHERE method = 'cheque' AND cheque_status IS NULL;
+
+-- حسابات «مدير» بالمصنع: كل الأقسام والصلاحيات (زي المحاسب وأكثر) — مرة وحدة للحسابات الموجودة
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'mig_admin_full') THEN
+    UPDATE users SET permissions = jsonb_set(jsonb_set(permissions,
+        '{sections}', COALESCE(permissions->'sections', '{}'::jsonb) || '{"f_home":"view","f_orders":"edit","f_dispatch":"edit","f_customers":"edit","f_stock":"edit","f_production":"edit","f_money":"edit","f_fleet":"edit","f_reports":"view","f_maint":"edit","f_machines":"edit","f_store":"edit","payroll":"edit","activity_log":"view","backup":"view"}'::jsonb, true),
+        '{actions}', COALESCE(permissions->'actions', '{}'::jsonb) || '{"discount":true,"give_credit":true,"approve_expense":true,"adjust_stock":true,"give_bonus":true,"delete_customer":true,"self_attendance":true,"factory_sale":true}'::jsonb, true)
+      WHERE permissions IS NOT NULL AND permissions->>'template' = 'admin';
+    INSERT INTO app_settings (key, value) VALUES ('mig_admin_full', '1') ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;

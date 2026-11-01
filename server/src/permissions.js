@@ -121,7 +121,8 @@ const F = (o) => ({ f_home: "none", f_orders: "none", f_dispatch: "none", f_driv
 export const FACTORY_TEMPLATES = {
   admin: {
     label: "مدير",
-    sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", f_maint: "edit", f_machines: "edit", f_store: "edit", payroll: "edit" }),
+    // الإدارة بتعمل كلشي (زي المحاسب ومسؤول الحركة والمستودع…) — بس بدون «تطبيق السائق»
+    sections: F({ f_home: "view", f_orders: "edit", f_dispatch: "edit", f_customers: "edit", f_stock: "edit", f_production: "edit", f_money: "edit", f_fleet: "edit", f_reports: "view", f_maint: "edit", f_machines: "edit", f_store: "edit", payroll: "edit", activity_log: "view", backup: "view" }),
     actions: { discount: true, give_credit: true, approve_expense: true, adjust_stock: true, give_bonus: true, delete_customer: true, self_attendance: true, factory_sale: true },
   },
   dispatcher: {

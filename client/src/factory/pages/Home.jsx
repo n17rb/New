@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 const LiveMap = lazy(() => import("./Live.jsx").then((m) => ({ default: m.LiveMap })));
 const CashSheet = lazy(() => import("./Books.jsx").then((m) => ({ default: m.CashSheet })));
 const CounterSaleSheet = lazy(() => import("../CounterSale.jsx"));
+const QuickPay = lazy(() => import("../QuickPay.jsx"));
 import { FiCheckCircle, FiChevronLeft, FiChevronDown, FiTruck, FiMaximize2 } from "react-icons/fi";
 import { fapi } from "../fapi.js";
 import PushCard from "../PushCard.jsx";
@@ -64,10 +65,12 @@ export default function Home() {
         <div className="hm-quick">
           <button onClick={() => setCash("out")}><span>−</span> مصروف أو ضيافة</button>
           <button onClick={() => setCash("in")}><span>+</span> دخل للصندوق</button>
+          <button className="pay" onClick={() => setCash("pay")}><span>🧾</span> قبض من زبون (كاش / شيك)</button>
         </div>
       )}
       {cash === "sale" && <Suspense fallback={null}><CounterSaleSheet onClose={() => setCash(null)} onDone={() => { setCash(null); reload(); }} /></Suspense>}
-      {cash && cash !== "sale" && <Suspense fallback={null}><CashSheet kind={cash} cats={[]} onClose={() => setCash(null)} onDone={() => { setCash(null); fx.toast("انسجّل بالصندوق"); }} /></Suspense>}
+      {cash === "pay" && <Suspense fallback={null}><QuickPay onClose={() => setCash(null)} onDone={() => { setCash(null); fx.toast("انسجّلت الدفعة"); reload(); }} /></Suspense>}
+      {cash && cash !== "sale" && cash !== "pay" && <Suspense fallback={null}><CashSheet kind={cash} cats={[]} onClose={() => setCash(null)} onDone={() => { setCash(null); fx.toast("انسجّل بالصندوق"); }} /></Suspense>}
       {needsSetup && (
         <button className="fx-card soft fx-row" style={{ textAlign: "start", font: "inherit", cursor: "pointer", border: 0 }} onClick={() => nav("/f/setup")}>
           <FiCheckCircle style={{ width: 26, height: 26, color: "var(--fx-navy)" }} />
