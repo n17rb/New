@@ -82,4 +82,64 @@ router.post("/sample/remove", requireOwner, async (req, res) => {
   res.json({ ok: true, ...out });
 });
 
+// ============================================================
+// تصفير كامل: بيمسح كل شغل التجربة (طلبات، رحلات، فواتير، دفعات، شيكات، صندوق، مستودع، جرد،
+// صيانة، أعطال، تنبيهات، رواتب وسلف ودوام…) وبيرجّع الأرصدة صفر.
+// بيضل: الزباين ومعلوماتهم وأسعارهم ومناطقهم، المنتجات، السيارات، الموظفين وحساباتهم،
+// وأسماء المواد والمكنات والشركات، والإعدادات والشعار.
+// قبل المسح بتنحفظ نسخة احتياطية من كل اللي انمسح.
+// ============================================================
+const WIPE = [
+  "f_order_items", "f_order_exchanges", "f_order_edits", "f_messages", "f_ledger", "f_driver_ledger", "f_expenses",
+  "f_positions", "f_salvage", "f_stock_moves", "f_orders", "f_trips", "f_material_moves", "f_downtime", "f_alerts", "f_idem",
+  "f_maint", "f_work_hours", "f_qchecks", "f_filter_changes", "f_partner_ledger", "f_recycle", "f_cashbook", "f_agreements",
+  "f_handover", "f_meter_entries", "employee_transactions", "attendance",
+];
+const NO_BACKUP = new Set(["f_positions", "f_idem"]); // نقاط الـGPS كثيرة وما إلها لزمة بالنسخة
+
+router.get("/reset", requireOwner, async (req, res) => {
+  const counts = {};
+  for (const t of ["f_orders", "f_trips", "f_ledger", "f_cashbook", "f_stock_moves", "f_material_moves", "f_alerts", "employee_transactions"]) {
+    counts[t] = Number((await query(`SELECT COUNT(*)::int AS n FROM ${t}`).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n);
+  }
+  res.json(counts);
+});
+
+router.post("/reset", requireOwner, async (req, res) => {
+  if (req.tenant?.is_demo) return bad(res, "هاي نسخة عرض وبترجع لأولها كل يوم.");
+  const c = String(req.body?.confirm || "").trim().replace(/[\u064B-\u0652]/g, "");
+  if (c !== "صفر") return bad(res, "اكتب «صفر» للتأكيد.");
+  const client = await pool.connect();
+  const out = {};
+  try {
+    await client.query("BEGIN");
+    const q = (t, p) => client.query(t, p);
+    // النسخة الاحتياطية أول
+    const backup = { kind: "factory_reset", generated_at: new Date().toISOString(), by: req.user.full_name, tables: {} };
+    for (const t of WIPE) {
+      const r = await q(`SELECT COUNT(*)::int AS n FROM ${t}`);
+      out[t] = r.rows[0].n;
+      if (!NO_BACKUP.has(t) && r.rows[0].n) backup.tables[t] = (await q(`SELECT * FROM ${t}`)).rows;
+    }
+    backup.tables.f_customers_balance = (await q("SELECT id, name, balance FROM f_customers WHERE balance <> 0")).rows;
+    backup.tables.f_materials_balance = (await q("SELECT id, name, balance FROM f_materials WHERE balance <> 0")).rows;
+    backup.tables.f_partners_balance = (await q("SELECT id, name, balance FROM f_partners WHERE balance <> 0")).rows;
+    await q("INSERT INTO backup_snapshots (data) VALUES ($1)", [JSON.stringify(backup)]);
+    // المسح (والترقيم بيرجع من ١: الفواتير والطلبات والرحلات)
+    await q(`TRUNCATE ${WIPE.join(", ")} RESTART IDENTITY`);
+    await q("UPDATE f_customers SET balance = 0 WHERE balance <> 0");
+    await q("UPDATE f_materials SET balance = 0 WHERE balance <> 0");
+    await q("UPDATE f_partners SET balance = 0 WHERE balance <> 0");
+    await q("UPDATE f_filters SET last_changed = NULL").catch(() => {});
+    await q("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  await logActivity({ userId: req.user.id, action: "F_RESET_ALL", recordType: "factory", recordId: null, newValue: out });
+  res.json({ ok: true, orders: out.f_orders, trips: out.f_trips, ledger: out.f_ledger });
+});
+
 export default router;
