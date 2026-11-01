@@ -203,6 +203,19 @@ router.put("/lines/:id", editLines, async (req, res) => {
   if (!r.rows[0]) return bad(res, "الخط غير موجود.", 404);
   res.json(r.rows[0]);
 });
+// حدود المنطقة على الخريطة: بترسمها، وكل زبون جوّاها بينتقل لها لحاله
+router.put("/lines/:id/polygon", editLines, async (req, res) => {
+  const Z = await import("../../utils/factoryZones.js");
+  let poly; try { poly = Z.cleanPolygon(req.body?.polygon ?? null); } catch (e) { return bad(res, e.message); }
+  const r = await query("UPDATE f_lines SET polygon = $1 WHERE id = $2 AND active RETURNING id, name", [poly ? JSON.stringify(poly) : null, req.params.id]);
+  if (!r.rows[0]) return bad(res, "المنطقة غير موجودة.", 404);
+  const before = Number((await query("SELECT COUNT(*)::int n FROM f_customers WHERE line_id = $1 AND active", [req.params.id])).rows[0].n);
+  // شلت الحدود؟ زباينها (اللي مش محطوطين باليد) برجعوا يتقسموا تلقائي
+  if (!poly) await query("UPDATE f_customers SET line_id = NULL WHERE line_id = $1 AND NOT line_manual", [req.params.id]);
+  await Z.autoZoneAll();
+  const after = Number((await query("SELECT COUNT(*)::int n FROM f_customers WHERE line_id = $1 AND active", [req.params.id])).rows[0].n);
+  res.json({ ok: true, polygon: poly, customers: after, moved: after - before });
+});
 router.delete("/lines/:id", editLines, async (req, res) => {
   if ((await query("SELECT 1 FROM f_lines WHERE id = $1 AND zone_key IS NOT NULL", [req.params.id])).rows.length) return bad(res, "هاي منطقة ثابتة وما بتنحذف.");
   await query("UPDATE f_lines SET active = false WHERE id = $1", [req.params.id]);

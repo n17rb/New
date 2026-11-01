@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { FiMapPin, FiX, FiChevronLeft, FiArrowRight } from "react-icons/fi";
 import { Sheet, num, useFx } from "./ui.jsx";
 import { fapi } from "./fapi.js";
+const ZoneMap = lazy(() => import("./ZoneMap.jsx"));
 
 // ============================================================
 // فلترة حسب المنطقة: المحافظة ← اللواء ← المنطقة، وجنب كل وحدة كم طلب/زبون فيها
@@ -19,7 +20,7 @@ const label = (s) => { const c = clean(s); if (!c) return NONE; const k = nk(c);
 // مناطق بنعاملها كأنها محافظة لحالها (الرمثا: لواء بإربد، بس شغلها كبير فإلها مناطقها)
 const OWN = ["الرمثا"];
 const OWN_KEYS = new Set(OWN.map(nk));
-const gov = (x) => {
+export const gov = (x) => {
   for (const f of [x.district, x.city]) { const k = nk(clean(f).replace(/^قصبة\s+/, "")); if (OWN_KEYS.has(k)) return OWN.find((o) => nk(o) === k); }
   const c = clean(x.governorate); return c ? GOV_BY_KEY.get(nk(c)) || label(c) : NONE;
 };
@@ -322,16 +323,19 @@ export function ZonesEditor({ gov: g, onClose }) {
   const [names, setNames] = useState(() => Object.fromEntries(zs.map((z) => [z.id, z.name])));
   const [add, setAdd] = useState("");
   const [busy, setBusy] = useState(false);
+  const [map, setMap] = useState(false);
   const run = async (f) => { setBusy(true); try { await f(); await fx.reloadBoot?.(); } catch (e) { fx.toast(e.message); } finally { setBusy(false); } };
+  if (map) return <Suspense fallback={null}><ZoneMap gov={g} onClose={() => setMap(false)} /></Suspense>;
   return (
     <Sheet title={`مناطق ${g}`} onClose={onClose}>
       <div className="fx-stack">
+        <button className="fx-btn pri block" onClick={() => setMap(true)}>🗺️ ارسم المناطق على الخريطة</button>
         <div className="fx-note sky">اكتب المناطق اللي بتشتغل فيها بـ{g} مثل ما بتحكيها: وسط {g}، أطراف {g}، صريح، الرمثا… الزبون اللي بلده نفس اسم المنطقة بيدخل فيها لحاله، والباقي بتحطه من الطلبات: حدد طلبات واكبس «منطقة».</div>
         {zs.map((z) => (
           <div key={z.id} className="fx-row" style={{ flexWrap: "nowrap", gap: 8 }}>
             {z.zone_key ? (
               <div className="fx-input fx-grow" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--fx-surface-2)" }}>
-                <span>{z.name}</span><small style={{ color: "var(--fx-muted)" }}>🔒 ثابتة</small>
+                <span>{z.name}</span><small style={{ color: "var(--fx-muted)" }}>{z.polygon ? "🗺️ مرسومة · " : ""}🔒 ثابتة</small>
               </div>
             ) : (<>
               <input className="fx-input fx-grow" value={names[z.id] ?? ""} onChange={(e) => setNames({ ...names, [z.id]: e.target.value })}

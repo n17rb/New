@@ -98,37 +98,75 @@ function sameZoneName(a, b) {
 
 const ZONE_GOV = Object.fromEntries(ZONES.map((z) => [z.key, z.gov]));
 
-// زبون واحد (بعد الحفظ). customer = صف f_customers
+// ---------- الحدود المرسومة على الخريطة ----------
+// النقطة جوّا المضلع؟ (ray casting) — النقاط [lat, lng]
+export function inPoly(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i], [yj, xj] = poly[j];
+    if ((yi > p[0]) !== (yj > p[0]) && p[1] < ((xj - xi) * (p[0] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+const polyArea = (poly) => Math.abs(poly.reduce((a, [y, x], i) => { const [y2, x2] = poly[(i + 1) % poly.length]; return a + x * y2 - x2 * y; }, 0)) / 2;
+export function cleanPolygon(v) {
+  if (v == null) return null;
+  if (!Array.isArray(v)) throw new Error("الحدود غير صحيحة.");
+  const pts = v.map((x) => [Number(x?.[0]), Number(x?.[1])]).filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180);
+  if (pts.length < 3) throw new Error("ارسم ٣ نقاط على الأقل.");
+  return pts.slice(0, 300).map(([a, b]) => [Math.round(a * 1e6) / 1e6, Math.round(b * 1e6) / 1e6]);
+}
+
+async function context(q) {
+  const map = await ensureZones(q);
+  const rows = (await q("SELECT id, governorate, zone_key, polygon FROM f_lines WHERE active AND polygon IS NOT NULL")).rows;
+  const polys = rows.map((r) => ({ id: r.id, gov: r.governorate, key: r.zone_key, pts: typeof r.polygon === "string" ? JSON.parse(r.polygon) : r.polygon }))
+    .filter((r) => Array.isArray(r.pts) && r.pts.length >= 3).map((r) => ({ ...r, area: polyArea(r.pts) })).sort((a, b) => a.area - b.area);
+  return { map, polys, autoIds: new Set([...Object.values(map), ...polys.map((x) => x.id)]), drawnKeys: new Set(polys.map((x) => x.key).filter(Boolean)) };
+}
+
+// زبون واحد (بعد الحفظ)
 export async function autoZoneCustomer(id, q = query) {
   const c = (await q("SELECT id, city, address, governorate, district, lat, lng, line_id, line_manual FROM f_customers WHERE id = $1", [id])).rows[0];
   if (!c || c.line_manual) return null;
-  const map = await ensureZones(q);
-  return applyZone(c, map, q);
+  return applyZone(c, await context(q), q);
 }
 
-async function applyZone(c, map, q) {
-  const autoIds = new Set(Object.values(map));
-  // قائمة يدوية قديمة (مش منطقة تلقائية)؟ ما منلمسها
-  if (c.line_id && !autoIds.has(c.line_id)) return null;
-  const key = zoneKeyFor(c);
-  const lineId = key ? map[key] || null : null;
-  if (!key) return null;
+async function applyZone(c, ctx, q) {
+  const p = c.lat != null && c.lng != null && Number(c.lat) ? [Number(c.lat), Number(c.lng)] : null;
+  // ١) جوّا حدود مرسومة؟ هي اللي بتقرر (أصغر منطقة إذا تداخلوا)
+  const hit = p && ctx.polys.find((z) => inPoly(p, z.pts));
+  let lineId = null, gov = null;
+  if (hit) { lineId = hit.id; gov = hit.gov; }
+  else {
+    // قائمة يدوية قديمة (مش منطقة تلقائية ولا مرسومة)؟ ما منلمسها
+    if (c.line_id && !ctx.autoIds.has(c.line_id)) return null;
+    const key = zoneKeyFor(c);
+    // المنطقة الثابتة اللي إلها حدود مرسومة: الحدود بس بتقرر
+    if (key && !ctx.drawnKeys.has(key)) { lineId = ctx.map[key] || null; gov = ZONE_GOV[key]; }
+    if (!lineId) {
+      // كان بمنطقة مرسومة وطلع برّاها؟ منشيله منها
+      if (c.line_id && ctx.polys.some((z) => z.id === c.line_id)) { await q("UPDATE f_customers SET line_id = NULL WHERE id = $1", [c.id]); return null; }
+      return null;
+    }
+  }
   if (lineId === c.line_id) return lineId;
+  const ramtha = String(gov || "").replace(/[أإآ]/g, "ا") === "الرمثا";
   // زبون الرمثا بدون لواء: منحطله «الرمثا» عشان يطلع تحت الرمثا
-  const district = ZONE_GOV[key] === "الرمثا" && !c.district ? "الرمثا" : c.district;
-  const governorate = c.governorate || "إربد";
+  const district = ramtha && !c.district ? "الرمثا" : c.district;
+  const governorate = c.governorate || (ramtha || !gov ? "إربد" : gov);
   await q("UPDATE f_customers SET line_id = $1, district = $2, governorate = $3 WHERE id = $4", [lineId, district, governorate, c.id]);
   return lineId;
 }
 
 // كل الزباين (أول تشغيل وكل شوي): اللي مش يدوي
 export async function autoZoneAll(q = query) {
-  const map = await ensureZones(q);
+  const ctx = await context(q);
   const rows = (await q("SELECT id, city, address, governorate, district, lat, lng, line_id, line_manual FROM f_customers WHERE active AND NOT line_manual")).rows;
   let n = 0;
   for (const c of rows) {
     const before = c.line_id;
-    const after = await applyZone(c, map, q);
+    const after = await applyZone(c, ctx, q);
     if (after && after !== before) n++;
   }
   return n;

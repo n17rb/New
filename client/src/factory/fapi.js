@@ -43,6 +43,7 @@ export const fapi = {
   saveVehicle: (v) => (v.id ? put(`/vehicles/${v.id}`, v) : post("/vehicles", v)),
   saveLine: (l) => (l.id ? put(`/lines/${l.id}`, l) : post("/lines", l)),
   deleteLine: (id) => del(`/lines/${id}`),
+  linePolygon: (id, polygon) => put(`/lines/${id}/polygon`, { polygon }),
   saveMachine: (m) => (m.id ? put(`/machines/${m.id}`, m) : post("/machines", m)),
   saveMaterial: (m) => (m.id ? put(`/materials/${m.id}`, m) : post("/materials", m)),
   saveSettings: (b) => put("/settings", b),
