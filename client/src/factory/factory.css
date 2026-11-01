@@ -1288,3 +1288,34 @@ a.fx-pill { text-decoration: none; }
 .ch-card.due .dt { color: #b4521c; } .ch-card.bad .dt { color: #c43d3d; } .ch-card.ok .dt { color: #1f9d55; }
 .ch-card .by { color: var(--fx-muted); font-size: 11.5px; }
 .ch-card .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* زر المسح جوّا الخانة */
+.fx-clear-x { position: fixed; z-index: 120; transform: translateY(-50%); width: 28px; height: 28px; border-radius: 50%; border: 0; background: #e9eff5; color: #4a6077; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.fx-clear-x svg { width: 15px; height: 15px; }
+.fx-has-x { padding-inline-end: 40px !important; }
+input[dir="ltr"].fx-has-x { padding-inline-end: 12px !important; padding-left: 40px !important; }
+.fx-back svg { width: 22px; height: 22px; }
+
+/* ===== على الكمبيوتر (ويندوز): شاشة عريضة، القائمة على الجنب، والنوافذ بالنص ===== */
+@media (min-width: 1000px) {
+  .fx-shell { max-width: none; margin: 0; padding-bottom: 40px; padding-inline-start: 232px; }
+  .fx-top { padding-inline: 28px; }
+  .fx-nav {
+    top: 0; bottom: 0; right: 0; left: auto; transform: none; width: 220px; height: 100vh;
+    flex-direction: column; justify-content: flex-start; gap: 4px; padding: 84px 12px 20px;
+    border-top: 0; border-inline-end: 1px solid var(--fx-line); background: #fff;
+  }
+  .fx-nav a { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 14px; font-size: 15px; justify-items: start; }
+  .fx-shell > .fx-page, .fx-shell > div > .fx-page, .fx-page { max-width: 980px; margin-inline: auto; padding: 24px 28px 16px; }
+  .fx-sheet { bottom: auto; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100% - 48px)); max-height: 86vh; border-radius: 22px; padding-bottom: 22px; }
+  .fx-grab { display: none; }
+  .fx-toast { bottom: 32px; }
+  /* قوائم بعمودين لما في مجال */
+  .jd-list, .fx-plants, .ch, .hm-quick { gap: 12px; }
+  .jd-list { grid-template-columns: 1fr 1fr; }
+  .fx-plants > .fx-plant-card, .fx-plants > .fx-tile { flex: 0 0 calc(33.33% - 8px); }
+  .fx-clear-x { width: 26px; height: 26px; }
+}
+@media (min-width: 1400px) {
+  .fx-page { max-width: 1120px; }
+}
