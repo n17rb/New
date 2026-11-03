@@ -419,6 +419,14 @@ router.get("/:id/replay", async (req, res) => {
   });
 });
 
+// موقع السيارة بس (خفيف) — الخريطة بتسأل عنه كل كم ثانية
+router.get("/:id/live", async (req, res) => {
+  const t = (await query("SELECT driver_id, current_latitude, current_longitude, location_updated_at FROM trips WHERE id = $1", [req.params.id])).rows[0];
+  if (!t) return res.status(404).json({ error: "الرحلة غير موجودة." });
+  if (!isPrivileged(req.user) && t.driver_id !== req.user.id) return res.status(403).json({ error: "غير مصرح." });
+  res.json({ lat: t.current_latitude, lng: t.current_longitude, at: t.location_updated_at });
+});
+
 router.get("/:id", async (req, res) => {
   const tripResult = await query(
     `SELECT t.*, u.full_name AS driver_name

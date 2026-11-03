@@ -3124,3 +3124,5 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 .wa-outbox { margin-top: 12px; }
 .wa-ob-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 2px; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
 .wa-ob-row small { font-weight: 700; color: var(--text-secondary); }
+.map-follow { position: absolute; z-index: 500; bottom: 10px; inset-inline-start: 10px; font: inherit; font-size: 0.8rem; font-weight: 800; border: none; border-radius: 99px; padding: 7px 12px; background: rgba(255,255,255,0.95); color: var(--navy, #0A2540); box-shadow: 0 2px 10px rgba(0,0,0,0.15); cursor: pointer; }
+.map-follow.on { background: #0A66F5; color: #fff; }

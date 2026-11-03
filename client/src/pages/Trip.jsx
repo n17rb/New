@@ -613,6 +613,7 @@ function ActiveTripView({ trip, isSuperAdmin, isManagerViewOnly, canOperate, onC
         driverLocation={trip.current_latitude ? { lat: trip.current_latitude, lng: trip.current_longitude } : null}
         showDriverMarker={isSuperAdmin || isManagerViewOnly}
         routeGeometry={trip.route_geometry}
+        tripId={trip.status === "STARTED" ? trip.id : null}
       />
 
       <div className="card">

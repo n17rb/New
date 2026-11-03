@@ -18,14 +18,14 @@ export default function NativeTracker({ enabled }) {
         backgroundMessage: "موقعك بيوصل للمحل وإنت بالطريق",
         requestPermissions: true,
         stale: false,
-        distanceFilter: 15,
+        distanceFilter: 5,
       },
       (loc, err) => {
         if (err) {
           if (err.code === "NOT_AUTHORIZED" && window.confirm("التطبيق محتاج صلاحية الموقع عشان يتبع السيارة. نفتح الإعدادات؟ اختار «السماح طوال الوقت»")) BG.openSettings();
           return;
         }
-        if (!loc || Date.now() - lastAt < 15000) return;
+        if (!loc || Date.now() - lastAt < 3000) return;
         lastAt = Date.now();
         api.pingLocation(loc.latitude, loc.longitude).catch(() => {});
       }
