@@ -26,7 +26,7 @@ router.get("/", wrap(async (req, res) => {
     ),
   ]);
   res.json({
-    settings: { enabled: s.enabled, phone_id: s.phone_id, token_masked: masked(s.token), has_token: !!s.token, template: s.template, lang: s.lang, hour: s.hour, last_run: s.last_run },
+    settings: { provider: s.provider, enabled: s.enabled, phone_id: s.phone_id, token_masked: masked(s.token), has_token: !!s.token, template: s.template, lang: s.lang, hour: s.hour, last_run: s.last_run },
     configured: isConfigured(s),
     today, shop_name: currentTenant()?.name || "",
     recipients, log: log.rows,
@@ -37,6 +37,7 @@ router.put("/", wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   if (typeof b.enabled === "boolean") patch.wa_enabled = b.enabled ? "1" : "0";
+  if (["meta", "d360"].includes(b.provider)) patch.wa_provider = b.provider;
   if (b.phone_id != null) patch.wa_phone_id = String(b.phone_id).replace(/\D/g, "").slice(0, 30);
   if (b.token) patch.wa_token = String(b.token).trim().slice(0, 600);
   if (b.template != null) patch.wa_template = String(b.template).trim().replace(/[^a-z0-9_]/gi, "").toLowerCase().slice(0, 100);
@@ -54,7 +55,7 @@ router.put("/", wrap(async (req, res) => {
 // رسالة تجربة لرقمك
 router.post("/test", wrap(async (req, res) => {
   const s = await getWaSettings();
-  if (!isConfigured(s)) return res.status(400).json({ error: "عبّي رقم الهاتف (Phone number ID) والمفتاح واسم القالب أول." });
+  if (!isConfigured(s)) return res.status(400).json({ error: "عبّي المفتاح واسم القالب (وPhone number ID إذا ربط مباشر مع Meta) أول." });
   const phone = String(req.body?.phone || "").replace(/\D/g, "").replace(/^0/, "962");
   if (phone.length < 10) return res.status(400).json({ error: "اكتب رقم صحيح." });
   const out = await sendTemplate(s, phone, ["يوسف", currentTenant()?.name || "المحل", "قارورتين"]);

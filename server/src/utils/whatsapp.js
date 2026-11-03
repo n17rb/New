@@ -8,7 +8,7 @@ import { can } from "../permissions.js";
 // الرسالة اللي بتنبعت للزبون لازم تكون «قالب» (Template) معتمد من Meta، فيه متغيرات:
 //   {{1}} اسم الزبون   {{2}} اسم المحل   {{3}} الكمية اللي بياخذها عادةً
 // ============================================================
-const KEYS = ["wa_enabled", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
+const KEYS = ["wa_enabled", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export async function getWaSettings() {
@@ -17,6 +17,8 @@ export async function getWaSettings() {
   const hour = Number(m.wa_hour);
   return {
     enabled: m.wa_enabled === "1",
+    // meta = WhatsApp Cloud API مباشرة · d360 = عن طريق 360dialog (بتسمح تضل على تطبيق واتساب أعمال بنفس الرقم)
+    provider: m.wa_provider === "d360" ? "d360" : "meta",
     phone_id: m.wa_phone_id || "",
     token: m.wa_token || "",
     template: m.wa_template || "",
@@ -36,7 +38,7 @@ export async function saveWaSettings(patch) {
   }
 }
 
-export const isConfigured = (s) => !!(s.phone_id && s.token && s.template);
+export const isConfigured = (s) => !!(s.token && s.template && (s.provider === "d360" || s.phone_id));
 
 // إرسال قالب لرقم واحد. بيرجّع {ok, id} أو {ok:false, error}
 export async function sendTemplate(s, to, params) {
@@ -51,11 +53,17 @@ export async function sendTemplate(s, to, params) {
     },
   };
   try {
-    const res = await fetch(`${GRAPH}/${encodeURIComponent(s.phone_id)}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${s.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = s.provider === "d360"
+      ? await fetch("https://waba-v2.360dialog.io/messages", {
+          method: "POST",
+          headers: { "D360-API-KEY": s.token, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      : await fetch(`${GRAPH}/${encodeURIComponent(s.phone_id)}/messages`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${s.token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, error: data?.error?.error_user_msg || data?.error?.message || `HTTP ${res.status}` };
     return { ok: true, id: data?.messages?.[0]?.id || null };

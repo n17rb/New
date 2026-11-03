@@ -12,13 +12,13 @@ export default function WhatsAppAuto() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({ phone_id: "", token: "", template: "", lang: "ar" });
+  const [f, setF] = useState({ provider: "d360", phone_id: "", token: "", template: "", lang: "ar" });
   const [showSetup, setShowSetup] = useState(false);
   const [testPhone, setTestPhone] = useState("");
 
   const load = () => api.waGet().then((r) => {
     setD(r);
-    setF({ phone_id: r.settings.phone_id, token: "", template: r.settings.template, lang: r.settings.lang });
+    setF({ provider: r.settings.provider || "meta", phone_id: r.settings.phone_id, token: "", template: r.settings.template, lang: r.settings.lang });
     if (!r.configured) setShowSetup(true);
   }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
@@ -98,28 +98,43 @@ export default function WhatsAppAuto() {
       </button>
       {showSetup && (
         <div className="card">
+          <div className="sheet-q" style={{ marginTop: 0 }}>كيف بدك تربط؟</div>
+          <div className="seg" style={{ marginBottom: 12 }}>
+            <button type="button" className={f.provider === "d360" ? "on" : ""} onClick={() => setF({ ...f, provider: "d360" })}>رقم المحل نفسه (360dialog)</button>
+            <button type="button" className={f.provider === "meta" ? "on" : ""} onClick={() => setF({ ...f, provider: "meta" })}>مع Meta مباشرة</button>
+          </div>
           <details className="wa-help">
             <summary>كيف أربط؟ (مرة وحدة بس)</summary>
-            <ol>
-              <li>ادخل على <b>business.facebook.com</b> واعمل حساب أعمال، وضيف رقم واتساب للمحل (رقم مش مركّب عليه واتساب عادي).</li>
-              <li>من <b>WhatsApp Manager ← Message templates</b> اعمل قالب جديد: النوع <b>Utility</b>، اللغة <b>Arabic</b>، والنص بالزبط:
-                <pre className="wa-pre">{WA_TEMPLATE_TEXT}</pre>
-                واستنى لحد ما ينقبل (عادةً دقايق لساعات).</li>
-              <li>من <b>WhatsApp ← API Setup</b> انسخ <b>Phone number ID</b>.</li>
-              <li>من <b>Business settings ← System users</b> اعمل مستخدم وطلّع <b>Access token</b> دائم بصلاحية whatsapp_business_messaging.</li>
-              <li>حط الثلاث أشياء هون، واعمل رسالة تجربة لرقمك.</li>
-            </ol>
-            <p className="text-secondary" style={{ fontSize: "0.78rem" }}>Meta بتاخذ مبلغ صغير على كل رسالة (حسب الأسعار عندهم)، وأول كم رسالة بالشهر عادةً ببلاش.</p>
+            {f.provider === "d360" ? (
+              <ol>
+                <li>هاي الطريقة لرقمك اللي عليه <b>واتساب أعمال</b>: بتضل تستعمل التطبيق عادي على موبايلك، والنظام بيبعت من نفس الرقم.</li>
+                <li>تأكد إنه تطبيق واتساب أعمال <b>محدّث لآخر نسخة</b>، وإنه عندك حساب <b>Meta Business</b> (business.facebook.com) باسم المحل ومعلوماته.</li>
+                <li>اعمل حساب على <b>360dialog.com</b> وابدأ الربط (Embedded Signup)، واختار إنه الرقم <b>موصول بتطبيق WhatsApp Business</b> — بيطلعلك QR بتمسحه من التطبيق.</li>
+                <li>من لوحة 360dialog اعمل قالب (Template) نوعه <b>Utility</b> ولغته <b>Arabic</b> بهالنص بالزبط:
+                  <pre className="wa-pre">{WA_TEMPLATE_TEXT}</pre>
+                  واستنى لحد ما ينقبل.</li>
+                <li>طلّع <b>API Key</b> من 360dialog وحطه هون مع اسم القالب، وابعت رسالة تجربة لرقمك.</li>
+              </ol>
+            ) : (
+              <ol>
+                <li>هاي الطريقة لرقم <b>جديد ما عليه واتساب</b> (إذا ربطت رقم عليه واتساب أعمال بهالطريقة، التطبيق بيوقف على هالرقم).</li>
+                <li>من <b>business.facebook.com</b> ضيف الرقم، ومن <b>WhatsApp Manager ← Message templates</b> اعمل قالب Utility عربي بهالنص:
+                  <pre className="wa-pre">{WA_TEMPLATE_TEXT}</pre></li>
+                <li>من <b>API Setup</b> انسخ <b>Phone number ID</b>، ومن <b>System users</b> طلّع <b>Access token</b> دائم.</li>
+                <li>حطهم هون وابعت رسالة تجربة.</li>
+              </ol>
+            )}
+            <p className="text-secondary" style={{ fontSize: "0.78rem" }}>الرسايل اللي بتبعتها من التطبيق بإيدك بتضل ببلاش. رسايل النظام التلقائية عليها مبلغ صغير لكل رسالة حسب أسعار Meta{f.provider === "d360" ? " + اشتراك 360dialog الشهري" : ""}.</p>
           </details>
-          <label className="pr-field"><span>Phone number ID</span><input value={f.phone_id} onChange={(e) => setF({ ...f, phone_id: e.target.value })} dir="ltr" inputMode="numeric" placeholder="123456789012345" /></label>
-          <label className="pr-field"><span>Access token {s.has_token && <small>(محفوظ {s.token_masked} — اكتب جديد بس إذا بدك تغيّره)</small>}</span>
-            <input value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} dir="ltr" placeholder={s.has_token ? s.token_masked : "EAAG…"} autoComplete="off" />
+          {f.provider === "meta" && <label className="pr-field"><span>Phone number ID</span><input value={f.phone_id} onChange={(e) => setF({ ...f, phone_id: e.target.value })} dir="ltr" inputMode="numeric" placeholder="123456789012345" /></label>}
+          <label className="pr-field"><span>{f.provider === "d360" ? "API Key (من 360dialog)" : "Access token"} {s.has_token && <small>(محفوظ {s.token_masked} — اكتب جديد بس إذا بدك تغيّره)</small>}</span>
+            <input value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} dir="ltr" placeholder={s.has_token ? s.token_masked : f.provider === "d360" ? "API key" : "EAAG…"} autoComplete="off" />
           </label>
           <div className="loc-two">
             <label className="pr-field"><span>اسم القالب</span><input value={f.template} onChange={(e) => setF({ ...f, template: e.target.value })} dir="ltr" placeholder="water_reminder" /></label>
             <label className="pr-field"><span>اللغة</span><input value={f.lang} onChange={(e) => setF({ ...f, lang: e.target.value })} dir="ltr" placeholder="ar" /></label>
           </div>
-          <button className="btn-primary" disabled={busy} onClick={() => run(() => api.waSave({ phone_id: f.phone_id, template: f.template, lang: f.lang, ...(f.token ? { token: f.token } : {}) }), "✅ انحفظت الإعدادات")}>حفظ</button>
+          <button className="btn-primary" disabled={busy} onClick={() => run(() => api.waSave({ provider: f.provider, phone_id: f.phone_id, template: f.template, lang: f.lang, ...(f.token ? { token: f.token } : {}) }), "✅ انحفظت الإعدادات")}>حفظ</button>
 
           <div className="sheet-q" style={{ marginTop: 16 }}>رسالة تجربة</div>
           <div className="ec-add" style={{ marginTop: 0 }}>
