@@ -32,6 +32,7 @@ const CustomerGrowth = lazy(() => import("./pages/CustomerGrowth.jsx"));
 const Notes = lazy(() => import("./pages/Notes.jsx"));
 const Users = lazy(() => import("./pages/Users.jsx"));
 import BottomNav from "./components/BottomNav.jsx";
+import NativeTracker from "./components/NativeTracker.jsx";
 const More = lazy(() => import("./pages/More.jsx"));
 const ShopSettings = lazy(() => import("./pages/ShopSettings.jsx"));
 const Debts = lazy(() => import("./pages/Debts.jsx"));
@@ -408,6 +409,7 @@ function MainApp() {
     <ShopContext.Provider value={shop}>
       <UserContext.Provider value={user}>
         <div className="app-shell">
+          <NativeTracker enabled={can("delivery", "edit") && !user.inspecting && !user.viewing_as} />
           <TopBar unreadCount={unreadCount} chatUnread={chatUnread} showChat={canChat && !user.inspecting} shopName={shop?.is_home ? null : shop?.name} />
           {user.viewing_as && (
             <div className="shop-banner inspect" role="status">

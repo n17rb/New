@@ -1,0 +1,15 @@
+{
+  "appId": "com.mawj.shop.captain",
+  "appName": "موج الكابتن",
+  "webDir": "www",
+  "server": {
+    "url": "https://new-1-tb2d.onrender.com/trip",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#ffffff",
+    "appendUserAgent": "MawjCaptain/1"
+  }
+}

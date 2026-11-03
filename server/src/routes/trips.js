@@ -436,6 +436,28 @@ router.get("/:id", async (req, res) => {
   res.json(await buildTripDetailResponse(trip, req.user));
 });
 
+// تطبيق الكابتن (أندرويد) بيبعت موقعه بالخلفية كل شوي: بنحدّث رحلته الشغّالة (إذا في) وآخر موقع إله
+router.post("/ping", async (req, res) => {
+  const lat = Number(req.body?.latitude), lon = Number(req.body?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    return res.status(400).json({ error: "الإحداثيات غير صحيحة." });
+  }
+  if (req.user?.inspecting) return res.json({ ok: true });
+  await query("UPDATE users SET last_latitude = $1, last_longitude = $2, last_location_at = now() WHERE id = $3", [lat, lon, req.user.id]);
+  const trip = (await query("SELECT * FROM trips WHERE driver_id = $1 AND status = 'STARTED' ORDER BY id DESC LIMIT 1", [req.user.id])).rows[0];
+  if (trip) {
+    await query("UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now() WHERE id = $3", [lat, lon, trip.id]);
+    const last = await query("SELECT latitude, longitude, recorded_at FROM trip_track WHERE trip_id = $1 ORDER BY id DESC LIMIT 1", [trip.id]);
+    const p = last.rows[0];
+    const moved = p ? Math.hypot((lat - p.latitude) * 111000, (lon - p.longitude) * 94000) : Infinity;
+    const age = p ? Date.now() - new Date(p.recorded_at).getTime() : Infinity;
+    if (moved >= 20 || age >= 120000) {
+      await query("INSERT INTO trip_track (trip_id, latitude, longitude) VALUES ($1, $2, $3)", [trip.id, lat, lon]);
+    }
+  }
+  res.json({ ok: true, trip_id: trip?.id || null });
+});
+
 router.post("/:id/location", async (req, res) => {
   const { latitude, longitude } = req.body;
   if (latitude == null || longitude == null) {

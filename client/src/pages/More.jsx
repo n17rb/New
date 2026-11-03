@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { isCaptainApp } from "../components/NativeTracker.jsx";
 import {
   FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiDroplet,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
@@ -81,6 +82,16 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         {can("debts") && <Row key="debts" to="/debts" icon={FiAlertCircle} title="ديون العملاء" sub="مين عليه، وتذكير على واتساب" />}
         {can("coupons") && <Row key="coupons" to="/coupons" icon={FiTag} title="الكوبونات والباقات" sub="الباقات، المبيعات، واللي قربت تخلص" />}
         <Row key="schedule" to="/notifications?tab=schedule" icon={FiCalendar} title="المواعيد" sub="زباين أيام التسليم الثابتة" />
+        {(can("delivery", "edit") || isManager) && !isCaptainApp() && (
+          <a key="apk" className="list-row" href="https://github.com/n17rb/New/releases/download/captain-latest/mawj-captain.apk" target="_blank" rel="noreferrer">
+            <span className="list-icon"><FiTruck aria-hidden="true" /></span>
+            <span className="list-text">
+              <span className="list-title">تطبيق الكابتن (أندرويد)</span>
+              <div className="list-sub">تتبع السيارة لحظة بلحظة حتى والشاشة مطفية — نزّله على تلفون الكابتن</div>
+            </span>
+            <FiChevronLeft className="list-chevron" aria-hidden="true" />
+          </a>
+        )}
         {can("delivery", "edit") && <Row key="mybal" to="/my-balance" icon={FiCreditCard} title="رصيدي" sub="الكاش والكوبونات اللي معي" />}
         {can("driver_balances") && <Row key="bal" to="/driver-balances" icon={FiCreditCard} title="ذمم الكباتن" />}
         {can("products") && <Row key="prod" to="/products" icon={FiBox} title="المنتجات والأسعار" />}

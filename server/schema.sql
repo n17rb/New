@@ -1614,3 +1614,8 @@ CREATE TABLE IF NOT EXISTS wa_outbox (
   sent_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_wa_outbox_pending ON wa_outbox(created_at) WHERE status = 'pending';
+
+-- آخر موقع للكابتن (من تطبيق الكابتن بالخلفية) — حتى لو ما في رحلة شغّالة
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMPTZ;
