@@ -108,90 +108,120 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
     }
   }
 
-  return (
-    <div className="page">
-      <h1 className="title-lg">اشتراك موج</h1>
+  const pending = data.payments.find((p) => p.status === "pending");
+  const icon = { urgent: "⏸", warning: "⏳", success: a.trial ? "🎁" : "✓" }[stateCard.tone] || "•";
+  const daysPct = a.days_left != null ? Math.max(4, Math.min(100, Math.round((a.days_left / 30) * 100))) : null;
 
-      <div className={`sub-state ${stateCard.tone}`}>
-        <div className="sub-state-title">{stateCard.title}</div>
-        <div className="sub-state-text">{stateCard.text}</div>
+  return (
+    <div className="page sb-page">
+      <div className={`sb-hero ${stateCard.tone}`}>
+        <div className="sb-hero-glow" aria-hidden="true" />
+        <div className="sb-hero-ic" aria-hidden="true">{icon}</div>
+        <div className="sb-hero-t">{stateCard.title.replace(" ✓", "").replace("🎁 ", "")}</div>
+        <div className="sb-hero-s">{stateCard.text}</div>
         {a.state !== "active" && a.ends_at && a.state !== "expiring" && (
-          <div className="sub-state-text">آخر يوم كان: {longDate(a.ends_at)}</div>
+          <div className="sb-hero-s" style={{ opacity: 0.8 }}>آخر يوم كان: {longDate(a.ends_at)}</div>
+        )}
+        {(a.state === "active" || a.state === "expiring") && daysPct != null && (
+          <div className="sb-days">
+            <div className="sb-days-bar"><span style={{ width: `${daysPct}%` }} /></div>
+            <div className="sb-days-t tabular-num">باقي {a.days_left} يوم</div>
+          </div>
         )}
       </div>
 
       {error && <div className="error-box">{error}</div>}
-      {sent && (
-        <div className="success-box">
-          وصلنا الإيصال 👍 رح نراجعه ونجدد الاشتراك بأسرع وقت، وبيوصلك إشعار أول ما يتفعّل.
+
+      {(sent || pending) && (
+        <div className="sb-pending">
+          <div className="sb-pending-ic" aria-hidden="true">⏳</div>
+          <div>
+            <b>وصلنا إيصالك — قيد المراجعة</b>
+            <small>بنجدد الاشتراك بأسرع وقت، وبيوصلك إشعار أول ما يتفعّل.{pending ? ` (انبعت ${longDate(pending.created_at)})` : ""}</small>
+          </div>
         </div>
       )}
 
-      {a.state !== "suspended" && data.can_pay && (
-        <div className="card">
-          <h2 className="title-md" style={{ marginTop: 0 }}>جدّد بتحويل كليك</h2>
+      {a.state !== "suspended" && data.can_pay && !hasPending && (
+        <div className="sb-card">
+          <div className="sb-card-h">
+            <span>جدّد اشتراكك</span>
+            <small>شهري · كل تحويل بيجدّد شهر</small>
+          </div>
 
-          <p className="text-secondary" style={{ marginTop: -4 }}>الاشتراك شهري — كل تحويل بيجدّد شهر.</p>
-
-          <div className="cliq-box">
-            <div className="text-secondary" style={{ fontSize: "0.8rem" }}>حوّل {total ? <strong className="tabular-num" style={{ color: "var(--text)" }}>{total.toFixed(2)} دينار</strong> : "قيمة الاشتراك"} على كليك:</div>
-            <div className="cliq-number">
-              <span className="tabular-num" dir="ltr">{cliq}</span>
-              <button className="icon-btn" onClick={copyCliq} aria-label="نسخ الرقم">{copied ? <FiCheck /> : <FiCopy />}</button>
+          <div className="sb-step">
+            <span className="sb-num">١</span>
+            <div className="sb-step-b">
+              <div className="sb-step-t">حوّل على كليك</div>
+              {total != null && <div className="sb-price tabular-num">{total.toFixed(2)} <small>دينار</small></div>}
+              <button type="button" className={`sb-cliq${copied ? " ok" : ""}`} onClick={copyCliq}>
+                <span className="sb-cliq-n tabular-num" dir="ltr">{cliq}</span>
+                <span className="sb-cliq-c">{copied ? <><FiCheck aria-hidden="true" /> انتسخ</> : <><FiCopy aria-hidden="true" /> نسخ</>}</span>
+              </button>
+              {data.payment?.cliq_name && <div className="sb-step-s">باسم: <b>{data.payment.cliq_name}</b></div>}
             </div>
-            {data.payment?.cliq_name && <div className="text-secondary" style={{ fontSize: "0.8rem" }}>باسم: {data.payment.cliq_name}</div>}
           </div>
 
-          <label className="receipt-picker">
-            {preview ? <img src={preview} alt="صورة الإيصال" /> : <span className="icon-row"><FiImage aria-hidden="true" /> ارفق صورة إيصال التحويل</span>}
-            <input type="file" accept="image/*" onChange={pick} style={{ display: "none" }} />
-          </label>
-          {preview && (
-            <button className="btn-danger-text icon-row" style={{ marginBottom: 8, fontSize: "0.8rem" }} onClick={() => { setFile(null); setPreview(null); }}>
-              <FiX aria-hidden="true" /> شيل الصورة
-            </button>
-          )}
-
-          <div className="field">
-            <label htmlFor="pay-note">ملاحظة (اختياري)</label>
-            <input id="pay-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلاً: حوّلت من حساب أخوي" />
+          <div className="sb-step">
+            <span className="sb-num">٢</span>
+            <div className="sb-step-b">
+              <div className="sb-step-t">صوّر إيصال التحويل</div>
+              <label className={`sb-upload${preview ? " has" : ""}`}>
+                {preview ? (
+                  <img src={preview} alt="صورة الإيصال" />
+                ) : (
+                  <span className="sb-upload-e"><FiImage aria-hidden="true" /><b>اختار صورة الإيصال</b><small>سكرين شوت من تطبيق البنك</small></span>
+                )}
+                <input type="file" accept="image/*" onChange={pick} style={{ display: "none" }} />
+              </label>
+              {preview && (
+                <button type="button" className="sb-link" onClick={() => { setFile(null); setPreview(null); }}><FiX aria-hidden="true" /> غيّر الصورة</button>
+              )}
+              <input className="sb-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظة (اختياري) — مثلًا حوّلت من حساب أخوي" />
+            </div>
           </div>
-          <button className="btn-primary" disabled={!file || sending || hasPending} onClick={submit}>
-            {sending ? "جاري الإرسال..." : hasPending ? "عندك إيصال قيد المراجعة" : "ابعت الإيصال"}
+
+          <div className="sb-step last">
+            <span className="sb-num">٣</span>
+            <div className="sb-step-b">
+              <button className="btn-primary sb-send" disabled={!file || sending} onClick={submit}>
+                {sending ? "جاري الإرسال…" : "ابعت الإيصال"}
+              </button>
+              {!file && <div className="sb-step-s" style={{ textAlign: "center" }}>ارفق صورة الإيصال أول</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="sb-contact">
+        <div className="sb-contact-t">محتاج مساعدة؟ احكي معنا</div>
+        <div className="sb-contact-row">
+          <a className="sb-c wa" href={`https://wa.me/${whatsappNumber(phone)}?text=${encodeURIComponent(waText)}`} target="_blank" rel="noreferrer">
+            <FaWhatsapp aria-hidden="true" /><span>واتساب</span>
+          </a>
+          <a className="sb-c" href={`tel:${phone}`}>
+            <FiPhone aria-hidden="true" /><span>اتصال</span>
+          </a>
+          <button type="button" className="sb-c" onClick={() => navigate("/support")}>
+            <FiMessageCircle aria-hidden="true" /><span>الدعم</span>
           </button>
         </div>
-      )}
-
-      <div className="section-title">أو تواصل معنا مباشرة</div>
-      <div className="quick-actions" style={{ marginTop: 0 }}>
-        <a className="quick-action whatsapp" href={`https://wa.me/${whatsappNumber(phone)}?text=${encodeURIComponent(waText)}`} target="_blank" rel="noreferrer">
-          <FaWhatsapp aria-hidden="true" /><span>واتساب</span>
-        </a>
-        <a className="quick-action" href={`tel:${phone}`}>
-          <FiPhone aria-hidden="true" /><span>اتصال</span>
-        </a>
-        <button className="quick-action primary" onClick={() => navigate("/support")}>
-          <FiMessageCircle aria-hidden="true" /><span>الدعم الفني</span>
-        </button>
       </div>
 
       {data.payments.length > 0 && (
         <>
-          <div className="section-title">الدفعات</div>
-          <div className="list-group">
+          <div className="section-title">دفعاتك</div>
+          <div className="sb-pays">
             {data.payments.map((p) => {
-              const s = STATUS[p.status];
+              const st = STATUS[p.status];
               return (
-                <div key={p.id} className="list-row" style={{ cursor: "default" }}>
-                  <span className="list-icon"><FiClock aria-hidden="true" /></span>
-                  <span className="list-text">
-                    <span className="list-title">{p.months === 1 ? "شهر" : `${p.months} شهور`}{p.amount ? ` · ${Number(p.amount).toFixed(2)} دينار` : ""}</span>
-                    <div className="list-sub">
-                      {longDate(p.created_at)}
-                      {p.review_note && p.status === "rejected" && ` · ${p.review_note}`}
-                    </div>
+                <div key={p.id} className="sb-pay">
+                  <span className="sb-pay-ic" aria-hidden="true"><FiClock /></span>
+                  <span className="sb-pay-t">
+                    <b className="tabular-num">{p.amount ? `${Number(p.amount).toFixed(2)} دينار` : "تحويل"}</b>
+                    <small>{longDate(p.created_at)}{p.review_note && p.status === "rejected" ? ` · ${p.review_note}` : ""}</small>
                   </span>
-                  <span className="badge" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                  <span className="sb-pay-s" style={{ background: st.bg, color: st.color }}>{st.label}</span>
                 </div>
               );
             })}
@@ -206,8 +236,8 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
       )}
 
       {locked && (
-        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-          <button className="btn-secondary" onClick={onRefresh}>تحقق من التفعيل</button>
+        <div className="sb-locked">
+          <button className="btn-primary" onClick={onRefresh}>حوّلت؟ تحقق من التفعيل</button>
           <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} onClick={onLogout}>
             <FiLogOut aria-hidden="true" /> خروج
           </button>
