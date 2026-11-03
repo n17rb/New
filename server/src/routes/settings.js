@@ -14,7 +14,7 @@ function isPrivileged(user) {
 // ============================================================
 // نصوص رسائل الزباين (واتساب): المدير بيعدّلها وبتنحفظ للمحل كله
 // ============================================================
-const MESSAGE_KEYS = ["receipt", "on_my_way", "invoice", "debt_reminder", "statement", "coupons_added", "coupons_low", "forecast_reminder", "win_back", "bottles_collect"];
+const MESSAGE_KEYS = ["receipt", "on_my_way", "invoice", "debt_reminder", "statement", "coupons_added", "coupons_used", "coupons_low", "forecast_reminder", "win_back", "bottles_collect"];
 
 async function readTemplates() {
   const r = await query("SELECT value FROM app_settings WHERE key = 'message_templates'");

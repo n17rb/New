@@ -10,7 +10,7 @@ import { cleanSchedule } from "../utils/schedule.js";
 import { replaceOrderItems } from "../utils/orderEdit.js";
 import { sellCouponPackage } from "./coupons.js";
 import { ensureInvoiceToken, ensureWalletToken } from "./invoices.js";
-import { queueCouponsAdded } from "../utils/whatsapp.js";
+import { queueCouponsAdded, queueCouponsUsed } from "../utils/whatsapp.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -882,6 +882,15 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     coupons_granted: couponsGranted,
     coupon_balance: newBalance,
   });
+
+  // واتساب (موبايل المحل): «انخصم كوبون» / «انضافلك كوبونات» فورًا
+  if (!req.user?.inspecting && (couponsFromBalance > 0 || couponsGranted > 0)) {
+    (async () => {
+      const walletToken = req.tenant?.id ? await ensureWalletToken(stop.customer_id, req.tenant.id).catch(() => null) : null;
+      if (couponsFromBalance > 0) await queueCouponsUsed({ customerId: stop.customer_id, used: couponsFromBalance, balance: newBalance, walletToken, origin: req.headers.origin });
+      else await queueCouponsAdded({ customerId: stop.customer_id, added: couponsGranted, balance: newBalance, walletToken, origin: req.headers.origin });
+    })().catch((e) => console.error("wa queue:", e.message));
+  }
 
   (async () => {
     await logActivity({

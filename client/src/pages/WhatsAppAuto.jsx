@@ -93,7 +93,7 @@ export default function WhatsAppAuto() {
         </div>
       )}
 
-      <AndroidCard token={d.queue_token} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
+      <AndroidCard token={d.queue_token} users={d.users || []} deviceUser={d.device_user} onDevice={(id) => run(() => api.waSave({ device_user: id }), id ? "✅ انحفظ حساب الموبايل" : "انشال")} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
 
       <button type="button" className="wa-setup-toggle" onClick={() => setShowSetup((v) => !v)}>
         {d.configured ? "✓ واتساب مربوط" : "⚠️ واتساب مش مربوط لسا"} — {showSetup ? "إخفاء الإعدادات" : "الإعدادات"}
@@ -167,7 +167,7 @@ export default function WhatsAppAuto() {
 }
 
 // موبايل أندرويد بيبعت من تطبيق واتساب أعمال نفسه (برنامج MacroDroid)
-function AndroidCard({ token, outbox, pending, busy, onNew }) {
+function AndroidCard({ token, users, deviceUser, onDevice, outbox, pending, busy, onNew }) {
   const [copied, setCopied] = useState("");
   const base = `${API_ORIGIN}/api/public/wa-queue/${token}`;
   const copy = (txt, key) => {
@@ -180,6 +180,12 @@ function AndroidCard({ token, outbox, pending, busy, onNew }) {
         موبايل أندرويد عليه واتساب أعمال (برقم المحل) بيشيّك كل كم دقيقة وبيبعت لحاله من التطبيق:
         رسايل «انضافلك كوبونات» أول ما تنباع باقة (بين ٧ الصبح و١٠ بالليل)، وتذكير التوقعات الصبح. {pending > 0 ? `اليوم في ${pending} تذكير بالدور.` : ""}
       </p>
+      <div className="sheet-q">الحساب المسجّل على موبايل الأندرويد (تطبيق موج)</div>
+      <select className="stn-select" value={deviceUser || ""} disabled={busy} onChange={(e) => onDevice(Number(e.target.value) || null)}>
+        <option value="">— اختار —</option>
+        {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+      </select>
+      <p className="text-secondary" style={{ fontSize: "0.76rem", margin: "6px 2px 10px" }}>أول ما ينحط كوبون أو ينخصم، بيوصل إشعار لهالحساب على الموبايل، وMacroDroid بيبعت فورًا. الأحسن تعمل حساب خاص اسمه «موبايل المحل».</p>
       <div className="sheet-q">رابط «الرسالة الجاية»</div>
       <div className="wa-link" dir="ltr">{base}/next</div>
       <div className="vh-acts2" style={{ marginTop: 8 }}>
@@ -200,11 +206,13 @@ function AndroidCard({ token, outbox, pending, busy, onNew }) {
       <details className="wa-help" style={{ marginTop: 12 }}>
         <summary>كيف أجهّز الموبايل؟</summary>
         <ol>
-          <li>على موبايل الأندرويد: نزّل <b>WhatsApp Business</b> وافتحه برقم المحل. إذا رقم المحل على موبايل ثاني، اربط الأندرويد كجهاز مرافق (Link as companion) من نفس التطبيق.</li>
+          <li>على موبايل الأندرويد افتح تطبيق <b>موج</b> بالمتصفح وسجّل دخول بالحساب اللي اخترته فوق، واسمح بالإشعارات.</li>
+          <li>نزّل <b>WhatsApp Business</b> وافتحه برقم المحل. إذا رقم المحل على موبايل ثاني، اربط الأندرويد كجهاز مرافق (Link as companion) من نفس التطبيق.</li>
           <li>نزّل <b>MacroDroid</b> من Google Play، واعطيه صلاحية <b>إمكانية الوصول (Accessibility)</b> لما يطلبها.</li>
           <li>اعمل ماكرو جديد:
             <ul>
-              <li><b>المُشغّل:</b> كل ٥ دقايق (Regular interval) — وإذا بدك بس بين ٧ الصبح و١٠ بالليل (Constraint: Time of day).</li>
+              <li><b>المُشغّل ١ (فوري):</b> Notification Received — من تطبيق المتصفح/موج، والنص فيه «رسالة واتساب جديدة».</li>
+              <li><b>المُشغّل ٢ (احتياطي وللتذكير الصبح):</b> كل ١٠ دقايق (Regular interval) بين ٧ الصبح و١٠ بالليل.</li>
               <li><b>الأفعال (كرّرها لحد ما <code>done</code> = true):</b>
                 <br />١) <b>HTTP Request (GET)</b> على الرابط فوق، وخزّن الرد بمتغيّر.
                 <br />٢) إذا <code>done</code> = true ← <b>وقّف</b> (ما في إشي هلّق).

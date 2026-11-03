@@ -9,7 +9,7 @@ import { can } from "../permissions.js";
 // الرسالة اللي بتنبعت للزبون لازم تكون «قالب» (Template) معتمد من Meta، فيه متغيرات:
 //   {{1}} اسم الزبون   {{2}} اسم المحل   {{3}} الكمية اللي بياخذها عادةً
 // ============================================================
-const KEYS = ["wa_enabled", "wa_queue_token", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
+const KEYS = ["wa_enabled", "wa_queue_token", "wa_device_user", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export async function getWaSettings() {
@@ -26,6 +26,7 @@ export async function getWaSettings() {
     lang: m.wa_lang || "ar",
     hour: Number.isInteger(hour) && hour >= 5 && hour <= 12 ? hour : 7,
     last_run: m.wa_last_run || null,
+    device_user: m.wa_device_user || null,
   };
 }
 
@@ -212,7 +213,17 @@ async function androidOn() {
   return !!(await query("SELECT value FROM app_settings WHERE key = 'wa_queue_token'")).rows[0]?.value;
 }
 
-// «انضافلك كوبونات»: بتنحط بالصندوق، والأندرويد بيبعتها أول ما يصحى
+// تنبيه فوري لموبايل الأندرويد: إشعار من تطبيق موج نفسه لحساب «جهاز الإرسال» ← MacroDroid بيشتغل فورًا
+export async function pingDevice() {
+  const h = jordanHour();
+  if (h < 7 || h >= 22) return; // بالليل بتستنى لـ٧ الصبح
+  const uid = Number((await query("SELECT value FROM app_settings WHERE key = 'wa_device_user'")).rows[0]?.value) || 0;
+  if (!uid) return;
+  sendPushToUser(uid, { title: "موج واتساب", body: "📤 رسالة واتساب جديدة بالدور", url: "/settings/whatsapp", tag: "wa-queue" })
+    .catch((e) => console.error("push:", e.message));
+}
+
+// «انضافلك كوبونات»: بتنحط بالصندوق، والأندرويد بيبعتها فورًا
 export async function queueCouponsAdded({ customerId, added, balance, unpaid = 0, walletToken = null, origin = null }) {
   if (!(await androidOn())) return false;
   const c = (await query("SELECT name, phone_normalized FROM customers WHERE id = $1", [customerId])).rows[0];
@@ -229,6 +240,27 @@ export async function queueCouponsAdded({ customerId, added, balance, unpaid = 0
     .replaceAll("{المحل}", currentTenant()?.name || "")
     .replace(/\n{3,}/g, "\n\n").trim();
   await query("INSERT INTO wa_outbox (customer_id, phone, kind, text) VALUES ($1,$2,'coupons_added',$3)", [customerId, c.phone_normalized, text]);
+  await pingDevice();
+  return true;
+}
+
+// «انخصم كوبون»: بعد التسليم بكوبونات إلكترونية
+const DEFAULT_COUPONS_USED = "أهلًا {الاسم} 💧\nوصلك طلبك وانخصم {المخصوم} 🎫\nرصيدك صار {الرصيد}\n\nتابع رصيدك:\n{الرابط}\n\n{المحل}";
+export async function queueCouponsUsed({ customerId, used, balance, walletToken = null, origin = null }) {
+  if (!(await androidOn()) || !(used > 0)) return false;
+  const c = (await query("SELECT name, phone_normalized FROM customers WHERE id = $1", [customerId])).rows[0];
+  if (!c?.phone_normalized) return false;
+  const base = await appOrigin(origin);
+  const tpl = await templateText("coupons_used", DEFAULT_COUPONS_USED);
+  const text = tpl
+    .replaceAll("{الاسم}", firstName(c.name))
+    .replaceAll("{المخصوم}", couponsWord(used))
+    .replaceAll("{الرصيد}", couponsWord(balance))
+    .replaceAll("{الرابط}", walletToken && base ? `${base}/w/${walletToken}` : "")
+    .replaceAll("{المحل}", currentTenant()?.name || "")
+    .replace(/\n{3,}/g, "\n\n").trim();
+  await query("INSERT INTO wa_outbox (customer_id, phone, kind, text) VALUES ($1,$2,'coupons_used',$3)", [customerId, c.phone_normalized, text]);
+  await pingDevice();
   return true;
 }
 

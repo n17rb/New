@@ -36,6 +36,8 @@ router.get("/", wrap(async (req, res) => {
     configured: isConfigured(s),
     today, shop_name: currentTenant()?.name || "",
     queue_token: await getQueueToken(),
+    device_user: Number(s.device_user) || null,
+    users: (await query("SELECT id, full_name FROM users WHERE status = 'active' ORDER BY full_name")).rows,
     recipients, log: log.rows, outbox: outbox.rows,
   });
 }));
@@ -45,6 +47,7 @@ router.put("/", wrap(async (req, res) => {
   const patch = {};
   if (typeof b.enabled === "boolean") patch.wa_enabled = b.enabled ? "1" : "0";
   if (["meta", "d360"].includes(b.provider)) patch.wa_provider = b.provider;
+  if (b.device_user !== undefined) patch.wa_device_user = Number(b.device_user) > 0 ? Number(b.device_user) : "";
   if (b.phone_id != null) patch.wa_phone_id = String(b.phone_id).replace(/\D/g, "").slice(0, 30);
   if (b.token) patch.wa_token = String(b.token).trim().slice(0, 600);
   if (b.template != null) patch.wa_template = String(b.template).trim().replace(/[^a-z0-9_]/gi, "").toLowerCase().slice(0, 100);
