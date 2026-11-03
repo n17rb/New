@@ -250,7 +250,7 @@ router.post("/payments/:id/approve", async (req, res) => {
   const p = (await platformQuery("SELECT * FROM platform.payments WHERE id = $1", [req.params.id])).rows[0];
   if (!p) return res.status(404).json({ error: "الدفعة غير موجودة." });
   if (p.status !== "pending") return res.status(400).json({ error: "هذه الدفعة انراجعت من قبل." });
-  const months = Math.min(36, Math.max(1, Math.floor(Number(req.body?.months) || p.months || 1)));
+  const months = 1; // الاشتراك شهري بس
   const amount = req.body?.amount != null && req.body.amount !== "" ? Number(req.body.amount) : p.amount;
   const upd = await platformQuery(
     `UPDATE platform.payments SET status = 'approved', months = $1, amount = $2, reviewed_at = now(), review_note = $3

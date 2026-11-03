@@ -38,7 +38,7 @@ router.post("/payment", uploadSingleImage, async (req, res) => {
   if (req.tenant.is_home) return res.status(400).json({ error: "هذا المحل الأساسي — ما بده اشتراك." });
   if (!req.file) return res.status(400).json({ error: "ارفق صورة إيصال التحويل." });
 
-  const months = Math.min(12, Math.max(1, Math.floor(Number(req.body?.months) || 1)));
+  const months = 1; // الاشتراك شهري بس
   const amount = req.body?.amount ? Number(req.body.amount) : null;
   if (amount != null && (!Number.isFinite(amount) || amount < 0)) return res.status(400).json({ error: "المبلغ غير صحيح." });
 

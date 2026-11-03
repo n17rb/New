@@ -131,16 +131,7 @@ export default function Subscription({ locked = false, onLogout, onRefresh }) {
         <div className="card">
           <h2 className="title-md" style={{ marginTop: 0 }}>جدّد بتحويل كليك</h2>
 
-          <div className="field">
-            <label>المدة</label>
-            <div className="seg">
-              {[1, 3, 6, 12].map((m) => (
-                <button key={m} className={months === m ? "on" : ""} onClick={() => setMonths(m)}>
-                  {m === 1 ? "شهر" : m === 12 ? "سنة" : `${m} شهور`}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="text-secondary" style={{ marginTop: -4 }}>الاشتراك شهري — كل تحويل بيجدّد شهر.</p>
 
           <div className="cliq-box">
             <div className="text-secondary" style={{ fontSize: "0.8rem" }}>حوّل {total ? <strong className="tabular-num" style={{ color: "var(--text)" }}>{total.toFixed(2)} دينار</strong> : "قيمة الاشتراك"} على كليك:</div>

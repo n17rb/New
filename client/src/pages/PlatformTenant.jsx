@@ -125,7 +125,7 @@ export default function PlatformTenant() {
             {t.subscription_ends_at ? `لحد ${longDate(t.subscription_ends_at)}` : "ما إله تاريخ"} · {Number(t.monthly_price).toFixed(2)} JD بالشهر
           </p>
           <div className="chips" style={{ marginBottom: 10 }}>
-            {[{ d: 7, l: "+ أسبوع" }, { d: 30, l: "+ شهر" }, { d: 90, l: "+ ٣ شهور" }, { d: 365, l: "+ سنة" }].map((x) => (
+            {[{ d: 7, l: "+ أسبوع" }, { d: 30, l: "+ شهر" }].map((x) => (
               <button key={x.d} className="chip" disabled={busy} onClick={() => run(() => api.platformExtendTenant(t.id, { days: x.d, note: paid ? "دفع كاش/يدوي" : "تمديد يدوي", paid, amount: paid ? Math.round((Number(t.monthly_price) * x.d) / 30 * 100) / 100 : null }), `تمدد ${x.l.replace("+ ", "")} ✓`)}>{x.l}</button>
             ))}
           </div>

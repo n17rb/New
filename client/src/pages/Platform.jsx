@@ -357,7 +357,7 @@ function PaymentsTab({ onChanged }) {
     setBusy(p.id);
     setError("");
     try {
-      await api.platformApprovePayment(p.id, { months: monthsById[p.id] || p.months });
+      await api.platformApprovePayment(p.id, { months: 1 });
       load();
       onChanged();
     } catch (err) {
@@ -411,9 +411,6 @@ function PaymentsTab({ onChanged }) {
           </div>
           {p.status === "pending" && (
             <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
-              <select value={monthsById[p.id] || p.months} onChange={(e) => setMonthsById({ ...monthsById, [p.id]: Number(e.target.value) })} aria-label="عدد الشهور" style={{ width: 96, padding: "9px 8px", borderRadius: 10, border: "1.5px solid var(--border)", background: "var(--surface)" }}>
-                {[1, 2, 3, 6, 12].map((m) => <option key={m} value={m}>{m === 1 ? "شهر" : `${m} شهور`}</option>)}
-              </select>
               <button className="fc-btn primary" disabled={busy === p.id} onClick={() => approve(p)}><FiCheck aria-hidden="true" /> اعتمد</button>
               <button className="fc-btn" disabled={busy === p.id} onClick={() => reject(p)} style={{ color: "var(--urgent)" }}><FiX aria-hidden="true" /> ارفض</button>
             </div>
