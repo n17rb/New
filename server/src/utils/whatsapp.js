@@ -9,7 +9,7 @@ import { can } from "../permissions.js";
 // الرسالة اللي بتنبعت للزبون لازم تكون «قالب» (Template) معتمد من Meta، فيه متغيرات:
 //   {{1}} اسم الزبون   {{2}} اسم المحل   {{3}} الكمية اللي بياخذها عادةً
 // ============================================================
-const KEYS = ["wa_enabled", "wa_queue_token", "wa_device_user", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
+const KEYS = ["wa_enabled", "wa_queue_token", "wa_device_user", "wa_coupons_auto", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export async function getWaSettings() {
@@ -27,6 +27,7 @@ export async function getWaSettings() {
     hour: Number.isInteger(hour) && hour >= 5 && hour <= 12 ? hour : 7,
     last_run: m.wa_last_run || null,
     device_user: m.wa_device_user || null,
+    coupons_auto: m.wa_coupons_auto === "1",
   };
 }
 
@@ -208,9 +209,12 @@ export async function appOrigin(reqOrigin) {
   return (await query("SELECT value FROM app_settings WHERE key = 'app_origin'")).rows[0]?.value || null;
 }
 
-// موبايل الأندرويد مجهّز؟ (في رابط سري)
+// رسايل الكوبونات التلقائية من موبايل الأندرويد: لازم تكون مشغّلة (مفتاح بصفحة واتساب تلقائي)
+// إذا مطفية: الكابتن بيبعت بإيده زي قبل (زر واتساب)
 async function androidOn() {
-  return !!(await query("SELECT value FROM app_settings WHERE key = 'wa_queue_token'")).rows[0]?.value;
+  const r = await query("SELECT key, value FROM app_settings WHERE key IN ('wa_queue_token','wa_coupons_auto')");
+  const m = Object.fromEntries(r.rows.map((x) => [x.key, x.value]));
+  return !!m.wa_queue_token && m.wa_coupons_auto === "1";
 }
 
 // تنبيه فوري لموبايل الأندرويد: إشعار من تطبيق موج نفسه لحساب «جهاز الإرسال» ← MacroDroid بيشتغل فورًا

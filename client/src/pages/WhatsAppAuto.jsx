@@ -93,7 +93,7 @@ export default function WhatsAppAuto() {
         </div>
       )}
 
-      <AndroidCard token={d.queue_token} users={d.users || []} deviceUser={d.device_user} onDevice={(id) => run(() => api.waSave({ device_user: id }), id ? "✅ انحفظ حساب الموبايل" : "انشال")} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
+      <AndroidCard couponsAuto={!!d.coupons_auto} onCouponsAuto={(v) => run(() => api.waSave({ coupons_auto: v }), v ? "✅ رسايل الكوبونات صارت تلقائية من موبايل المحل" : "رسايل الكوبونات رجعت يدوي (زر واتساب)")} token={d.queue_token} users={d.users || []} deviceUser={d.device_user} onDevice={(id) => run(() => api.waSave({ device_user: id }), id ? "✅ انحفظ حساب الموبايل" : "انشال")} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
 
       <button type="button" className="wa-setup-toggle" onClick={() => setShowSetup((v) => !v)}>
         {d.configured ? "✓ واتساب مربوط" : "⚠️ واتساب مش مربوط لسا"} — {showSetup ? "إخفاء الإعدادات" : "الإعدادات"}
@@ -167,7 +167,7 @@ export default function WhatsAppAuto() {
 }
 
 // موبايل أندرويد بيبعت من تطبيق واتساب أعمال نفسه (برنامج MacroDroid)
-function AndroidCard({ token, users, deviceUser, onDevice, outbox, pending, busy, onNew }) {
+function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onDevice, outbox, pending, busy, onNew }) {
   const [copied, setCopied] = useState("");
   const base = `${API_ORIGIN}/api/public/wa-queue/${token}`;
   const copy = (txt, key) => {
@@ -180,6 +180,13 @@ function AndroidCard({ token, users, deviceUser, onDevice, outbox, pending, busy
         موبايل أندرويد عليه واتساب أعمال (برقم المحل) بيشيّك كل كم دقيقة وبيبعت لحاله من التطبيق:
         رسايل «انضافلك كوبونات» أول ما تنباع باقة (بين ٧ الصبح و١٠ بالليل)، وتذكير التوقعات الصبح. {pending > 0 ? `اليوم في ${pending} تذكير بالدور.` : ""}
       </p>
+      <button type="button" className={`pr-sw${couponsAuto ? " on" : ""}`} style={{ margin: "8px 0 12px" }} disabled={busy} onClick={() => onCouponsAuto(!couponsAuto)}>
+        <span className="pr-sw-t">
+          <b>رسايل الكوبونات تلقائي</b>
+          <small>{couponsAuto ? "«انضافلك كوبونات» و«انخصم كوبون» بتنبعت لحالها من موبايل المحل" : "مطفي — الكابتن بيبعتها بإيده من زر الواتساب زي قبل"}</small>
+        </span>
+        <span className="pr-sw-k" aria-hidden="true"><i /></span>
+      </button>
       <div className="sheet-q">الحساب المسجّل على موبايل الأندرويد (تطبيق موج)</div>
       <select className="stn-select" value={deviceUser || ""} disabled={busy} onChange={(e) => onDevice(Number(e.target.value) || null)}>
         <option value="">— اختار —</option>
