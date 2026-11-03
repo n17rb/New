@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
-import { getWaSettings, saveWaSettings, isConfigured, sendTemplate, forecastRecipients, runForecastWhatsapp, getQueueToken, forecastQueue, markQueueSent } from "../utils/whatsapp.js";
+import { getWaSettings, saveWaSettings, isConfigured, sendTemplate, forecastRecipients, runForecastWhatsapp, getQueueToken, forecastQueue, markQueueSent, nextQueued, markOutboxSent } from "../utils/whatsapp.js";
 import { getTenant } from "../utils/tenants.js";
 import { setRequestTenant } from "../db.js";
 import { jordanDate } from "../utils/forecast.js";
@@ -20,11 +20,15 @@ const masked = (t) => (t ? `••••${t.slice(-4)}` : "");
 router.get("/", wrap(async (req, res) => {
   const s = await getWaSettings();
   const today = jordanDate();
-  const [recipients, log] = await Promise.all([
+  const [recipients, log, outbox] = await Promise.all([
     forecastRecipients().catch(() => []),
     query(
       `SELECT w.*, c.name FROM wa_messages w LEFT JOIN customers c ON c.id = w.customer_id
        WHERE w.created_at > now() - interval '7 days' ORDER BY w.created_at DESC LIMIT 60`
+    ),
+    query(
+      `SELECT o.id, o.kind, o.status, o.created_at, o.sent_at, c.name FROM wa_outbox o LEFT JOIN customers c ON c.id = o.customer_id
+       WHERE o.created_at > now() - interval '3 days' ORDER BY o.created_at DESC LIMIT 40`
     ),
   ]);
   res.json({
@@ -32,7 +36,7 @@ router.get("/", wrap(async (req, res) => {
     configured: isConfigured(s),
     today, shop_name: currentTenant()?.name || "",
     queue_token: await getQueueToken(),
-    recipients, log: log.rows,
+    recipients, log: log.rows, outbox: outbox.rows,
   });
 }));
 
@@ -109,14 +113,23 @@ waPublicRouter.get("/wa-queue/:token", async (req, res) => {
     res.json({ date: jordanDate(), count: list.length, messages: list });
   } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
 });
-// الرسالة الجاية بس (أسهل للأتمتة) — فاضي = خلصنا
+// الرسالة الجاية بس (أسهل للأتمتة) — done=true يعني ما في إشي هلّق
+// done_url: الرابط اللي الموبايل بيفتحه بعد ما يبعت (عشان ما تنعاد)
 waPublicRouter.get("/wa-queue/:token/next", async (req, res) => {
   try {
     if (!(await queueTenant(req, res))) return;
-    const next = (await forecastQueue())[0];
-    if (!next) return res.json({ done: true, phone: "", text: "", url: "", customer_id: 0, left: 0 });
-    const left = (await forecastQueue()).length;
-    res.json({ done: false, ...next, left });
+    const n = await nextQueued();
+    if (!n) return res.json({ done: true, phone: "", text: "", url: "", done_url: "", customer_id: 0, left: 0 });
+    const base = `${req.protocol === "http" && req.get("x-forwarded-proto") ? req.get("x-forwarded-proto") : req.protocol}://${req.get("host")}/api/public/wa-queue/${req.params.token}`;
+    const done_url = n.source === "outbox" ? `${base}/sent-outbox/${n.id}` : `${base}/sent/${n.customer_id}`;
+    res.json({ done: false, ...n, done_url });
+  } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
+});
+waPublicRouter.all("/wa-queue/:token/sent-outbox/:id", async (req, res) => {
+  try {
+    if (!(await queueTenant(req, res))) return;
+    await markOutboxSent(Number(req.params.id));
+    res.json({ ok: true });
   } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
 });
 // انبعتت (الموبايل بيبلّغ عشان ما تنعاد)

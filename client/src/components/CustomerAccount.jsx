@@ -98,7 +98,8 @@ function CouponWallet({ customer, onChanged }) {
         {sold && !selling && (
           <div className="success-box" style={{ marginBottom: 10 }}>
             <div style={{ fontWeight: 700 }}>انضاف {sold.added} كوبون ✓</div>
-            <a
+            {sold.waQueued && <div style={{ fontSize: "0.82rem", marginTop: 4 }}>📱 رسالة التأكيد رح تنبعت لحالها من موبايل المحل</div>}
+            {!sold.waQueued && <a
               className="icon-row"
               style={{ color: "var(--whatsapp)", fontWeight: 700, marginTop: 6, textDecoration: "none" }}
               href={`https://wa.me/${customer.phone_normalized}?text=${encodeURIComponent(
@@ -109,7 +110,7 @@ function CouponWallet({ customer, onChanged }) {
               onClick={() => setSold(null)}
             >
               <FaWhatsapp aria-hidden="true" /> ابعتله تأكيد على واتساب
-            </a>
+            </a>}
           </div>
         )}
 
@@ -179,7 +180,7 @@ function SellPackage({ customer, onCancel, onDone }) {
     setError("");
     try {
       const r = await api.sellCouponPackage({ customer_id: customer.id, package_id: selected.id, paid_amount: paidNum });
-      onDone({ added: selected.coupons + (selected.bonus_coupons || 0), unpaid, packageName: selected.name, walletToken: r?.wallet_token || null });
+      onDone({ added: selected.coupons + (selected.bonus_coupons || 0), unpaid, packageName: selected.name, walletToken: r?.wallet_token || null, waQueued: !!r?.wa_queued });
     } catch (err) {
       setError(err.message);
       setSaving(false);

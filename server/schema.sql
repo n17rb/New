@@ -1601,3 +1601,16 @@ CREATE TABLE IF NOT EXISTS wa_messages (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_once ON wa_messages(customer_id, kind, sent_on) WHERE status = 'sent';
 CREATE INDEX IF NOT EXISTS idx_wa_created ON wa_messages(created_at DESC);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS wa_forecast_off BOOLEAN NOT NULL DEFAULT false;
+
+-- رسايل جاهزة بتستنى موبايل الأندرويد يبعتها (مثلًا «انضافلك كوبونات»)
+CREATE TABLE IF NOT EXISTS wa_outbox (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+  phone VARCHAR(30) NOT NULL,
+  kind VARCHAR(20) NOT NULL,
+  text TEXT NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','expired')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_wa_outbox_pending ON wa_outbox(created_at) WHERE status = 'pending';

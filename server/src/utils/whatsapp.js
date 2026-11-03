@@ -173,3 +173,84 @@ export async function markQueueSent(customerId, phone) {
     [customerId, phone, jordanDate()]
   );
 }
+
+// ============================================================
+// صندوق الرسايل (للأندرويد): رسايل بتنعمل وقت الحدث وبتستنى الموبايل يبعتها
+// ============================================================
+const DEFAULT_COUPONS_ADDED = "✨ أهلًا {الاسم}\nانضافلك {الكوبونات} 🎫\nرصيدك صار {الرصيد}\n{الباقي}\n\nتابع رصيدك أول بأول:\n{الرابط}\n\n{المحل} 💧";
+
+export function couponsWord(n) {
+  n = Number(n) || 0;
+  if (n === 0) return "ما ضل عندك كوبونات";
+  if (n === 1) return "كوبون واحد";
+  if (n === 2) return "كوبونين";
+  if (n >= 3 && n <= 10) return `${n} كوبونات`;
+  return `${n} كوبون`;
+}
+
+async function templateText(key, fallback) {
+  const r = await query("SELECT value FROM app_settings WHERE key = 'message_templates'");
+  try {
+    const t = JSON.parse(r.rows[0]?.value || "{}")[key];
+    if (typeof t === "string" && t.trim()) return t;
+  } catch {}
+  return fallback;
+}
+
+// عنوان التطبيق (عشان رابط رصيد الكوبونات) — بنحفظه من آخر طلب إجا من التطبيق
+export async function appOrigin(reqOrigin) {
+  const ok = typeof reqOrigin === "string" && /^https?:\/\/[^/]+$/.test(reqOrigin) && !/localhost|127\.0\.0\.1/.test(reqOrigin);
+  if (ok) {
+    await query(`INSERT INTO app_settings (key, value, updated_at) VALUES ('app_origin', $1, now()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`, [reqOrigin]).catch(() => {});
+    return reqOrigin;
+  }
+  return (await query("SELECT value FROM app_settings WHERE key = 'app_origin'")).rows[0]?.value || null;
+}
+
+// موبايل الأندرويد مجهّز؟ (في رابط سري)
+async function androidOn() {
+  return !!(await query("SELECT value FROM app_settings WHERE key = 'wa_queue_token'")).rows[0]?.value;
+}
+
+// «انضافلك كوبونات»: بتنحط بالصندوق، والأندرويد بيبعتها أول ما يصحى
+export async function queueCouponsAdded({ customerId, added, balance, unpaid = 0, walletToken = null, origin = null }) {
+  if (!(await androidOn())) return false;
+  const c = (await query("SELECT name, phone_normalized FROM customers WHERE id = $1", [customerId])).rows[0];
+  if (!c?.phone_normalized) return false;
+  const base = await appOrigin(origin);
+  const tpl = await templateText("coupons_added", DEFAULT_COUPONS_ADDED);
+  const text = tpl
+    .replaceAll("{الاسم}", firstName(c.name))
+    .replaceAll("{الكوبونات}", couponsWord(added))
+    .replaceAll("{الباقة}", "")
+    .replaceAll("{الرصيد}", couponsWord(balance))
+    .replaceAll("{الباقي}", unpaid > 0 ? `باقي من ثمن الباقة: ${Number(unpaid).toFixed(2)} دينار` : "")
+    .replaceAll("{الرابط}", walletToken && base ? `${base}/w/${walletToken}` : "")
+    .replaceAll("{المحل}", currentTenant()?.name || "")
+    .replace(/\n{3,}/g, "\n\n").trim();
+  await query("INSERT INTO wa_outbox (customer_id, phone, kind, text) VALUES ($1,$2,'coupons_added',$3)", [customerId, c.phone_normalized, text]);
+  return true;
+}
+
+// الرسالة الجاية للموبايل: أول إشي الصندوق (فورًا، بين ٧ الصبح و١٠ بالليل)، وبعدين تذكير التوقعات (بوقته الصبح)
+export async function nextQueued() {
+  const h = jordanHour();
+  if (h >= 7 && h < 22) {
+    await query("UPDATE wa_outbox SET status = 'expired' WHERE status = 'pending' AND created_at < now() - interval '36 hours'");
+    const o = (await query("SELECT * FROM wa_outbox WHERE status = 'pending' ORDER BY created_at LIMIT 1")).rows[0];
+    if (o) {
+      const left = (await query("SELECT COUNT(*)::int AS n FROM wa_outbox WHERE status = 'pending'")).rows[0].n;
+      return { source: "outbox", id: o.id, customer_id: o.customer_id, phone: o.phone, text: o.text, url: `https://wa.me/${o.phone}?text=${encodeURIComponent(o.text)}`, left };
+    }
+  }
+  const s = await getWaSettings();
+  if (h >= s.hour && h < s.hour + 5) {
+    const list = await forecastQueue();
+    if (list[0]) return { source: "forecast", id: list[0].customer_id, ...list[0], left: list.length };
+  }
+  return null;
+}
+
+export async function markOutboxSent(id) {
+  await query("UPDATE wa_outbox SET status = 'sent', sent_at = now() WHERE id = $1 AND status = 'pending'", [id]);
+}

@@ -10,6 +10,7 @@ import { cleanSchedule } from "../utils/schedule.js";
 import { replaceOrderItems } from "../utils/orderEdit.js";
 import { sellCouponPackage } from "./coupons.js";
 import { ensureInvoiceToken, ensureWalletToken } from "./invoices.js";
+import { queueCouponsAdded } from "../utils/whatsapp.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -1155,7 +1156,12 @@ router.post("/stops/:stopId/sell-package", async (req, res) => {
       tripId: trip.id,
     });
     const wallet_token = req.tenant?.id ? await ensureWalletToken(stop.customer_id, req.tenant.id).catch(() => null) : null;
-    res.json({ ...r, wallet_token });
+    const wa_queued = await queueCouponsAdded({
+      customerId: stop.customer_id, added: r.sale?.coupons, balance: r.coupon_balance,
+      unpaid: r.sale ? Math.max(0, Number(r.sale.price) - Number(r.sale.paid_amount)) : 0,
+      walletToken: wallet_token, origin: req.headers.origin,
+    }).catch((e) => { console.error("wa queue:", e.message); return false; });
+    res.json({ ...r, wallet_token, wa_queued });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;

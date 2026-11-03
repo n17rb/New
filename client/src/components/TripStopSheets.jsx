@@ -112,7 +112,7 @@ export function SellPackageSheet({ open, stop, preselect = null, onClose, onSave
     try {
       const r = await api.sellPackageInTrip(stop.id, { package_id: pkg.id, paid_amount: paidNum });
       onSaved?.(`✅ انباعت الباقة — صار معه ${r.coupon_balance} كوبون`);
-      setDone({ added: pkg.coupons + (pkg.bonus_coupons || 0), balance: r.coupon_balance, unpaid, packageName: pkg.name, walletToken: r.wallet_token || null });
+      setDone({ added: pkg.coupons + (pkg.bonus_coupons || 0), balance: r.coupon_balance, unpaid, packageName: pkg.name, walletToken: r.wallet_token || null, waQueued: !!r.wa_queued });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -130,11 +130,12 @@ export function SellPackageSheet({ open, stop, preselect = null, onClose, onSave
           <div className="sold-t">كوبون انضاف لـ{stop.customer_name}</div>
           <div className="sold-b tabular-num">رصيده صار {done.balance} كوبون</div>
         </div>
+        {done.waQueued && <div className="success-box" style={{ textAlign: "center" }}>📱 رسالة «انضافلك كوبونات» مع رابط رصيده رح تنبعت لحالها من موبايل المحل</div>}
         <div className="sheet-actions">
-          <a className="btn-primary icon-row" style={{ justifyContent: "center", textDecoration: "none", background: "var(--whatsapp)" }}
+          {done.waQueued ? <button className="btn-primary" onClick={onClose}>تمام</button> : <a className="btn-primary icon-row" style={{ justifyContent: "center", textDecoration: "none", background: "var(--whatsapp)" }}
             href={`https://wa.me/${stop.phone_normalized}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" onClick={onClose}>
             <FaWhatsapp aria-hidden="true" /> ابعتله رسالة برابط رصيده
-          </a>
+          </a>}
           <button className="btn-secondary" onClick={onClose}>تم</button>
         </div>
       </Sheet>

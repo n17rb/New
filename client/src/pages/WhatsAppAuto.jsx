@@ -93,7 +93,7 @@ export default function WhatsAppAuto() {
         </div>
       )}
 
-      <AndroidCard token={d.queue_token} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
+      <AndroidCard token={d.queue_token} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
 
       <button type="button" className="wa-setup-toggle" onClick={() => setShowSetup((v) => !v)}>
         {d.configured ? "✓ واتساب مربوط" : "⚠️ واتساب مش مربوط لسا"} — {showSetup ? "إخفاء الإعدادات" : "الإعدادات"}
@@ -167,7 +167,7 @@ export default function WhatsAppAuto() {
 }
 
 // موبايل أندرويد بيبعت من تطبيق واتساب أعمال نفسه (برنامج MacroDroid)
-function AndroidCard({ token, pending, busy, onNew }) {
+function AndroidCard({ token, outbox, pending, busy, onNew }) {
   const [copied, setCopied] = useState("");
   const base = `${API_ORIGIN}/api/public/wa-queue/${token}`;
   const copy = (txt, key) => {
@@ -177,7 +177,8 @@ function AndroidCard({ token, pending, busy, onNew }) {
     <div className="card wa-android">
       <div className="wa-android-h">📱 من موبايل أندرويد — رقمك الأساسي</div>
       <p className="text-secondary" style={{ marginTop: 4, fontSize: "0.82rem" }}>
-        موبايل أندرويد عليه واتساب أعمال (برقم المحل) بيصحى الساعة ٧ وبيبعت لحاله من التطبيق — زبون زبون، وبين كل رسالة والثانية دقيقة تقريبًا. {pending > 0 ? `اليوم في ${pending} رسالة بالدور.` : ""}
+        موبايل أندرويد عليه واتساب أعمال (برقم المحل) بيشيّك كل كم دقيقة وبيبعت لحاله من التطبيق:
+        رسايل «انضافلك كوبونات» أول ما تنباع باقة (بين ٧ الصبح و١٠ بالليل)، وتذكير التوقعات الصبح. {pending > 0 ? `اليوم في ${pending} تذكير بالدور.` : ""}
       </p>
       <div className="sheet-q">رابط «الرسالة الجاية»</div>
       <div className="wa-link" dir="ltr">{base}/next</div>
@@ -185,6 +186,17 @@ function AndroidCard({ token, pending, busy, onNew }) {
         <button type="button" className="btn-secondary" onClick={() => copy(`${base}/next`, "next")}>{copied === "next" ? "✓ انتسخ" : "انسخ الرابط"}</button>
         <button type="button" className="btn-secondary" disabled={busy} onClick={onNew}>رابط جديد</button>
       </div>
+      {outbox.length > 0 && (
+        <div className="wa-outbox">
+          <div className="sheet-q">آخر رسايل الكوبونات</div>
+          {outbox.slice(0, 8).map((o) => (
+            <div key={o.id} className="wa-ob-row">
+              <span>{o.name || "زبون"}</span>
+              <small className={o.status === "sent" ? "green" : o.status === "expired" ? "red" : ""}>{o.status === "sent" ? "✓ انبعتت" : o.status === "expired" ? "ما انبعتت" : "بتستنى الموبايل"}</small>
+            </div>
+          ))}
+        </div>
+      )}
       <details className="wa-help" style={{ marginTop: 12 }}>
         <summary>كيف أجهّز الموبايل؟</summary>
         <ol>
@@ -192,13 +204,13 @@ function AndroidCard({ token, pending, busy, onNew }) {
           <li>نزّل <b>MacroDroid</b> من Google Play، واعطيه صلاحية <b>إمكانية الوصول (Accessibility)</b> لما يطلبها.</li>
           <li>اعمل ماكرو جديد:
             <ul>
-              <li><b>المُشغّل:</b> يوم/وقت — الساعة ٧:٠٠ الصبح كل يوم.</li>
-              <li><b>الأفعال (كرّرها لحد ما يخلص الدور):</b>
+              <li><b>المُشغّل:</b> كل ٥ دقايق (Regular interval) — وإذا بدك بس بين ٧ الصبح و١٠ بالليل (Constraint: Time of day).</li>
+              <li><b>الأفعال (كرّرها لحد ما <code>done</code> = true):</b>
                 <br />١) <b>HTTP Request (GET)</b> على الرابط فوق، وخزّن الرد بمتغيّر.
-                <br />٢) إذا <code>done</code> = true ← <b>وقّف</b>.
+                <br />٢) إذا <code>done</code> = true ← <b>وقّف</b> (ما في إشي هلّق).
                 <br />٣) <b>افتح الرابط</b> اللي بخانة <code>url</code> بتطبيق WhatsApp Business.
                 <br />٤) استنى ٤ ثواني ← <b>UI Interaction: Click</b> على زر الإرسال.
-                <br />٥) <b>HTTP Request</b> على: <span dir="ltr">{base}/sent/</span> + رقم <code>customer_id</code>.
+                <br />٥) <b>HTTP Request (GET)</b> على الرابط اللي بخانة <code>done_url</code> (عشان ما تنعاد).
                 <br />٦) ارجع للشاشة الرئيسية واستنى <b>٤٥–٩٠ ثانية</b> (عشوائي) قبل اللي بعده.</li>
             </ul>
           </li>

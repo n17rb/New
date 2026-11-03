@@ -5,6 +5,7 @@ import { requirePerm } from "../permissions.js";
 import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js";
 import { ensureWalletToken } from "./invoices.js";
 import { notifyCouponSale } from "../utils/notify.js";
+import { queueCouponsAdded } from "../utils/whatsapp.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -143,7 +144,12 @@ router.post("/sell", requirePerm("coupons", "edit"), async (req, res) => {
     const customerId = Number(req.body?.customer_id);
     const r = await sellCouponPackage({ customerId, packageId: Number(req.body?.package_id), paidAmount: req.body?.paid_amount, userId: req.user.id });
     const wallet_token = req.user.inspecting || !req.tenant?.id ? null : await ensureWalletToken(customerId, req.tenant.id).catch(() => null);
-    res.json({ ...r, wallet_token });
+    const wa_queued = await queueCouponsAdded({
+      customerId: customerId, added: r.sale?.coupons, balance: r.coupon_balance,
+      unpaid: r.sale ? Math.max(0, Number(r.sale.price) - Number(r.sale.paid_amount)) : 0,
+      walletToken: wallet_token, origin: req.headers.origin,
+    }).catch((e) => { console.error("wa queue:", e.message); return false; });
+    res.json({ ...r, wallet_token, wa_queued });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;
