@@ -1619,3 +1619,7 @@ CREATE INDEX IF NOT EXISTS idx_wa_outbox_pending ON wa_outbox(created_at) WHERE 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMPTZ;
+
+-- اتجاه السيارة وسرعتها (من تطبيق الكابتن) — عشان السهم على الخريطة
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_heading REAL;
+ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_speed REAL;

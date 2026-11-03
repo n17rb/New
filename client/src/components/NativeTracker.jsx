@@ -25,9 +25,13 @@ export default function NativeTracker({ enabled }) {
           if (err.code === "NOT_AUTHORIZED" && window.confirm("التطبيق محتاج صلاحية الموقع عشان يتبع السيارة. نفتح الإعدادات؟ اختار «السماح طوال الوقت»")) BG.openSettings();
           return;
         }
-        if (!loc || Date.now() - lastAt < 3000) return;
+        if (!loc || Date.now() - lastAt < 2000) return;
         lastAt = Date.now();
-        api.pingLocation(loc.latitude, loc.longitude).catch(() => {});
+        api.pingLocation(loc.latitude, loc.longitude, {
+          heading: loc.bearing ?? null,
+          speed: loc.speed ?? null,
+          accuracy: loc.accuracy ?? null,
+        }).catch(() => {});
       }
     ).then((id) => { watcher = id; }).catch(() => {});
     return () => { if (watcher) BG.removeWatcher({ id: watcher }).catch(() => {}); };

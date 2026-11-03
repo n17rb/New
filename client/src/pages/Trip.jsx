@@ -82,7 +82,8 @@ function UnifiedTripView({ user, isPrivileged }) {
   }, []);
 
   useEffect(() => {
-    if (!myTrip || myTrip.status !== "STARTED" || !navigator.geolocation) return;
+    // بتطبيق الكابتن: التتبع من التلفون نفسه (أدق) — ما بنبعت من الصفحة عشان ما يتلخبط الموقع
+    if (!myTrip || myTrip.status !== "STARTED" || !navigator.geolocation || window.Capacitor?.isNativePlatform?.()) return;
     const sendLocation = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => api.updateTripLocation(myTrip.id, pos.coords.latitude, pos.coords.longitude).catch(() => {}),

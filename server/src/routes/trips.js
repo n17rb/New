@@ -421,10 +421,10 @@ router.get("/:id/replay", async (req, res) => {
 
 // موقع السيارة بس (خفيف) — الخريطة بتسأل عنه كل كم ثانية
 router.get("/:id/live", async (req, res) => {
-  const t = (await query("SELECT driver_id, current_latitude, current_longitude, location_updated_at FROM trips WHERE id = $1", [req.params.id])).rows[0];
+  const t = (await query("SELECT driver_id, current_latitude, current_longitude, location_updated_at, current_heading, current_speed FROM trips WHERE id = $1", [req.params.id])).rows[0];
   if (!t) return res.status(404).json({ error: "الرحلة غير موجودة." });
   if (!isPrivileged(req.user) && t.driver_id !== req.user.id) return res.status(403).json({ error: "غير مصرح." });
-  res.json({ lat: t.current_latitude, lng: t.current_longitude, at: t.location_updated_at });
+  res.json({ lat: t.current_latitude, lng: t.current_longitude, at: t.location_updated_at, heading: t.current_heading, speed: t.current_speed });
 });
 
 router.get("/:id", async (req, res) => {
@@ -454,7 +454,13 @@ router.post("/ping", async (req, res) => {
   await query("UPDATE users SET last_latitude = $1, last_longitude = $2, last_location_at = now() WHERE id = $3", [lat, lon, req.user.id]);
   const trip = (await query("SELECT * FROM trips WHERE driver_id = $1 AND status = 'STARTED' ORDER BY id DESC LIMIT 1", [req.user.id])).rows[0];
   if (trip) {
-    await query("UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now() WHERE id = $3", [lat, lon, trip.id]);
+    const heading = Number.isFinite(Number(req.body?.heading)) && req.body?.heading !== null ? ((Number(req.body.heading) % 360) + 360) % 360 : null;
+    const speed = Number.isFinite(Number(req.body?.speed)) && req.body?.speed !== null ? Math.max(0, Number(req.body.speed)) : null;
+    await query(
+      `UPDATE trips SET current_latitude = $1, current_longitude = $2, location_updated_at = now(),
+         current_heading = COALESCE($4, current_heading), current_speed = $5 WHERE id = $3`,
+      [lat, lon, trip.id, heading, speed]
+    );
     const last = await query("SELECT latitude, longitude, recorded_at FROM trip_track WHERE trip_id = $1 ORDER BY id DESC LIMIT 1", [trip.id]);
     const p = last.rows[0];
     const moved = p ? Math.hypot((lat - p.latitude) * 111000, (lon - p.longitude) * 94000) : Infinity;
