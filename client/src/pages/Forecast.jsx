@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { FiRotateCcw, FiInfo, FiRefreshCw } from "react-icons/fi";
 import { api } from "../api.js";
 import { usePerms } from "../auth.jsx";
@@ -24,7 +24,9 @@ function shortDate(iso) {
 }
 
 export default function Forecast() {
-  const { canEdit } = usePerms();
+  const { canEdit, isOwner } = usePerms();
+  const [wa, setWa] = useState(null);
+  useEffect(() => { if (isOwner || canEdit("settings")) api.waGet().then((r) => setWa(r)).catch(() => {}); }, []);
   const canConfigure = canEdit("settings");
   const [params, setParams] = useSearchParams();
   const tab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "today";
@@ -97,6 +99,13 @@ export default function Forecast() {
   return (
     <div className="page">
       <h1 className="title-lg">توقعات الطلبات</h1>
+      {wa && (
+        <Link to="/settings/whatsapp" className={`wa-strip${wa.settings.enabled && wa.configured ? " on" : ""}`}>
+          {wa.settings.enabled && wa.configured
+            ? `📤 تذكير واتساب تلقائي شغّال — كل يوم ${wa.settings.hour}:00 الصبح`
+            : "📤 خلّي واتساب يذكّر الزباين لحاله كل يوم الصبح ←"}
+        </Link>
+      )}
       <p className="text-secondary" style={{ marginTop: -6, marginBottom: 14, fontSize: "0.85rem" }}>
         النظام بيتعلم من طلبات كل زبون: كم بيسحب، كم ضايل عنده، ومتى مفروض يطلب.
       </p>

@@ -43,6 +43,8 @@ import supportRoutes from "./routes/support.js";
 import payrollRoutes from "./routes/payroll.js";
 import jardRoutes from "./routes/jard.js";
 import stationRoutes from "./routes/station.js";
+import whatsappRoutes from "./routes/whatsapp.js";
+import { runForecastWhatsapp } from "./utils/whatsapp.js";
 import invoiceRoutes, { publicInvoiceRouter } from "./routes/invoices.js";
 import factoryRoutes, { factoryPublicRouter, factoryWatch } from "./routes/factory/index.js";
 
@@ -121,6 +123,7 @@ app.use("/api/support", supportRoutes);
 app.use("/api/payroll", payrollRoutes);
 app.use("/api/jard", jardRoutes);
 app.use("/api/station", stationRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/public", publicInvoiceRouter);
 app.use("/api/public", factoryPublicRouter);
@@ -195,6 +198,8 @@ initDbIfNeeded().then(() => {
   setInterval(hourlyJobs, 60 * 60 * 1000);
   // تذكير «قبل الموعد بساعة» بده فحص أكثر من مرة بالساعة
   setInterval(() => forEachTenant("الطلبات بموعد", () => checkScheduledOrders()), 10 * 60 * 1000);
+  // واتساب التوقعات: الساعة ٧ الصبح (أو اللي محدده المحل) — فحص كل ١٠ دقايق، وبيبعت مرة وحدة باليوم
+  setInterval(() => forEachTenant("واتساب التوقعات", () => runForecastWhatsapp(), { plan: "shop" }), 10 * 60 * 1000);
   // المصانع: سائق متأخر أو تتبع منقطع — كل ١٠ دقايق
   setInterval(() => forEachTenant("مراقبة المصنع", () => factoryWatch(), { plan: "factory" }), 10 * 60 * 1000);
   // تقسيم الزباين لمناطق التوصيل أول ما يشتغل السيرفر

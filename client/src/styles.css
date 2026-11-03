@@ -3101,3 +3101,18 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 .sh-done.warn { background: var(--warning-soft, #FFF4E0); color: #B26B00; }
 .sh-done span { font-size: 0.82rem; color: var(--text-secondary); }
 .exp-quick button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* واتساب تلقائي */
+.wa-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 12px; margin-bottom: 8px; }
+.wa-card.on { border-color: rgba(37, 211, 102, 0.45); }
+.wa-card.on .pr-sw.on { background: rgba(37, 211, 102, 0.1); border-color: rgba(37, 211, 102, 0.3); }
+.wa-card.on .pr-sw.on .pr-sw-k { background: var(--whatsapp); }
+.wa-bubble { margin-top: 12px; background: #DCF8C6; color: #111; border-radius: 14px 14px 4px 14px; padding: 10px 12px; font-size: 0.88rem; white-space: pre-line; line-height: 1.6; max-width: 85%; margin-inline-start: auto; box-shadow: 0 1px 1px rgba(0,0,0,0.08); }
+[data-theme="dark"] .wa-bubble { background: #005C4B; color: #E9EDEF; }
+.wa-setup-toggle { display: block; width: 100%; margin: 16px 0 8px; font: inherit; font-weight: 700; font-size: 0.86rem; color: var(--primary); background: none; border: none; text-align: start; cursor: pointer; padding: 4px 2px; }
+.wa-help { background: var(--surface-2); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; font-size: 0.85rem; }
+.wa-help summary { font-weight: 700; cursor: pointer; }
+.wa-help ol { padding-inline-start: 18px; line-height: 1.8; margin: 8px 0 0; }
+.wa-pre { white-space: pre-wrap; background: var(--surface); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 0.82rem; margin: 6px 0; direction: rtl; user-select: all; }
+.wa-strip { display: block; text-decoration: none; font-size: 0.82rem; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: 12px; padding: 9px 12px; margin: -4px 0 12px; }
+.wa-strip.on { color: #128C4A; background: rgba(37, 211, 102, 0.12); }

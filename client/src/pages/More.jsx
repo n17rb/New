@@ -5,7 +5,7 @@ import {
   FiDollarSign, FiCreditCard, FiBox, FiArchive, FiBarChart2, FiTrendingUp, FiUserPlus, FiDroplet,
   FiMap, FiShield, FiMapPin, FiList, FiDatabase, FiEdit3, FiMoon, FiLogOut, FiChevronLeft, FiCalendar,
   FiTag, FiAlertCircle, FiMessageCircle, FiClipboard, FiUsers, FiStar, FiHeadphones, FiGrid, FiBriefcase, FiMessageSquare, FiTarget,
-  FiTruck, FiPackage, FiShoppingCart, FiBriefcase as FiCustody, FiPlus,
+  FiTruck, FiSend, FiPackage, FiShoppingCart, FiBriefcase as FiCustody, FiPlus,
 } from "react-icons/fi";
 import { usePerms, useShop } from "../auth.jsx";
 import { LogoMark } from "../components/Logo.jsx";
@@ -99,6 +99,7 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         {can("payroll") && <Row key="payroll" to="/payroll" icon={FiBriefcase} title="الدوام والرواتب" sub="مين داوم، الرواتب واليوميات، السحوبات" />}
         {isOwner && <Row key="users" to="/users" icon={FiShield} title="الحسابات والصلاحيات" sub="مين بيشوف شو، ومين بيعدّل" />}
         {can("settings") && <Row key="set" to="/settings" icon={FiMapPin} title="إعدادات المحل" sub="موقع المحل" />}
+        {isManager && <Row key="wa" to="/settings/whatsapp" icon={FiSend} title="واتساب تلقائي" sub="تذكير الزباين الصبح إنه المي قربت تخلص" />}
         {isManager && <Row key="msgs" to="/settings/messages" icon={FiMessageSquare} title="نصوص الرسائل" sub="رسائل الواتساب للزباين: الفاتورة، الدين، «أنا جاي»…" />}
         {can("activity_log") && <Row key="log" to="/activity-log" icon={FiList} title="سجل النشاط" />}
         {can("backup") && <Row key="backup" to="/backup" icon={FiDatabase} title="النسخ الاحتياطي" />}

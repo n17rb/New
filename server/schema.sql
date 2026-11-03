@@ -1585,3 +1585,19 @@ ALTER TABLE st_shift_expenses ADD COLUMN IF NOT EXISTS round_id INTEGER REFERENC
 -- الحذف: المنتج/السيارة اللي إلها تاريخ بتنخفى (وسجلّاتها القديمة بتضل)
 ALTER TABLE f_products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE f_vehicles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- واتساب التلقائي (WhatsApp Cloud API): سجل الرسايل، والزباين اللي ما بدهم تذكير
+CREATE TABLE IF NOT EXISTS wa_messages (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+  phone VARCHAR(30) NOT NULL,
+  kind VARCHAR(20) NOT NULL DEFAULT 'forecast',
+  sent_on DATE NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'sent' CHECK (status IN ('sent','failed','test')),
+  wa_id VARCHAR(120),
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_once ON wa_messages(customer_id, kind, sent_on) WHERE status = 'sent';
+CREATE INDEX IF NOT EXISTS idx_wa_created ON wa_messages(created_at DESC);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS wa_forecast_off BOOLEAN NOT NULL DEFAULT false;

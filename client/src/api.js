@@ -282,6 +282,12 @@ export const api = {
   stDelShiftExpense: (id) => request(`/station/shift/expense/${id}`, { method: "DELETE" }),
   stCloseShift: (body) => request("/station/shift/close", { method: "POST", body }),
   stSetCustody: (userId, body) => request(`/station/custody/${userId}`, { method: "PUT", body }),
+  // واتساب تلقائي (WhatsApp Cloud API)
+  waGet: () => request("/whatsapp"),
+  waSave: (body) => request("/whatsapp", { method: "PUT", body }),
+  waTest: (phone) => request("/whatsapp/test", { method: "POST", body: { phone } }),
+  waRunNow: () => request("/whatsapp/run-now", { method: "POST" }),
+  waSetCustomer: (id, off) => request(`/whatsapp/customers/${id}`, { method: "PUT", body: { off } }),
   getDebtQuickList: () => request("/debts/quick-list"),
   quickPayDebt: (customerId, body) => request(`/debts/customer/${customerId}/quick-pay`, { method: "POST", body }),
   adjustDebt: (customerId, body) => request(`/debts/customer/${customerId}/adjust`, { method: "POST", body }),

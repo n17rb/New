@@ -51,6 +51,7 @@ const VehicleDetail = lazy(() => import("./pages/Vehicles.jsx").then((m) => ({ d
 const Station = lazy(() => import("./pages/Station.jsx"));
 const Cashier = lazy(() => import("./pages/Cashier.jsx"));
 const Custody = lazy(() => import("./pages/Custody.jsx"));
+const WhatsAppAuto = lazy(() => import("./pages/WhatsAppAuto.jsx"));
 const Bottles = lazy(() => import("./pages/Bottles.jsx"));
 const PublicInvoice = lazy(() => import("./pages/PublicInvoice.jsx"));
 const PublicWallet = lazy(() => import("./pages/PublicWallet.jsx"));
@@ -457,6 +458,7 @@ function MainApp() {
               {can("delivery", "edit") && <Route path="/my-balance" element={<MyBalance user={user} />} />}
               {can("settings") && <Route path="/settings" element={<ShopSettings />} />}
               {(isOwner || can("settings", "edit")) && <Route path="/settings/messages" element={<MessageTemplates />} />}
+              {(isOwner || can("settings", "edit")) && <Route path="/settings/whatsapp" element={<WhatsAppAuto />} />}
               {(can("reports") || can("cash")) && <Route path="/swot" element={<Swot />} />}
               {isOwner && <Route path="/users" element={<Users />} />}
               {can("debts") && <Route path="/debts" element={<Debts />} />}
