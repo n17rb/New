@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FaWhatsapp } from "react-icons/fa";
-import { api } from "../api.js";
+import { api, API_ORIGIN } from "../api.js";
 
 const HOURS = [5, 6, 7, 8, 9, 10];
 const hourLabel = (h) => `${h}:00 الصبح`;
@@ -93,6 +93,8 @@ export default function WhatsAppAuto() {
         </div>
       )}
 
+      <AndroidCard token={d.queue_token} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
+
       <button type="button" className="wa-setup-toggle" onClick={() => setShowSetup((v) => !v)}>
         {d.configured ? "✓ واتساب مربوط" : "⚠️ واتساب مش مربوط لسا"} — {showSetup ? "إخفاء الإعدادات" : "الإعدادات"}
       </button>
@@ -160,6 +162,52 @@ export default function WhatsAppAuto() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// موبايل أندرويد بيبعت من تطبيق واتساب أعمال نفسه (برنامج MacroDroid)
+function AndroidCard({ token, pending, busy, onNew }) {
+  const [copied, setCopied] = useState("");
+  const base = `${API_ORIGIN}/api/public/wa-queue/${token}`;
+  const copy = (txt, key) => {
+    navigator.clipboard?.writeText(txt).then(() => { setCopied(key); setTimeout(() => setCopied(""), 2000); }).catch(() => {});
+  };
+  return (
+    <div className="card wa-android">
+      <div className="wa-android-h">📱 من موبايل أندرويد — رقمك الأساسي</div>
+      <p className="text-secondary" style={{ marginTop: 4, fontSize: "0.82rem" }}>
+        موبايل أندرويد عليه واتساب أعمال (برقم المحل) بيصحى الساعة ٧ وبيبعت لحاله من التطبيق — زبون زبون، وبين كل رسالة والثانية دقيقة تقريبًا. {pending > 0 ? `اليوم في ${pending} رسالة بالدور.` : ""}
+      </p>
+      <div className="sheet-q">رابط «الرسالة الجاية»</div>
+      <div className="wa-link" dir="ltr">{base}/next</div>
+      <div className="vh-acts2" style={{ marginTop: 8 }}>
+        <button type="button" className="btn-secondary" onClick={() => copy(`${base}/next`, "next")}>{copied === "next" ? "✓ انتسخ" : "انسخ الرابط"}</button>
+        <button type="button" className="btn-secondary" disabled={busy} onClick={onNew}>رابط جديد</button>
+      </div>
+      <details className="wa-help" style={{ marginTop: 12 }}>
+        <summary>كيف أجهّز الموبايل؟</summary>
+        <ol>
+          <li>على موبايل الأندرويد: نزّل <b>WhatsApp Business</b> وافتحه برقم المحل. إذا رقم المحل على موبايل ثاني، اربط الأندرويد كجهاز مرافق (Link as companion) من نفس التطبيق.</li>
+          <li>نزّل <b>MacroDroid</b> من Google Play، واعطيه صلاحية <b>إمكانية الوصول (Accessibility)</b> لما يطلبها.</li>
+          <li>اعمل ماكرو جديد:
+            <ul>
+              <li><b>المُشغّل:</b> يوم/وقت — الساعة ٧:٠٠ الصبح كل يوم.</li>
+              <li><b>الأفعال (كرّرها لحد ما يخلص الدور):</b>
+                <br />١) <b>HTTP Request (GET)</b> على الرابط فوق، وخزّن الرد بمتغيّر.
+                <br />٢) إذا <code>done</code> = true ← <b>وقّف</b>.
+                <br />٣) <b>افتح الرابط</b> اللي بخانة <code>url</code> بتطبيق WhatsApp Business.
+                <br />٤) استنى ٤ ثواني ← <b>UI Interaction: Click</b> على زر الإرسال.
+                <br />٥) <b>HTTP Request</b> على: <span dir="ltr">{base}/sent/</span> + رقم <code>customer_id</code>.
+                <br />٦) ارجع للشاشة الرئيسية واستنى <b>٤٥–٩٠ ثانية</b> (عشوائي) قبل اللي بعده.</li>
+            </ul>
+          </li>
+          <li>جرّبه أول مرة وإنت ماسك الموبايل. إذا علقت بأي خطوة ابعتلي صورة.</li>
+        </ol>
+        <p className="text-secondary" style={{ fontSize: "0.78rem" }}>
+          ⚠️ هاي أتمتة على تطبيق واتساب نفسه، مش من Meta رسميًا. عشان تضل آمنة: بتنبعت بس لزباينك اللي طلبوا قبل، مرة وحدة باليوم، ومع فاصل بين الرسايل. وأي زبون ما بده، اكبس «لا تبعتله». الرابط سري — إذا انتشر اعمل «رابط جديد».
+        </p>
+      </details>
     </div>
   );
 }

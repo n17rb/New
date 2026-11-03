@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { query, currentTenant } from "../db.js";
 import { computeForecasts, groupForecasts, jordanDate, jordanHour } from "./forecast.js";
 import { sendPushToUser } from "./push.js";
@@ -8,7 +9,7 @@ import { can } from "../permissions.js";
 // الرسالة اللي بتنبعت للزبون لازم تكون «قالب» (Template) معتمد من Meta، فيه متغيرات:
 //   {{1}} اسم الزبون   {{2}} اسم المحل   {{3}} الكمية اللي بياخذها عادةً
 // ============================================================
-const KEYS = ["wa_enabled", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
+const KEYS = ["wa_enabled", "wa_queue_token", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export async function getWaSettings() {
@@ -129,4 +130,46 @@ export async function runForecastWhatsapp({ force = false } = {}) {
     }
   }
   return { sent: ok, failed: failed.length, total: recipients.length, errors: failed.slice(0, 5) };
+}
+
+// ============================================================
+// جهاز أندرويد بيبعت من تطبيق واتساب أعمال نفسه (أتمتة على الموبايل)
+// النظام بيجهّز «الدور»: مين ينبعتله اليوم ونص الرسالة، والموبايل بيسحب واحد واحد
+// ============================================================
+const DEFAULT_FORECAST_TEXT = "مرحبا {الاسم} 🌊\nمعك {المحل}.\nحسب حسابنا المي عندك قربت تخلص 💧\nبدك نجيبلك {الكمية} اليوم؟";
+
+export async function getQueueToken({ regenerate = false } = {}) {
+  const r = await query("SELECT value FROM app_settings WHERE key = 'wa_queue_token'");
+  if (r.rows[0]?.value && !regenerate) return r.rows[0].value;
+  const tenantId = currentTenant()?.id || 1;
+  const token = `${tenantId}-${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  await saveWaSettings({ wa_queue_token: token });
+  return token;
+}
+
+async function forecastText() {
+  const r = await query("SELECT value FROM app_settings WHERE key = 'message_templates'");
+  try {
+    const t = JSON.parse(r.rows[0]?.value || "{}").forecast_reminder;
+    if (typeof t === "string" && t.trim()) return t;
+  } catch {}
+  return DEFAULT_FORECAST_TEXT;
+}
+
+// الرسايل اللي لسا ما انبعتت اليوم (للي مش مستثنيين)
+export async function forecastQueue() {
+  const shop = currentTenant()?.name || "";
+  const tpl = await forecastText();
+  const list = (await forecastRecipients()).filter((r) => !r.off && !r.sent_today);
+  return list.map((r) => {
+    const text = tpl.replaceAll("{الاسم}", firstName(r.name)).replaceAll("{المحل}", shop).replaceAll("{الكمية}", r.qty_label || "مي");
+    return { customer_id: r.customer_id, name: r.name, phone: r.phone, text, url: `https://wa.me/${r.phone}?text=${encodeURIComponent(text)}` };
+  });
+}
+
+export async function markQueueSent(customerId, phone) {
+  await query(
+    `INSERT INTO wa_messages (customer_id, phone, kind, sent_on, status, wa_id) VALUES ($1,$2,'forecast',$3,'sent','android') ON CONFLICT DO NOTHING`,
+    [customerId, phone, jordanDate()]
+  );
 }

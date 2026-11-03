@@ -2,7 +2,9 @@ import { Router } from "express";
 import { query, logActivity } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { can } from "../permissions.js";
-import { getWaSettings, saveWaSettings, isConfigured, sendTemplate, forecastRecipients, runForecastWhatsapp } from "../utils/whatsapp.js";
+import { getWaSettings, saveWaSettings, isConfigured, sendTemplate, forecastRecipients, runForecastWhatsapp, getQueueToken, forecastQueue, markQueueSent } from "../utils/whatsapp.js";
+import { getTenant } from "../utils/tenants.js";
+import { setRequestTenant } from "../db.js";
 import { jordanDate } from "../utils/forecast.js";
 import { currentTenant } from "../db.js";
 
@@ -29,6 +31,7 @@ router.get("/", wrap(async (req, res) => {
     settings: { provider: s.provider, enabled: s.enabled, phone_id: s.phone_id, token_masked: masked(s.token), has_token: !!s.token, template: s.template, lang: s.lang, hour: s.hour, last_run: s.last_run },
     configured: isConfigured(s),
     today, shop_name: currentTenant()?.name || "",
+    queue_token: await getQueueToken(),
     recipients, log: log.rows,
   });
 }));
@@ -78,4 +81,51 @@ router.put("/customers/:id", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// رابط جديد لجهاز الأندرويد (القديم بيوقف)
+router.post("/queue-token", wrap(async (req, res) => {
+  res.json({ token: await getQueueToken({ regenerate: true }) });
+}));
+
 export default router;
+
+// ---------- للموبايل (بدون دخول، بالرابط السري) ----------
+export const waPublicRouter = Router();
+async function queueTenant(req, res) {
+  const token = String(req.params.token || "");
+  const m = token.match(/^(\d+)-[a-f0-9]{24}$/);
+  if (!m) { res.status(404).json({ error: "رابط غير صحيح." }); return null; }
+  const tenant = await getTenant(Number(m[1]));
+  if (!tenant || tenant.status !== "active") { res.status(404).json({ error: "رابط غير صحيح." }); return null; }
+  setRequestTenant(tenant);
+  const saved = (await query("SELECT value FROM app_settings WHERE key = 'wa_queue_token'")).rows[0]?.value;
+  if (saved !== token) { res.status(404).json({ error: "رابط غير صحيح." }); return null; }
+  return tenant;
+}
+// كل الدور
+waPublicRouter.get("/wa-queue/:token", async (req, res) => {
+  try {
+    if (!(await queueTenant(req, res))) return;
+    const list = await forecastQueue();
+    res.json({ date: jordanDate(), count: list.length, messages: list });
+  } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
+});
+// الرسالة الجاية بس (أسهل للأتمتة) — فاضي = خلصنا
+waPublicRouter.get("/wa-queue/:token/next", async (req, res) => {
+  try {
+    if (!(await queueTenant(req, res))) return;
+    const next = (await forecastQueue())[0];
+    if (!next) return res.json({ done: true, phone: "", text: "", url: "", customer_id: 0, left: 0 });
+    const left = (await forecastQueue()).length;
+    res.json({ done: false, ...next, left });
+  } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
+});
+// انبعتت (الموبايل بيبلّغ عشان ما تنعاد)
+waPublicRouter.all("/wa-queue/:token/sent/:customerId", async (req, res) => {
+  try {
+    if (!(await queueTenant(req, res))) return;
+    const c = (await query("SELECT id, phone_normalized FROM customers WHERE id = $1", [req.params.customerId])).rows[0];
+    if (!c) return res.status(404).json({ error: "الزبون غير موجود." });
+    await markQueueSent(c.id, c.phone_normalized);
+    res.json({ ok: true });
+  } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
+});

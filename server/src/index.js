@@ -43,7 +43,7 @@ import supportRoutes from "./routes/support.js";
 import payrollRoutes from "./routes/payroll.js";
 import jardRoutes from "./routes/jard.js";
 import stationRoutes from "./routes/station.js";
-import whatsappRoutes from "./routes/whatsapp.js";
+import whatsappRoutes, { waPublicRouter } from "./routes/whatsapp.js";
 import { runForecastWhatsapp } from "./utils/whatsapp.js";
 import invoiceRoutes, { publicInvoiceRouter } from "./routes/invoices.js";
 import factoryRoutes, { factoryPublicRouter, factoryWatch } from "./routes/factory/index.js";
@@ -126,6 +126,7 @@ app.use("/api/station", stationRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/public", publicInvoiceRouter);
+app.use("/api/public", waPublicRouter);
 app.use("/api/public", factoryPublicRouter);
 app.use("/api/factory", factoryRoutes);
 

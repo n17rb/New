@@ -287,6 +287,7 @@ export const api = {
   waSave: (body) => request("/whatsapp", { method: "PUT", body }),
   waTest: (phone) => request("/whatsapp/test", { method: "POST", body: { phone } }),
   waRunNow: () => request("/whatsapp/run-now", { method: "POST" }),
+  waNewQueueToken: () => request("/whatsapp/queue-token", { method: "POST" }),
   waSetCustomer: (id, off) => request(`/whatsapp/customers/${id}`, { method: "PUT", body: { off } }),
   getDebtQuickList: () => request("/debts/quick-list"),
   quickPayDebt: (customerId, body) => request(`/debts/customer/${customerId}/quick-pay`, { method: "POST", body }),

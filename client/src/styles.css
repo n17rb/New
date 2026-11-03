@@ -3116,3 +3116,8 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 .wa-pre { white-space: pre-wrap; background: var(--surface); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 0.82rem; margin: 6px 0; direction: rtl; user-select: all; }
 .wa-strip { display: block; text-decoration: none; font-size: 0.82rem; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: 12px; padding: 9px 12px; margin: -4px 0 12px; }
 .wa-strip.on { color: #128C4A; background: rgba(37, 211, 102, 0.12); }
+.wa-android { margin-top: 14px; }
+.wa-android-h { font-weight: 800; font-size: 0.98rem; }
+.wa-link { font-size: 0.72rem; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; word-break: break-all; color: var(--text-secondary); user-select: all; }
+.wa-help ul { padding-inline-start: 16px; margin: 4px 0; }
+.wa-help code { font-size: 0.78rem; background: var(--surface); padding: 0 4px; border-radius: 4px; }
