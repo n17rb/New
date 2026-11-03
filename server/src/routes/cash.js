@@ -621,4 +621,80 @@ router.delete("/expense-categories/:id", requireFeature("expense_details"), asyn
   res.json({ ok: true });
 });
 
+// ============================================================
+// الأرشفة الشهرية
+// ============================================================
+// فترة مؤرشفة لحد تاريخ معيّن: الأيام اللي بعده بترجع للفترة الحالية (مثلًا أرشفت ٢ الشهر بدل ٣١)
+export async function trimClosedPeriod(periodId, endDate, userId = null) {
+  const p = (await query("SELECT * FROM cash_periods WHERE id = $1", [periodId])).rows[0];
+  if (!p || !p.ended_at) throw Object.assign(new Error("هاي الفترة مش مؤرشفة."), { status: 400 });
+  const open = await getOrCreateOpenPeriod();
+  if (open.id === p.id) throw Object.assign(new Error("هاي الفترة الحالية."), { status: 400 });
+  const moved = await query(
+    `UPDATE cash_entries e SET period_id = $1
+     WHERE e.period_id = $2 AND e.entry_date > $3::date
+       AND NOT EXISTS (SELECT 1 FROM cash_entries x WHERE x.period_id = $1 AND x.entry_date = e.entry_date)
+     RETURNING to_char(e.entry_date, 'YYYY-MM-DD') AS d`,
+    [open.id, p.id, endDate]
+  );
+  // نهاية الأرشيف = آخر لحظة بالتاريخ المختار، والفترة الحالية بتبدأ بعده
+  await query(
+    `UPDATE cash_periods SET ended_at = ($2::date + 1)::timestamp AT TIME ZONE 'Asia/Amman' - interval '1 second' WHERE id = $1`,
+    [p.id, endDate]
+  );
+  await query(
+    `UPDATE cash_periods SET started_at = LEAST(started_at, ($2::date + 1)::timestamp AT TIME ZONE 'Asia/Amman') WHERE id = $1`,
+    [open.id, endDate]
+  );
+  await refreshClosedPeriodTotals(p.id);
+  await logActivity({ userId, action: "TRIM_CASH_PERIOD", recordType: "cash_period", recordId: p.id, newValue: { end_date: endDate, moved_days: moved.rows.map((r) => r.d) } });
+  return moved.rows.map((r) => r.d);
+}
+
+router.post("/history/:id/trim", async (req, res) => {
+  if (!can(req.user, "cash", "edit")) return res.status(403).json({ error: "ما عندك صلاحية." });
+  const endDate = req.body?.end_date;
+  if (!isValidDateString(endDate)) return res.status(400).json({ error: "التاريخ غير صحيح." });
+  try {
+    const moved = await trimClosedPeriod(Number(req.params.id), endDate, req.user.id);
+    res.json({ moved, message: moved.length ? `✅ الأرشيف صار لآخر ${endDate}، و${moved.length} يوم رجعوا للفترة الحالية` : "✅ انضبط تاريخ الأرشيف" });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// أرشفة تلقائية أول كل شهر: كل أيام الشهر الماضي بتنأرشف، وأيام الشهر الجديد بتضل بالفترة الحالية
+export async function autoMonthlyArchive() {
+  const on = (await query("SELECT value FROM app_settings WHERE key = 'cash_auto_monthly'")).rows[0]?.value;
+  if (on === "0") return { skipped: "off" };
+  const today = getJordanToday();
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const open = await getOrCreateOpenPeriod();
+  const old = await query("SELECT COUNT(*)::int AS n FROM cash_entries WHERE period_id = $1 AND entry_date < $2::date", [open.id, monthStart]);
+  if (!old.rows[0].n) return { skipped: "nothing" };
+  const created = (await query(
+    `INSERT INTO cash_periods (started_at) VALUES (($1::date)::timestamp AT TIME ZONE 'Asia/Amman') RETURNING id`,
+    [monthStart]
+  )).rows[0];
+  await query("UPDATE cash_entries SET period_id = $1 WHERE period_id = $2 AND entry_date >= $3::date", [created.id, open.id, monthStart]);
+  await query(
+    `UPDATE cash_periods SET ended_at = ($2::date)::timestamp AT TIME ZONE 'Asia/Amman' - interval '1 second' WHERE id = $1`,
+    [open.id, monthStart]
+  );
+  await refreshClosedPeriodTotals(open.id);
+  await logActivity({ userId: null, action: "AUTO_MONTHLY_ARCHIVE", recordType: "cash_period", recordId: open.id, newValue: { month_start: monthStart } });
+  return { archived: open.id };
+}
+
+router.get("/auto-archive", async (req, res) => {
+  const v = (await query("SELECT value FROM app_settings WHERE key = 'cash_auto_monthly'")).rows[0]?.value;
+  res.json({ enabled: v !== "0" });
+});
+router.put("/auto-archive", async (req, res) => {
+  if (!can(req.user, "cash", "edit")) return res.status(403).json({ error: "ما عندك صلاحية." });
+  const v = req.body?.enabled ? "1" : "0";
+  await query(`INSERT INTO app_settings (key, value, updated_at) VALUES ('cash_auto_monthly', $1, now()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`, [v]);
+  res.json({ enabled: v === "1" });
+});
+
 export default router;

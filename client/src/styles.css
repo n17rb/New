@@ -3130,3 +3130,4 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 .mpin-nav-r { width: 40px; height: 40px; transition: transform 0.8s ease; }
 .map-live { position: absolute; z-index: 500; top: 10px; inset-inline-start: 10px; font-size: 0.75rem; font-weight: 800; border-radius: 99px; padding: 5px 10px; background: rgba(255,255,255,0.95); color: #128C4A; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 .map-live.old { color: var(--urgent); }
+.arch-fix { display: block; width: calc(100% - 16px); margin: 8px; text-align: start; font: inherit; font-size: 0.82rem; font-weight: 700; color: #B26B00; background: var(--warning-soft, #FFF4E0); border: 1px dashed #E8A020; border-radius: 12px; padding: 10px 12px; cursor: pointer; line-height: 1.6; }

@@ -22,7 +22,7 @@ import tripRoutes from "./routes/trips.js";
 import driverRoutes from "./routes/drivers.js";
 import geocodeRoutes from "./routes/geocode.js";
 import reportRoutes from "./routes/reports.js";
-import cashRoutes from "./routes/cash.js";
+import cashRoutes, { autoMonthlyArchive } from "./routes/cash.js";
 import swotRoutes from "./routes/swot.js";
 import activityRoutes from "./routes/activity.js";
 import backupRoutes, { createScheduledSnapshot } from "./routes/backup.js";
@@ -180,6 +180,7 @@ async function hourlyJobs() {
   await forEachTenant("التذكيرات", () => checkAndFireReminders());
   await forEachTenant("الطلبات بموعد", () => checkScheduledOrders());
   await forEachTenant("التوقعات", () => checkForecastAlerts());
+  await forEachTenant("الأرشفة الشهرية", () => autoMonthlyArchive(), { plan: "shop" });
   await forEachTenant("تنظيف الإشعارات", () => pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'"));
   await checkSubscriptionWarnings().catch((err) => console.error("❌ تنبيهات الاشتراك:", err.message));
   await resetDemosIfDue().catch((err) => console.error("❌ ترجيع الديمو:", err.message));

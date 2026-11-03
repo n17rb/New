@@ -166,11 +166,38 @@ function MeterSettings({ settings, onSaved, onClose }) {
   );
 }
 
-function ArchiveList({ onOpenDay }) {
+// آخر يوم بالشهر اللي قبل شهر التاريخ (مثلًا ٢٠٢٦-١١-٠٢ ← ٢٠٢٦-١٠-٣١)
+function endOfPrevMonth(d) {
+  const [y, m] = d.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m - 1, 0));
+  return last.toISOString().slice(0, 10);
+}
+const monthName = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString("ar-JO", { month: "long", timeZone: "UTC" });
+
+function ArchiveList({ onOpenDay, onChanged, canEdit }) {
   const [history, setHistory] = useState(null);
   const [open, setOpen] = useState(null);
   const [days, setDays] = useState({});
-  useEffect(() => { api.getCashHistory().then(setHistory).catch(() => setHistory([])); }, []);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const loadHistory = () => api.getCashHistory().then(setHistory).catch(() => setHistory([]));
+  useEffect(() => { loadHistory(); }, []);
+
+  async function trim(p, endDate) {
+    setBusy(true);
+    try {
+      const r = await api.trimCashPeriod(p.id, endDate);
+      setMsg(r.message);
+      setDays({});
+      setOpen(null);
+      await loadHistory();
+      onChanged?.();
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function toggle(p) {
     if (open === p.id) return setOpen(null);
     setOpen(p.id);
@@ -182,9 +209,18 @@ function ArchiveList({ onOpenDay }) {
   if (!history) return <div className="card"><p className="text-secondary">جاري التحميل...</p></div>;
   return (
     <div className="card" style={{ padding: 0 }}>
+      {msg && <div className="success-box" style={{ margin: 10 }}>{msg}</div>}
       {history.length === 0 && <p className="text-secondary" style={{ padding: 14 }}>لا يوجد فترات مؤرشفة بعد.</p>}
-      {history.map((p) => (
+      {history.map((p) => {
+        // الأرشيف فيه أيام من شهر بعد شهر بدايته؟ (مثلًا أرشفت ٢ الشهر بدل ٣١)
+        const spill = canEdit && p.first_day && p.last_day && p.last_day.slice(0, 7) > p.first_day.slice(0, 7) ? endOfPrevMonth(p.last_day) : null;
+        return (
         <div key={p.id} className="arch-row">
+          {spill && (
+            <button type="button" className="arch-fix" disabled={busy} onClick={() => trim(p, spill)}>
+              🗓️ هالأرشيف فيه أيام من {monthName(p.last_day)} — خلّيه لآخر {monthName(spill)} ورجّع الباقي للشهر الحالي
+            </button>
+          )}
           <button className="arch-head" onClick={() => toggle(p)}>
             <div style={{ minWidth: 0, textAlign: "right" }}>
               <div style={{ fontWeight: 700 }}>
@@ -212,7 +248,8 @@ function ArchiveList({ onOpenDay }) {
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -502,6 +539,7 @@ export default function Cash() {
         )}
       </div>
 
+      {canEditCash && <AutoArchiveToggle />}
       {canEditCash && (
         <button className="btn-danger-text" disabled={resetting} onClick={handleReset}>
           {resetting ? "جاري الأرشفة..." : "🗂️ أرشفة الحساب وبدء فترة جديدة"}
@@ -511,7 +549,7 @@ export default function Cash() {
       <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setShowHistory((s) => !s)}>
         {showHistory ? "إخفاء الأرشيف" : "📁 أرشيف الفترات السابقة"}
       </button>
-      {showHistory && <ArchiveList onOpenDay={openDay} />}
+      {showHistory && <ArchiveList onOpenDay={openDay} canEdit={canEditCash} onChanged={() => { load(); loadDay(selectedDate); }} />}
     </div>
   );
 }
@@ -699,5 +737,22 @@ function ExpensesBreakdown({ entries }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// أرشفة تلقائية أول كل شهر
+function AutoArchiveToggle() {
+  const [on, setOn] = useState(null);
+  useEffect(() => { api.getCashAutoArchive().then((r) => setOn(r.enabled)).catch(() => {}); }, []);
+  if (on === null) return null;
+  return (
+    <button type="button" className={`pr-sw${on ? " on" : ""}`} style={{ margin: "14px 0 6px" }}
+      onClick={() => api.setCashAutoArchive(!on).then((r) => setOn(r.enabled)).catch(() => {})}>
+      <span className="pr-sw-t">
+        <b>🗓️ أرشفة تلقائية آخر كل شهر</b>
+        <small>{on ? "أول ما يبلّش شهر جديد، أيام الشهر الماضي بتنأرشف لحالها" : "مطفية — بتأرشف بإيدك"}</small>
+      </span>
+      <span className="pr-sw-k" aria-hidden="true"><i /></span>
+    </button>
   );
 }
