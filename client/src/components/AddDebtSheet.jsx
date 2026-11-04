@@ -93,7 +93,7 @@ export default function AddDebtSheet({ open, onClose, onDone }) {
               <em>JD</em>
             </span>
           </label>
-          <input className="no-search" style={{ fontSize: "0.9rem" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظة (اختياري) — مثلًا ٣ قوارير" />
+          <input className="no-search" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظة (اختياري) — مثلًا ٣ قوارير" />
           {n > 0 && <div className="pay-note warn" style={{ marginTop: 8 }}>رح يصير عليه {(Number(cust.debt_balance || 0) + n).toFixed(2)} JD</div>}
           <div className="sheet-actions">
             <button className="btn-primary" style={{ background: "var(--urgent)" }} disabled={busy || !(n > 0)} onClick={save}>{busy ? "لحظة…" : `سجّل الدين${n > 0 ? ` · ${n.toFixed(2)} JD` : ""}`}</button>

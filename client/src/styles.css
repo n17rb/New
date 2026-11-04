@@ -3193,3 +3193,6 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 .sb-locked { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
 .sheet-who > span:nth-child(2) { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .sheet-who small { font-size: 0.8rem; color: var(--text-secondary); }
+
+/* الآيفون بيقرّب الشاشة لما الخط بخانة الكتابة أصغر من 16px */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
