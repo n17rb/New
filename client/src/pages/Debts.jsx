@@ -6,6 +6,8 @@ import { FaWhatsapp } from "react-icons/fa";
 import { api } from "../api.js";
 import { ViewOnlyNote, useFeature } from "../auth.jsx";
 import DebtPaySheet from "../components/DebtPaySheet.jsx";
+import AddDebtSheet from "../components/AddDebtSheet.jsx";
+import { usePerms } from "../auth.jsx";
 
 function daysSince(date) {
   if (!date) return null;
@@ -31,6 +33,8 @@ export default function Debts() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("amount");
   const quickPay = useFeature("debt_quick_pay");
+  const { canEdit } = usePerms();
+  const [adding, setAdding] = useState(false);
   const [paying, setPaying] = useState(undefined); // undefined = مسكّرة، null = اختار زبون، {..} = زبون محدد
   const [done, setDone] = useState("");
 
@@ -50,10 +54,16 @@ export default function Debts() {
     <div className="page">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <h1 className="title-lg" style={{ margin: 0 }}>ديون العملاء</h1>
-        {quickPay && data && data.count > 0 && (
-          <button type="button" className="pr-add" style={{ background: "var(--success)", boxShadow: "none" }} onClick={() => setPaying(null)}>💳 سداد</button>
-        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          {quickPay && data && data.count > 0 && (
+            <button type="button" className="pr-add" style={{ background: "var(--success)", boxShadow: "none" }} onClick={() => setPaying(null)}>💳 سداد</button>
+          )}
+          {canEdit("debts") && (
+            <button type="button" className="pr-add" style={{ background: "var(--urgent)", boxShadow: "none" }} onClick={() => setAdding(true)}>+ دين</button>
+          )}
+        </div>
       </div>
+      <AddDebtSheet open={adding} onClose={() => setAdding(false)} onDone={(m) => { setDone(m); setTimeout(() => setDone(""), 6000); load(); }} />
       <div style={{ height: 12 }} />
       {done && <div className="success-box">{done}</div>}
       <ViewOnlyNote section="debts" />
