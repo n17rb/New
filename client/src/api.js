@@ -204,6 +204,8 @@ export const api = {
   cancelStop: (stopId, reason) => request(`/trips/stops/${stopId}/cancel`, { method: "POST", body: { reason } }),
   resetSummary: () => request("/reset/summary"),
   resetData: (body) => request("/reset", { method: "POST", body }),
+  resetItems: (kind, from, to) => request(`/reset/items?kind=${kind}&from=${from}&to=${to}`),
+  resetDeleteItems: (body) => request("/reset/items", { method: "POST", body }),
   updateStopItems: (stopId, items) => request(`/trips/stops/${stopId}/items`, { method: "PUT", body: { items } }),
   sellPackageInTrip: (stopId, body) => request(`/trips/stops/${stopId}/sell-package`, { method: "POST", body }),
   addOrderToTrip: (tripId, orderId) => request(`/trips/${tripId}/add-order`, { method: "POST", body: { order_id: orderId } }),
