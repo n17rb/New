@@ -275,6 +275,7 @@ router.put("/stock/moves/:id", feature("station_stock"), perm("station", "edit")
 }));
 
 router.delete("/stock/moves/:id", feature("station_stock"), perm("station", "edit"), wrap(async (req, res) => {
+  if (req.user.role !== "super_admin") throw fail(403, "الحذف لصاحب المحل بس — المساعد بيقدر يعدّل.");
   const m = await manualMove(req.params.id);
   await query("DELETE FROM st_moves WHERE id = $1", [m.id]);
   if (m.kind === "damage" && m.round_id && m.status === "approved" && m.product_id) {
@@ -568,6 +569,7 @@ router.put("/rounds/:id/items", feature("vehicles"), perm("station", "edit"), wr
 
 // تصفير الجولة: بتنمسح كأنها ما صارت (التحميل والمرتجع بيرجعوا للمخزون، ومصاريفها بتنمسح)
 router.delete("/rounds/:id", feature("vehicles"), perm("station", "edit"), wrap(async (req, res) => {
+  if (req.user.role !== "super_admin") throw fail(403, "التصفير لصاحب المحل بس — المساعد بيقدر يعدّل.");
   const round = await roundRow(req.params.id);
   if (!round) throw fail(404, "الجولة غير موجودة.");
   const items = (await query("SELECT name, loaded FROM st_round_items WHERE round_id = $1", [round.id])).rows;

@@ -324,6 +324,7 @@ function MoveSheet({ open, move, onClose, onSaved }) {
 
 const MANUAL = ["in", "adjust", "damage"];
 function HistorySheet({ item, onClose, editable, onChanged }) {
+  const { isOwner } = usePerms();
   const [rows, setRows] = useState(null);
   const [edit, setEdit] = useState(null); // {id, qty, note}
   const [askDel, setAskDel] = useState(null);
@@ -384,7 +385,7 @@ function HistorySheet({ item, onClose, editable, onChanged }) {
                   ) : (
                     <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <button type="button" className="sc-mini-btn" onClick={() => setEdit({ id: m.id, qty: String(m.kind === "adjust" ? m.qty : Math.abs(m.qty)), note: m.note || "" })} aria-label="تعديل"><FiEdit2 aria-hidden="true" /></button>
-                      <button type="button" className="sc-mini-btn" style={{ color: "var(--urgent)" }} onClick={() => setAskDel(m.id)} aria-label="حذف"><FiTrash2 aria-hidden="true" /></button>
+                      {isOwner && <button type="button" className="sc-mini-btn" style={{ color: "var(--urgent)" }} onClick={() => setAskDel(m.id)} aria-label="حذف"><FiTrash2 aria-hidden="true" /></button>}
                     </span>
                   )
                 )}

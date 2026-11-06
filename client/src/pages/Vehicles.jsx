@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { FiPlus, FiTruck, FiChevronLeft, FiArrowRight, FiCornerDownLeft, FiAlertTriangle, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { api } from "../api.js";
-import { useFeature } from "../auth.jsx";
+import { useFeature, usePerms } from "../auth.jsx";
 import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 
 const money = (n) => Number(n || 0).toFixed(2);
@@ -149,6 +149,7 @@ export function VehicleDetail() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [openRound, setOpenRound] = useState(null);
+  const { isOwner } = usePerms();
   const [editR, setEditR] = useState(null); // الجولة اللي بتنعدّل أو بتتصفّر
   const [retQty, setRetQty] = useState({});
 
@@ -211,7 +212,7 @@ export function VehicleDetail() {
   const RoundTools = ({ r }) => d.can_edit && (
     <div className="vh-acts2" style={{ marginTop: 10 }}>
       <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} onClick={() => openEdit(r)}><FiEdit2 aria-hidden="true" /> تعديل</button>
-      <button className="btn-secondary icon-row" style={{ justifyContent: "center", color: "var(--urgent)" }} onClick={() => openReset(r)}><FiTrash2 aria-hidden="true" /> تصفير</button>
+      {isOwner && <button className="btn-secondary icon-row" style={{ justifyContent: "center", color: "var(--urgent)" }} onClick={() => openReset(r)}><FiTrash2 aria-hidden="true" /> تصفير</button>}
     </div>
   );
   const items = () => Object.entries(qty).filter(([, v]) => Number(v) > 0).map(([product_id, v]) => ({ product_id: Number(product_id), qty: Number(v) }));
