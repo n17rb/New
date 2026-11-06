@@ -284,6 +284,12 @@ export async function nextQueued() {
   }
   const s = await getWaSettings();
   if (s.forecast_auto && h >= s.hour && h < s.hour + 5) {
+    // فاصل بين رسايل التوقعات (عشوائي ٦٠–١٢٠ ثانية) عشان ما تبين رسايل جماعية لواتساب
+    const last = (await query(
+      "SELECT EXTRACT(EPOCH FROM (now() - max(created_at)))::int AS ago FROM wa_messages WHERE kind = 'forecast' AND wa_id = 'android' AND sent_on = $1",
+      [jordanDate()]
+    )).rows[0]?.ago;
+    if (last != null && last < 60 + Math.floor(Math.random() * 61)) return null;
     const list = await forecastQueue();
     if (list[0]) return { source: "forecast", id: list[0].customer_id, ...list[0], left: list.length };
   }
