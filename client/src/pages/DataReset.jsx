@@ -2,11 +2,21 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import Sheet from "../components/Sheet.jsx";
 
-// تصفير بيانات التدريب — بتبيّن بس إذا إدارة موج فتحت الميزة للمحل
+// تصفير الحسابات بعد التدريب — بتبيّن بس إذا إدارة موج فتحت الميزة للمحل
+const PARTS = [
+  { key: "cash", title: "الحساب اليومي", hint: "المبيعات والصرفيات والأرشيف", on: true },
+  { key: "drivers", title: "ذمم الكباتن", hint: "الكاش والحسابات اللي على الكباتن", on: true },
+  { key: "station", title: "الكاشير والمحطة", hint: "الورديات، البيعات، الجولات ومصاريفها", on: true },
+  { key: "custody", title: "العهدة", hint: "بترجع صفر للكل", on: true },
+  { key: "payroll", title: "الدوام والرواتب", hint: "الحضور والسحوبات", on: false },
+  { key: "orders", title: "الطلبات والرحلات", hint: "كل الطلبات القديمة وأرشيف الرحلات", on: false },
+];
+
 export default function DataReset() {
   const [sum, setSum] = useState(null);
   const [error, setError] = useState("");
-  const [scope, setScope] = useState(null); // "moves" | "all"
+  const [sel, setSel] = useState(() => Object.fromEntries(PARTS.map((p) => [p.key, p.on])));
+  const [asking, setAsking] = useState(false);
   const [word, setWord] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
@@ -14,13 +24,16 @@ export default function DataReset() {
   const load = () => api.resetSummary().then(setSum).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
 
+  const chosen = PARTS.filter((p) => sel[p.key]);
+  const ok = ["صفّر", "صفر"].includes(word.trim());
+
   async function go() {
     setBusy(true);
     setError("");
     try {
-      await api.resetData({ scope, confirm: word });
-      setDone(scope === "all" ? "✅ انمسح كل شي — النظام صار جديد ونظيف" : "✅ انمسحت كل الحركات — الزباين والمنتجات ضلّوا");
-      setScope(null);
+      await api.resetData({ parts: chosen.map((p) => p.key), confirm: word });
+      setDone(`✅ تصفّر: ${chosen.map((p) => p.title).join("، ")}`);
+      setAsking(false);
       setWord("");
       load();
     } catch (e) {
@@ -30,40 +43,38 @@ export default function DataReset() {
     }
   }
 
-  const ok = ["صفّر", "صفر"].includes(word.trim());
-
   return (
     <div className="page">
-      <h1 className="title-lg" style={{ margin: "0 0 4px" }}>تصفير البيانات</h1>
+      <h1 className="title-lg" style={{ margin: "0 0 4px" }}>تصفير الحسابات</h1>
       <p className="text-secondary" style={{ margin: "0 0 14px", fontSize: "0.88rem" }}>
-        لما تخلص تدريب وبدك تبلّش شغل حقيقي: امسح البيانات التجريبية والغلطات. قبل المسح بتنعمل نسخة احتياطية لحالها.
+        خلصت تدريب؟ صفّر الحسابات وبلّش شغل حقيقي. قبل التصفير بتنعمل نسخة احتياطية لحالها.
       </p>
 
       {done && <div className="success-box">{done}</div>}
-      {error && !scope && <div className="error-box">{error}</div>}
+      {error && !asking && <div className="error-box">{error}</div>}
 
-      {sum && (
-        <div className="card" style={{ display: "flex", justifyContent: "space-around", textAlign: "center", padding: "14px 8px" }}>
-          <div><b className="tabular-num" style={{ fontSize: "1.2rem" }}>{sum.orders}</b><div className="text-secondary" style={{ fontSize: "0.78rem" }}>طلب</div></div>
-          <div><b className="tabular-num" style={{ fontSize: "1.2rem" }}>{sum.trips}</b><div className="text-secondary" style={{ fontSize: "0.78rem" }}>رحلة</div></div>
-          <div><b className="tabular-num" style={{ fontSize: "1.2rem" }}>{sum.customers}</b><div className="text-secondary" style={{ fontSize: "0.78rem" }}>زبون</div></div>
-        </div>
-      )}
+      <div className="section-title">شو بدك تصفّر؟</div>
+      <div className="pr-sws">
+        {PARTS.map((p) => (
+          <button key={p.key} type="button" className={`pr-sw${sel[p.key] ? " on" : ""}`} onClick={() => setSel((s) => ({ ...s, [p.key]: !s[p.key] }))} aria-pressed={!!sel[p.key]}>
+            <span className="pr-sw-t">
+              <b>{p.title}</b>
+              <small>{p.key === "orders" && sum ? `${p.hint} (${sum.orders} طلب)` : p.hint}</small>
+            </span>
+            <span className="pr-sw-k" aria-hidden="true"><i /></span>
+          </button>
+        ))}
+      </div>
 
-      <button type="button" className="card" style={{ width: "100%", textAlign: "right", cursor: "pointer", border: "1px solid var(--border)" }} onClick={() => { setScope("moves"); setWord(""); setError(""); }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>🧹 امسح الحركات بس</div>
-        <div className="text-secondary" style={{ fontSize: "0.84rem", lineHeight: 1.6 }}>
-          الطلبات، الرحلات، الحساب اليومي، الجرد، الديون، الكوبونات، المخزون والإشعارات.
-          <br />بيضلّوا: <b>الزباين</b>، المنتجات والأسعار، الحسابات والصلاحيات، الإعدادات.
+      <div className="card" style={{ marginTop: 12, background: "var(--success-soft)", border: "none" }}>
+        <div style={{ fontWeight: 800, color: "var(--success)", marginBottom: 4 }}>🔒 هدول ما بينمسحوا أبدًا</div>
+        <div style={{ fontSize: "0.85rem", lineHeight: 1.7 }}>
+          الزباين{sum ? ` (${sum.customers})` : ""} وعناوينهم · <b>الديون</b> · <b>رصيد الكوبونات</b> · القوارير اللي عند الزباين · المنتجات والأسعار · الحسابات والصلاحيات · الإعدادات
         </div>
-      </button>
+      </div>
 
-      <button type="button" className="card" style={{ width: "100%", textAlign: "right", cursor: "pointer", border: "1px solid var(--urgent)" }} onClick={() => { setScope("all"); setWord(""); setError(""); }}>
-        <div style={{ fontWeight: 800, marginBottom: 4, color: "var(--urgent)" }}>🗑️ امسح كل شي مع الزباين</div>
-        <div className="text-secondary" style={{ fontSize: "0.84rem", lineHeight: 1.6 }}>
-          نفس اللي فوق + كل الزباين وعناوينهم.
-          <br />بيضلّوا: المنتجات والأسعار، الحسابات والصلاحيات، الإعدادات.
-        </div>
+      <button className="btn-primary" style={{ marginTop: 14, background: "var(--urgent)" }} disabled={!chosen.length} onClick={() => { setAsking(true); setWord(""); setError(""); }}>
+        صفّر ({chosen.length})
       </button>
 
       {sum?.last_reset_at && (
@@ -72,19 +83,18 @@ export default function DataReset() {
         </p>
       )}
 
-      <Sheet open={!!scope} title={scope === "all" ? "مسح كل شي مع الزباين؟" : "مسح كل الحركات؟"} onClose={() => !busy && setScope(null)}>
+      <Sheet open={asking} title="متأكد؟" onClose={() => !busy && setAsking(false)}>
         {error && <div className="error-box">{error}</div>}
-        <p style={{ margin: "0 0 10px", lineHeight: 1.7 }}>
-          {scope === "all" ? "رح ينمسح كل شي حتى الزباين. " : "رح تنمسح كل الطلبات والرحلات والحسابات. "}
-          <b>ما في رجعة</b> من هون (إلا من النسخة الاحتياطية).
-        </p>
+        <p style={{ margin: "0 0 6px" }}>رح يتصفّر:</p>
+        <p style={{ margin: "0 0 10px", fontWeight: 700, lineHeight: 1.7 }}>{chosen.map((p) => p.title).join(" · ")}</p>
+        <p className="text-secondary" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>الزباين والديون والكوبونات بيضلّوا زي ما هم.</p>
         <label className="pr-field">
           <span>للتأكيد اكتب: <b>صفّر</b></span>
           <input className="no-search" value={word} onChange={(e) => setWord(e.target.value)} placeholder="صفّر" autoFocus />
         </label>
         <div className="sheet-actions">
-          <button className="btn-primary" style={{ background: "var(--urgent)" }} disabled={!ok || busy} onClick={go}>{busy ? "جاري المسح…" : "امسح"}</button>
-          <button className="btn-secondary" disabled={busy} onClick={() => setScope(null)}>رجوع</button>
+          <button className="btn-primary" style={{ background: "var(--urgent)" }} disabled={!ok || busy} onClick={go}>{busy ? "جاري التصفير…" : "صفّر"}</button>
+          <button className="btn-secondary" disabled={busy} onClick={() => setAsking(false)}>رجوع</button>
         </div>
       </Sheet>
     </div>

@@ -114,7 +114,7 @@ export default function More({ darkMode, setDarkMode, onLogout }) {
         {isManager && <Row key="msgs" to="/settings/messages" icon={FiMessageSquare} title="نصوص الرسائل" sub="رسائل الواتساب للزباين: الفاتورة، الدين، «أنا جاي»…" />}
         {can("activity_log") && <Row key="log" to="/activity-log" icon={FiList} title="سجل النشاط" />}
         {can("backup") && <Row key="backup" to="/backup" icon={FiDatabase} title="النسخ الاحتياطي" />}
-        {isOwner && shop?.features?.data_reset && <Row key="reset" to="/settings/reset" icon={FiArchive} title="تصفير البيانات" sub="امسح بيانات التدريب والغلطات وبلّش من جديد" />}
+        {isOwner && shop?.features?.data_reset && <Row key="reset" to="/settings/reset" icon={FiArchive} title="تصفير الحسابات" sub="بعد التدريب: صفّر الحسابات وبلّش — الزباين والديون بيضلّوا" />}
       </Group>
 
       {!shop?.is_home && isManager && (

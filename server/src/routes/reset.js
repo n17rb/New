@@ -5,22 +5,48 @@ import { requireFeature } from "../features.js";
 import { createScheduledSnapshot } from "./backup.js";
 
 // ============================================================
-// تصفير البيانات (للمحلات اللي بتتدرّب) — ميزة بتنفتح من لوحة إدارة موج
+// تصفير الحسابات (للمحلات اللي بتتدرّب) — ميزة بتنفتح من لوحة إدارة موج
 // بس صاحب المحل (المدير العام) بيقدر يصفّر، وبعد ما يخلص التدريب بتنسكّر الميزة
+// الزباين والديون والكوبونات والمنتجات والحسابات ما بتنمسح أبدًا
 // ============================================================
 const router = Router();
 router.use(requireAuth, requireFeature("data_reset"), requireRole("super_admin"));
 
-// الحركات: كل شي صار (طلبات، رحلات، حساب، ديون، كوبونات…) — الزباين والمنتجات والحسابات بتضل
-const MOVES = [
-  "orders", "order_items", "order_edit_history", "trips", "trip_stops", "driver_ledger", "trip_inventory", "trip_track",
-  "cash_periods", "cash_entries", "notifications", "coupon_ledger", "coupon_sales", "customer_debt_ledger", "bottle_ledger",
-  "forecast_alerts", "reminder_fired_log", "activity_log", "wa_messages", "wa_outbox",
-  "st_rounds", "st_round_items", "st_moves", "st_sales", "st_custody_log", "st_shifts", "st_shift_expenses",
-  "attendance", "employee_transactions",
-];
-// الكامل: كمان الزباين وعناوينهم وأسعارهم الخاصة ومواعيدهم
-const CUSTOMERS = ["customers", "customer_locations", "customer_product_prices", "customer_reminders"];
+// كل جزء بيتصفّر لحاله (صاحب المحل بيختار)
+const PARTS = {
+  cash: [
+    "DELETE FROM cash_entries",
+    "DELETE FROM cash_periods",
+  ],
+  drivers: [
+    "DELETE FROM driver_ledger",
+  ],
+  station: [
+    "DELETE FROM st_shift_expenses",
+    "DELETE FROM st_shifts",
+    "DELETE FROM st_sales",
+    "DELETE FROM st_round_items",
+    "DELETE FROM st_rounds",
+  ],
+  custody: [
+    "DELETE FROM st_custody_log",
+    "UPDATE st_custody SET amount = 0, updated_at = now()",
+  ],
+  payroll: [
+    "DELETE FROM employee_transactions",
+    "DELETE FROM attendance",
+  ],
+  // الطلبات والرحلات: سجل الديون والكوبونات بيضل، بس بينفك ربطه بالطلب
+  orders: [
+    "UPDATE coupon_ledger SET order_id = NULL WHERE order_id IS NOT NULL",
+    "UPDATE customer_debt_ledger SET order_id = NULL, trip_id = NULL WHERE order_id IS NOT NULL OR trip_id IS NOT NULL",
+    "UPDATE notifications SET related_trip_id = NULL WHERE related_trip_id IS NOT NULL",
+    "DELETE FROM driver_ledger",
+    "DELETE FROM trips",
+    "DELETE FROM orders",
+    "SELECT setval('order_seq', 1, false)",
+  ],
+};
 
 async function count(sql) {
   try { return (await query(sql)).rows[0].n; } catch { return 0; }
@@ -38,32 +64,25 @@ router.get("/summary", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const scope = req.body?.scope === "all" ? "all" : "moves";
-  if (String(req.body?.confirm || "").trim() !== "صفّر" && String(req.body?.confirm || "").trim() !== "صفر") {
-    return res.status(400).json({ error: "اكتب «صفّر» عشان نتأكد." });
-  }
+  const parts = Array.isArray(req.body?.parts) ? req.body.parts.filter((p) => PARTS[p]) : [];
+  if (!parts.length) return res.status(400).json({ error: "اختار شو بدك تصفّر." });
+  const word = String(req.body?.confirm || "").trim();
+  if (word !== "صفّر" && word !== "صفر") return res.status(400).json({ error: "اكتب «صفّر» عشان نتأكد." });
+
   // نسخة احتياطية قبل التصفير (بتضل بالنسخ الاحتياطي)
   try { await createScheduledSnapshot(); } catch (e) { console.error("reset snapshot:", e.message); }
 
-  const tables = scope === "all" ? [...MOVES, ...CUSTOMERS] : MOVES;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`TRUNCATE ${tables.join(", ")} RESTART IDENTITY`);
-    if (scope === "moves") {
-      await client.query("UPDATE customers SET coupon_balance = 0, debt_balance = 0, bottles_out = 0");
-    }
-    await client.query("UPDATE st_custody SET amount = 0, updated_at = now()");
-    await client.query("UPDATE st_items SET alerted = false");
-    await client.query("SELECT setval('order_seq', 1, false)");
-    if (scope === "all") await client.query("SELECT setval('customer_seq', 1, false)");
+    for (const p of parts) for (const sql of PARTS[p]) await client.query(sql);
     await client.query(
       `INSERT INTO app_settings (key, value, updated_at) VALUES ('data_reset_at', $1, now())
        ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
       [new Date().toISOString()]
     );
     await client.query("COMMIT");
-    res.json({ ok: true, scope });
+    res.json({ ok: true, parts });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("reset:", err);
