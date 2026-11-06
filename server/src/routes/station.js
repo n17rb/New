@@ -445,6 +445,96 @@ router.post("/rounds/:id/add", feature("vehicles"), perm("station", "edit"), wra
   res.json(await roundRow(round.id));
 }));
 
+// تعديل الجولة: الكميات المحمّلة (ولو مسكّرة: المرتجع كمان) — الفرق بيتصحّح بالمخزون لحاله
+router.put("/rounds/:id/items", feature("vehicles"), perm("station", "edit"), wrap(async (req, res) => {
+  const round = await roundRow(req.params.id);
+  if (!round) throw fail(404, "الجولة غير موجودة.");
+  const rows = (Array.isArray(req.body?.items) ? req.body.items : [])
+    .map((x) => ({ product_id: Number(x.product_id), loaded: int(x.loaded), returned: x.returned == null || x.returned === "" ? null : int(x.returned) }))
+    .filter((x) => x.product_id > 0 && x.loaded >= 0);
+  if (!rows.some((x) => x.loaded > 0)) throw fail(400, "لازم يضل إشي محمّل — إذا الجولة كلها غلط استعمل «تصفير».");
+  const current = (await query("SELECT * FROM st_round_items WHERE round_id = $1", [round.id])).rows;
+  const products = (await query("SELECT id, name FROM products WHERE id = ANY($1::int[])", [rows.map((x) => x.product_id)])).rows;
+  const loadDiff = [];
+  const retDiff = [];
+  const changes = [];
+  const client = await pool.connect();
+  let touched = [];
+  try {
+    await client.query("BEGIN");
+    for (const r of rows) {
+      const cur = current.find((c) => c.product_id === r.product_id);
+      const p = products.find((x) => x.id === r.product_id);
+      if (!cur && !p) continue;
+      const oldLoaded = cur?.loaded || 0;
+      if (r.loaded === 0 && cur) {
+        await client.query("DELETE FROM st_round_items WHERE id = $1", [cur.id]);
+      } else if (cur) {
+        await client.query("UPDATE st_round_items SET loaded = $1 WHERE id = $2", [r.loaded, cur.id]);
+      } else if (r.loaded > 0) {
+        await client.query("INSERT INTO st_round_items (round_id, product_id, name, loaded) VALUES ($1,$2,$3,$4)", [round.id, p.id, p.name, r.loaded]);
+      }
+      if (r.loaded !== oldLoaded) {
+        loadDiff.push({ product_id: r.product_id, qty: -(r.loaded - oldLoaded) });
+        changes.push(`${cur?.name || p?.name}: تحميل ${oldLoaded} ← ${r.loaded}`);
+      }
+      if (round.status === "closed" && r.returned != null && cur && r.loaded > 0) {
+        const oldRet = cur.returned || 0;
+        if (r.returned !== oldRet) {
+          await client.query("UPDATE st_round_items SET returned = $1 WHERE id = $2", [r.returned, cur.id]);
+          retDiff.push({ product_id: r.product_id, qty: r.returned - oldRet });
+          changes.push(`${cur.name}: مرتجع ${oldRet} ← ${r.returned}`);
+        }
+      }
+    }
+    if (hasFeature(req.tenant, "station_stock")) {
+      touched = [
+        ...(await moveProducts(client, loadDiff, { kind: "load", roundId: round.id, userId: req.user.id, note: "تعديل التحميل" })),
+        ...(await moveProducts(client, retDiff, { kind: "return", roundId: round.id, userId: req.user.id, note: "تعديل المرتجع" })),
+      ];
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  await checkLowStock(touched, req.user.id);
+  if (changes.length) {
+    const by = (await query("SELECT full_name FROM users WHERE id = $1", [req.user.id])).rows[0]?.full_name || "";
+    await notifyUsers((u) => u.role === "super_admin", { type: "ROUND_EDITED", title: "تعديل جولة", message: `✏️ ${by} عدّل «${round.vehicle_name}» جولة ${round.round_no}: ${changes.join("، ")}`, url: `/vehicles/${round.vehicle_id}`, actorId: req.user.id });
+    await logActivity({ userId: req.user.id, action: "ROUND_EDIT", recordType: "st_round", recordId: round.id, newValue: { changes } });
+  }
+  const out = await roundRow(round.id);
+  res.json({ ...out, summary: await roundSummary(out) });
+}));
+
+// تصفير الجولة: بتنمسح كأنها ما صارت (التحميل والمرتجع بيرجعوا للمخزون، ومصاريفها بتنمسح)
+router.delete("/rounds/:id", feature("vehicles"), perm("station", "edit"), wrap(async (req, res) => {
+  const round = await roundRow(req.params.id);
+  if (!round) throw fail(404, "الجولة غير موجودة.");
+  const items = (await query("SELECT name, loaded FROM st_round_items WHERE round_id = $1", [round.id])).rows;
+  const touched = (await query("SELECT DISTINCT item_id FROM st_moves WHERE round_id = $1", [round.id])).rows.map((r) => r.item_id);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM st_moves WHERE round_id = $1", [round.id]);
+    await client.query("DELETE FROM st_rounds WHERE id = $1", [round.id]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  await query("UPDATE st_items SET alerted = false WHERE id = ANY($1::int[])", [touched]).catch(() => {});
+  const by = (await query("SELECT full_name FROM users WHERE id = $1", [req.user.id])).rows[0]?.full_name || "";
+  await notifyUsers((u) => u.role === "super_admin", { type: "ROUND_DELETED", title: "تصفير جولة", message: `🗑️ ${by} صفّر «${round.vehicle_name}» جولة ${round.round_no} (${round.driver_name || "—"}): ${items.map((i) => `${i.loaded} ${i.name}`).join("، ")}`, url: `/vehicles/${round.vehicle_id}`, actorId: req.user.id });
+  await logActivity({ userId: req.user.id, action: "ROUND_DELETE", recordType: "st_round", recordId: round.id, oldValue: { vehicle: round.vehicle_name, round_no: round.round_no, items } });
+  res.json({ ok: true });
+}));
+
 // رجعت السيارة: المرتجع ← بيرجع للمحطة، والجولة بتتسكّر (رصيد السيارة بيتصفّر)
 router.post("/rounds/:id/close", feature("vehicles"), perm("station", "edit"), wrap(async (req, res) => {
   const round = await roundRow(req.params.id);

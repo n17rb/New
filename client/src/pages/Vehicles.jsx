@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { FiPlus, FiTruck, FiChevronLeft, FiArrowRight, FiCornerDownLeft, FiAlertTriangle } from "react-icons/fi";
+import { FiPlus, FiTruck, FiChevronLeft, FiArrowRight, FiCornerDownLeft, FiAlertTriangle, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { api } from "../api.js";
 import { useFeature } from "../auth.jsx";
-import Sheet from "../components/Sheet.jsx";
+import Sheet, { ConfirmSheet } from "../components/Sheet.jsx";
 
 const money = (n) => Number(n || 0).toFixed(2);
 const time = (d) => new Date(d).toLocaleTimeString("ar-JO", { timeZone: "Asia/Amman", hour: "numeric", minute: "2-digit" });
@@ -149,6 +149,8 @@ export function VehicleDetail() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [openRound, setOpenRound] = useState(null);
+  const [editR, setEditR] = useState(null); // الجولة اللي بتنعدّل أو بتتصفّر
+  const [retQty, setRetQty] = useState({});
 
   const load = () => api.stVehicle(id).then(setD).catch((e) => setError(e.message));
   useEffect(() => {
@@ -191,6 +193,27 @@ export function VehicleDetail() {
       setBusy(false);
     }
   }
+  function openEdit(r) {
+    setError("");
+    setEditR(r);
+    setQty(Object.fromEntries(r.summary.lines.map((l) => [l.product_id, l.loaded])));
+    setRetQty(Object.fromEntries(r.summary.lines.map((l) => [l.product_id, l.returned ?? 0])));
+    setSheet("edit");
+  }
+  function openReset(r) {
+    setError("");
+    setEditR(r);
+    setSheet("reset");
+  }
+  const editProducts = editR
+    ? [...editR.summary.lines.map((l) => ({ id: l.product_id, name: l.name })), ...products.filter((p) => !editR.summary.lines.some((l) => l.product_id === p.id))]
+    : [];
+  const RoundTools = ({ r }) => d.can_edit && (
+    <div className="vh-acts2" style={{ marginTop: 10 }}>
+      <button className="btn-secondary icon-row" style={{ justifyContent: "center" }} onClick={() => openEdit(r)}><FiEdit2 aria-hidden="true" /> تعديل</button>
+      <button className="btn-secondary icon-row" style={{ justifyContent: "center", color: "var(--urgent)" }} onClick={() => openReset(r)}><FiTrash2 aria-hidden="true" /> تصفير</button>
+    </div>
+  );
   const items = () => Object.entries(qty).filter(([, v]) => Number(v) > 0).map(([product_id, v]) => ({ product_id: Number(product_id), qty: Number(v) }));
   const curLine = (pid) => cur?.summary.lines.find((l) => l.product_id === pid);
 
@@ -230,6 +253,7 @@ export function VehicleDetail() {
                 <button className="btn-secondary" onClick={() => open("expense")}>+ مصروف</button>
                 {stock && <button className="btn-secondary" onClick={() => open("damage")}><FiAlertTriangle aria-hidden="true" /> تالف</button>}
               </div>
+              <RoundTools r={cur} />
             </div>
           )}
         </div>
@@ -251,6 +275,7 @@ export function VehicleDetail() {
                   <span className="tabular-num">{money(r.summary.total_cash)} JD {r.summary.lines.some((l) => l.shortage) ? <em className="red">⚠️</em> : null}</span>
                 </button>
                 {openRound === r.id && <RoundReport r={r} />}
+                {openRound === r.id && <div style={{ padding: "0 12px 12px" }}><RoundTools r={r} /></div>}
               </div>
             ))}
           </div>
@@ -310,6 +335,43 @@ export function VehicleDetail() {
             <button className="btn-secondary" onClick={() => setSheet(null)}>رجوع</button>
           </div>
         </Sheet>
+      )}
+
+      {/* تعديل الجولة: التحميل (والمرتجع إذا مسكّرة) */}
+      {editR && (
+        <Sheet open={sheet === "edit"} title={`تعديل جولة ${editR.round_no}`} onClose={() => setSheet(null)}>
+          {error && <div className="error-box">{error}</div>}
+          <div className="sheet-q">كم انحمّل فعليًا؟</div>
+          <QtyList products={editProducts} qty={qty} setQty={setQty} />
+          {editR.status === "closed" && (
+            <>
+              <div className="sheet-q" style={{ marginTop: 12 }}>كم رجع فعليًا؟</div>
+              <QtyList products={editProducts.filter((p) => Number(qty[p.id]) > 0)} qty={retQty} setQty={setRetQty} />
+            </>
+          )}
+          <p className="text-secondary" style={{ fontSize: "0.8rem" }}>الفرق بيتصحّح بمخزون المحطة لحاله، وبيوصلك إشعار بالتعديل.</p>
+          <div className="sheet-actions">
+            <button className="btn-primary" disabled={busy || !Object.values(qty).some((v) => Number(v) > 0)}
+              onClick={() => run(() => api.stEditRound(editR.id, { items: editProducts.map((p) => ({ product_id: p.id, loaded: Number(qty[p.id]) || 0, returned: editR.status === "closed" ? Number(retQty[p.id]) || 0 : null })) }), "✅ انعدّلت الجولة")}>
+              {busy ? "لحظة…" : "احفظ التعديل"}
+            </button>
+            <button className="btn-secondary" onClick={() => setSheet(null)}>رجوع</button>
+          </div>
+        </Sheet>
+      )}
+
+      {/* تصفير الجولة */}
+      {editR && (
+        <ConfirmSheet
+          open={sheet === "reset"}
+          title={`تصفير جولة ${editR.round_no}؟`}
+          text="الجولة بتنمسح كأنها ما صارت: اللي انحمّل والمرتجع بيرجعوا لمخزون المحطة، ومصاريفها بتنمسح. الطلبات والكاش اللي قبضه الكابتن ما بيتأثروا."
+          confirmLabel="صفّر الجولة"
+          danger
+          busy={busy}
+          onConfirm={() => run(() => api.stDeleteRound(editR.id), "✅ تصفّرت الجولة")}
+          onClose={() => setSheet(null)}
+        />
       )}
 
       {/* مصروف بالجولة */}
