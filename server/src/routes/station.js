@@ -703,6 +703,7 @@ router.put("/custody/:userId", feature("custody"), (req, res, next) => (canGiveC
   const u = (await query("SELECT id, full_name FROM users WHERE id = $1", [req.params.userId])).rows[0];
   if (!u) throw fail(404, "الموظف غير موجود.");
   const before = Number((await query("SELECT amount FROM st_custody WHERE user_id = $1", [u.id])).rows[0]?.amount || 0);
+  if (amount === 0 && before > 0 && req.user.role !== "super_admin") throw fail(403, "تصفير العهدة لصاحب المحل بس — بتقدر تعدّل المبلغ.");
   const note = String(req.body?.note || "").trim().slice(0, 200) || null;
   await query(
     `INSERT INTO st_custody (user_id, amount, note, updated_by, updated_at) VALUES ($1,$2,$3,$4, now())

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
-import { useFeature } from "../auth.jsx";
+import { useFeature, usePerms } from "../auth.jsx";
 import Sheet from "../components/Sheet.jsx";
 
 const money = (n) => Number(n || 0).toFixed(2);
@@ -8,6 +8,8 @@ const money = (n) => Number(n || 0).toFixed(2);
 // العهدة: مبلغ ثابت مع الشخص (فراطة) — ما بينحسب من الكاش اللي بيسلّمه
 export default function Custody() {
   const enabled = useFeature("custody");
+  const { isOwner } = usePerms();
+  const [askZero, setAskZero] = useState(false);
   const [d, setD] = useState(null);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -21,12 +23,14 @@ export default function Custody() {
   if (!enabled) return <div className="page"><div className="card text-secondary">هاي الميزة مش مفعّلة لمحلك.</div></div>;
   if (!d) return <div className="page">{error ? <div className="error-box">{error}</div> : <p className="text-secondary">جاري التحميل…</p>}</div>;
 
-  async function save() {
+  async function save(override) {
+    const value = override != null ? override : Number(amount || 0);
     setBusy(true);
     setError("");
     try {
-      await api.stSetCustody(edit.user_id, { amount: Number(amount || 0), note });
-      setMsg(`✅ عهدة ${edit.full_name} صارت ${money(amount || 0)} JD`);
+      await api.stSetCustody(edit.user_id, { amount: value, note: override === 0 ? "رجّع العهدة" : note });
+      setMsg(value === 0 ? `✅ تصفّرت عهدة ${edit.full_name}` : `✅ عهدة ${edit.full_name} صارت ${money(value)} JD`);
+      setAskZero(false);
       setTimeout(() => setMsg(""), 5000);
       setEdit(null);
       load();
@@ -56,7 +60,7 @@ export default function Custody() {
       <div className="pr-list">
         {[...withAmount, ...(d.can_edit ? without : [])].map((p) => (
           <button key={p.user_id} type="button" className="pr-row" disabled={!d.can_edit}
-            onClick={() => { setEdit(p); setAmount(p.amount ? String(p.amount) : ""); setNote(p.note || ""); setError(""); }}>
+            onClick={() => { setEdit(p); setAmount(p.amount ? String(p.amount) : ""); setNote(p.note || ""); setError(""); setAskZero(false); }}>
             <span className="pr-ic" aria-hidden="true">{(p.full_name || "؟").trim()[0]}</span>
             <span className="pr-t">
               <b>{p.full_name}</b>
@@ -79,10 +83,19 @@ export default function Custody() {
         </label>
         <label className="pr-field"><span>ملاحظة (اختياري)</span><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلًا فراطة للسيارة" /></label>
         <div className="sheet-actions">
-          <button className="btn-primary" disabled={busy || amount === "" || Number(amount) < 0} onClick={save}>حفظ</button>
+          <button className="btn-primary" disabled={busy || amount === "" || Number(amount) < 0} onClick={() => save()}>حفظ</button>
           <button className="btn-secondary" onClick={() => setEdit(null)}>رجوع</button>
         </div>
-        {edit?.amount > 0 && <button type="button" className="pr-archive" disabled={busy} onClick={() => { setAmount("0"); }}>رجّع العهدة (صفّرها)</button>}
+        {edit?.amount > 0 && isOwner && (
+          askZero ? (
+            <div className="sheet-actions" style={{ marginTop: 10 }}>
+              <button className="btn-primary" style={{ background: "var(--urgent)" }} disabled={busy} onClick={() => save(0)}>{busy ? "لحظة…" : `أكيد — صفّر عهدة ${edit.full_name}`}</button>
+              <button className="btn-secondary" disabled={busy} onClick={() => setAskZero(false)}>لا</button>
+            </div>
+          ) : (
+            <button type="button" className="pr-archive" disabled={busy} onClick={() => setAskZero(true)}>رجّع العهدة (صفّرها)</button>
+          )
+        )}
       </Sheet>
     </div>
   );
