@@ -286,6 +286,8 @@ export async function computeForecasts({ customerId = null, fresh = false } = {}
     let status = baseStatus;
     if (c.forecast_disabled) status = "disabled";
     else if (c.has_open_order) status = "ordered";
+    // زبون إله أيام توصيل ثابتة (منبّه التوصيل المعتاد) — ما في داعي نتوقّعله
+    else if (c.has_schedule && baseStatus !== "learning") status = "scheduled";
     else if (c.forecast_snooze_until && c.forecast_snooze_until >= today && baseStatus !== "learning") status = "snoozed";
 
     results.push({

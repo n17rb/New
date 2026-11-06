@@ -220,6 +220,8 @@ export function CustomerForecastCard({ forecast: f, onReload, onOrder }) {
   const late = f.late_days >= 1;
   const statusText = f.status === "ordered"
     ? "عنده طلب مفتوح هلّق"
+    : f.status === "scheduled"
+      ? "إله أيام توصيل ثابتة — ما بنذكّره"
     : f.status === "snoozed"
       ? `مأجّل لـ${f.snooze_until}`
       : `مفروض يطلب ${f.due_label}`;

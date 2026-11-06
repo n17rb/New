@@ -93,7 +93,7 @@ export default function WhatsAppAuto() {
         </div>
       )}
 
-      <AndroidCard couponsAuto={!!d.coupons_auto} onCouponsAuto={(v) => run(() => api.waSave({ coupons_auto: v }), v ? "✅ رسايل الكوبونات صارت تلقائية من موبايل المحل" : "رسايل الكوبونات رجعت يدوي (زر واتساب)")} token={d.queue_token} users={d.users || []} deviceUser={d.device_user} onDevice={(id) => run(() => api.waSave({ device_user: id }), id ? "✅ انحفظ حساب الموبايل" : "انشال")} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
+      <AndroidCard forecastAuto={!!d.forecast_auto} onForecastAuto={(v) => run(() => api.waSave({ forecast_auto: v }), v ? "✅ تذكير التوقعات صار يتبعت كل يوم الصبح من موبايل المحل" : "تذكير التوقعات انطفى — ما بينبعت للزباين")} couponsAuto={!!d.coupons_auto} onCouponsAuto={(v) => run(() => api.waSave({ coupons_auto: v }), v ? "✅ رسايل الكوبونات صارت تلقائية من موبايل المحل" : "رسايل الكوبونات رجعت يدوي (زر واتساب)")} token={d.queue_token} users={d.users || []} deviceUser={d.device_user} onDevice={(id) => run(() => api.waSave({ device_user: id }), id ? "✅ انحفظ حساب الموبايل" : "انشال")} outbox={d.outbox || []} pending={pending.length} busy={busy} onNew={() => run(() => api.waNewQueueToken(), "✅ انعمل رابط جديد — حدّثه بالموبايل")} />
 
       <button type="button" className="wa-setup-toggle" onClick={() => setShowSetup((v) => !v)}>
         {d.configured ? "✓ واتساب مربوط" : "⚠️ واتساب مش مربوط لسا"} — {showSetup ? "إخفاء الإعدادات" : "الإعدادات"}
@@ -167,7 +167,7 @@ export default function WhatsAppAuto() {
 }
 
 // موبايل أندرويد بيبعت من تطبيق واتساب أعمال نفسه (برنامج MacroDroid)
-function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onDevice, outbox, pending, busy, onNew }) {
+function AndroidCard({ forecastAuto, onForecastAuto, couponsAuto, onCouponsAuto, token, users, deviceUser, onDevice, outbox, pending, busy, onNew }) {
   const [copied, setCopied] = useState("");
   const base = `${API_ORIGIN}/api/public/wa-queue/${token}`;
   const copy = (txt, key) => {
@@ -184,6 +184,13 @@ function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onD
         <span className="pr-sw-t">
           <b>رسايل الكوبونات تلقائي</b>
           <small>{couponsAuto ? "«انضافلك كوبونات» و«انخصم كوبون» بتنبعت لحالها من موبايل المحل" : "مطفي — الكابتن بيبعتها بإيده من زر الواتساب زي قبل"}</small>
+        </span>
+        <span className="pr-sw-k" aria-hidden="true"><i /></span>
+      </button>
+      <button type="button" className={`pr-sw${forecastAuto ? " on" : ""}`} style={{ margin: "0 0 12px" }} disabled={busy} onClick={() => onForecastAuto(!forecastAuto)}>
+        <span className="pr-sw-t">
+          <b>تذكير التوقعات تلقائي</b>
+          <small>{forecastAuto ? "كل يوم الصبح بينبعت للزباين اللي التوقعات بتقول مفروض يطلبوا" : "مطفي — ما بينبعت تذكير توقعات لحدا"}</small>
         </span>
         <span className="pr-sw-k" aria-hidden="true"><i /></span>
       </button>

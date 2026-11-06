@@ -9,7 +9,7 @@ import { can } from "../permissions.js";
 // الرسالة اللي بتنبعت للزبون لازم تكون «قالب» (Template) معتمد من Meta، فيه متغيرات:
 //   {{1}} اسم الزبون   {{2}} اسم المحل   {{3}} الكمية اللي بياخذها عادةً
 // ============================================================
-const KEYS = ["wa_enabled", "wa_queue_token", "wa_device_user", "wa_coupons_auto", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
+const KEYS = ["wa_enabled", "wa_queue_token", "wa_device_user", "wa_coupons_auto", "wa_forecast_auto", "wa_provider", "wa_phone_id", "wa_token", "wa_template", "wa_lang", "wa_hour", "wa_last_run"];
 const GRAPH = "https://graph.facebook.com/v21.0";
 
 export async function getWaSettings() {
@@ -28,6 +28,8 @@ export async function getWaSettings() {
     last_run: m.wa_last_run || null,
     device_user: m.wa_device_user || null,
     coupons_auto: m.wa_coupons_auto === "1",
+    // تذكير التوقعات من موبايل الأندرويد — مطفي إلا إذا فعّلته
+    forecast_auto: m.wa_forecast_auto === "1",
   };
 }
 
@@ -281,7 +283,7 @@ export async function nextQueued() {
     }
   }
   const s = await getWaSettings();
-  if (h >= s.hour && h < s.hour + 5) {
+  if (s.forecast_auto && h >= s.hour && h < s.hour + 5) {
     const list = await forecastQueue();
     if (list[0]) return { source: "forecast", id: list[0].customer_id, ...list[0], left: list.length };
   }
