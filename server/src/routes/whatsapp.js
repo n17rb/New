@@ -130,6 +130,21 @@ waPublicRouter.get("/wa-queue/:token/next", async (req, res) => {
     res.json({ done: false, ...n, done_url });
   } catch (err) { console.error("wa-queue:", err); res.status(500).json({ error: "صار خطأ." }); }
 });
+// أسهل نسخة لـMacroDroid: نص عادي — رابط واتساب جاهز أو NONE. بتنعلّم «انبعتت» أول ما تنسحب
+waPublicRouter.get("/wa-queue/:token/link", async (req, res) => {
+  try {
+    if (!(await queueTenant(req, res))) return;
+    res.type("text/plain; charset=utf-8");
+    const n = await nextQueued();
+    if (!n || !n.url) return res.send("NONE");
+    if (n.source === "outbox") await markOutboxSent(Number(n.id));
+    else {
+      const c = (await query("SELECT id, phone_normalized FROM customers WHERE id = $1", [n.customer_id])).rows[0];
+      if (c) await markQueueSent(c.id, c.phone_normalized);
+    }
+    res.send(n.url);
+  } catch (err) { console.error("wa-queue:", err); res.status(500).type("text/plain").send("NONE"); }
+});
 waPublicRouter.all("/wa-queue/:token/sent-outbox/:id", async (req, res) => {
   try {
     if (!(await queueTenant(req, res))) return;

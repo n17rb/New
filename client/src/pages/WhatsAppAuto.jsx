@@ -194,9 +194,9 @@ function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onD
       </select>
       <p className="text-secondary" style={{ fontSize: "0.76rem", margin: "6px 2px 10px" }}>أول ما ينحط كوبون أو ينخصم، بيوصل إشعار لهالحساب على الموبايل، وMacroDroid بيبعت فورًا. الأحسن تعمل حساب خاص اسمه «موبايل المحل».</p>
       <div className="sheet-q">رابط «الرسالة الجاية»</div>
-      <div className="wa-link" dir="ltr">{base}/next</div>
+      <div className="wa-link" dir="ltr">{base}/link</div>
       <div className="vh-acts2" style={{ marginTop: 8 }}>
-        <button type="button" className="btn-secondary" onClick={() => copy(`${base}/next`, "next")}>{copied === "next" ? "✓ انتسخ" : "انسخ الرابط"}</button>
+        <button type="button" className="btn-secondary" onClick={() => copy(`${base}/link`, "next")}>{copied === "next" ? "✓ انتسخ" : "انسخ الرابط"}</button>
         <button type="button" className="btn-secondary" disabled={busy} onClick={onNew}>رابط جديد</button>
       </div>
       {outbox.length > 0 && (
@@ -220,13 +220,10 @@ function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onD
             <ul>
               <li><b>المُشغّل ١ (فوري):</b> Notification Received — من تطبيق المتصفح/موج، والنص فيه «رسالة واتساب جديدة».</li>
               <li><b>المُشغّل ٢ (احتياطي وللتذكير الصبح):</b> كل ١٠ دقايق (Regular interval) بين ٧ الصبح و١٠ بالليل.</li>
-              <li><b>الأفعال (كرّرها لحد ما <code>done</code> = true):</b>
-                <br />١) <b>HTTP Request (GET)</b> على الرابط فوق، وخزّن الرد بمتغيّر.
-                <br />٢) إذا <code>done</code> = true ← <b>وقّف</b> (ما في إشي هلّق).
-                <br />٣) <b>افتح الرابط</b> اللي بخانة <code>url</code> بتطبيق WhatsApp Business.
-                <br />٤) استنى ٤ ثواني ← <b>UI Interaction: Click</b> على زر الإرسال.
-                <br />٥) <b>HTTP Request (GET)</b> على الرابط اللي بخانة <code>done_url</code> (عشان ما تنعاد).
-                <br />٦) ارجع للشاشة الرئيسية واستنى <b>٤٥–٩٠ ثانية</b> (عشوائي) قبل اللي بعده.</li>
+              <li><b>الأفعال:</b>
+                <br />١) <b>طلب HTTP (GET)</b> على الرابط فوق، وخزّن الرد بمتغيّر نصي اسمه <code>link</code>.
+                <br />٢) إذا <code>link</code> فيه <code>wa.me</code>: <b>فتح رابط موقع</b> = <code>{"{lv=link}"}</code> ← استنى ٥ ثواني ← <b>تفاعل مع واجهة المستخدم: نقر</b> على زر الإرسال ← رجوع للرئيسية ← استنى ٦٠ ثانية ← <b>نفّذ الماكرو من جديد</b>.
+                <br />٣) إذا فيه <code>NONE</code>: ما في إشي، خلص.</li>
             </ul>
           </li>
           <li>جرّبه أول مرة وإنت ماسك الموبايل. إذا علقت بأي خطوة ابعتلي صورة.</li>
