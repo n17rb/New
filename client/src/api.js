@@ -280,6 +280,8 @@ export const api = {
   stAddItem: (body) => request("/station/stock/items", { method: "POST", body }),
   stUpdateItem: (id, body) => request(`/station/stock/items/${id}`, { method: "PUT", body }),
   stMove: (id, body) => request(`/station/stock/items/${id}/move`, { method: "POST", body }),
+  stEditMove: (id, body) => request(`/station/stock/moves/${id}`, { method: "PUT", body }),
+  stDeleteMove: (id) => request(`/station/stock/moves/${id}`, { method: "DELETE" }),
   stItemMoves: (id) => request(`/station/stock/items/${id}/moves`),
   stDecide: (moveId, decision) => request(`/station/stock/moves/${moveId}/${decision}`, { method: "POST" }),
   stSummary: (date) => request(`/station/summary${date ? `?date=${date}` : ""}`),

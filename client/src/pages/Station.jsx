@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { FiPlus, FiChevronRight, FiChevronLeft, FiTruck, FiCheck, FiX } from "react-icons/fi";
+import { FiPlus, FiChevronRight, FiChevronLeft, FiTruck, FiCheck, FiX, FiEdit2, FiTrash2 } from "react-icons/fi";
 import { api } from "../api.js";
 import { useFeature, usePerms } from "../auth.jsx";
 import Sheet from "../components/Sheet.jsx";
@@ -194,7 +194,8 @@ function Stock() {
                   <button type="button" onClick={() => setMoving({ item: it, kind: "in" })}>+ إدخال</button>
                   <button type="button" onClick={() => setMoving({ item: it, kind: "count" })}>جرد</button>
                   <button type="button" className="red" onClick={() => setMoving({ item: it, kind: "damage" })}>تالف</button>
-                  <button type="button" onClick={() => setEditing(it)}>تعديل</button>
+                  <button type="button" onClick={() => setHistory(it)}>تعديل الحركات</button>
+                  <button type="button" onClick={() => setEditing(it)}>الصنف</button>
                 </div>
               )}
             </div>
@@ -205,7 +206,7 @@ function Stock() {
 
       <ItemSheet open={!!editing} item={editing} products={d.products} onClose={() => setEditing(null)} onSaved={(m) => { setEditing(null); flash(m); }} />
       <MoveSheet open={!!moving} move={moving} onClose={() => setMoving(null)} onSaved={(m) => { setMoving(null); flash(m); }} />
-      <HistorySheet item={history} onClose={() => setHistory(null)} />
+      <HistorySheet item={history} editable={editable} onChanged={flash} onClose={() => setHistory(null)} />
     </>
   );
 }
@@ -321,21 +322,78 @@ function MoveSheet({ open, move, onClose, onSaved }) {
   );
 }
 
-function HistorySheet({ item, onClose }) {
+const MANUAL = ["in", "adjust", "damage"];
+function HistorySheet({ item, onClose, editable, onChanged }) {
   const [rows, setRows] = useState(null);
-  useEffect(() => { setRows(null); if (item) api.stItemMoves(item.id).then(setRows).catch(() => setRows([])); }, [item?.id]);
+  const [edit, setEdit] = useState(null); // {id, qty, note}
+  const [askDel, setAskDel] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const reload = () => { if (item) api.stItemMoves(item.id).then(setRows).catch(() => setRows([])); };
+  useEffect(() => { setRows(null); setEdit(null); setAskDel(null); setError(""); reload(); }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function act(fn, ok) {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+      setEdit(null);
+      setAskDel(null);
+      reload();
+      onChanged?.(ok);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Sheet open={!!item} title={item ? `حركة ${item.name}` : ""} onClose={onClose}>
+      {error && <div className="error-box">{error}</div>}
       {!rows ? <p className="text-secondary">جاري التحميل…</p> : rows.length === 0 ? <p className="text-secondary">ما في حركات لسا</p> : (
         <div className="stn-hist">
-          {rows.map((m) => (
-            <div key={m.id} className={`stn-hist-row${m.status !== "approved" ? " dim" : ""}`}>
-              <span><b>{KIND[m.kind]}</b>{m.status === "pending" ? " (بيستنى)" : m.status === "rejected" ? " (مرفوض)" : ""}<small>{new Date(m.created_at).toLocaleString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} · {m.by_name || "—"}{m.note ? ` · ${m.note}` : ""}</small></span>
-              <b className={`tabular-num ${m.qty > 0 ? "green" : "red"}`}>{m.qty > 0 ? `+${m.qty}` : m.qty}</b>
-            </div>
-          ))}
+          {rows.map((m) => {
+            const can = editable && MANUAL.includes(m.kind);
+            if (edit?.id === m.id) {
+              return (
+                <div key={m.id} className="stn-hist-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+                  <b>تعديل «{KIND[m.kind]}»</b>
+                  <label className="pr-field" style={{ margin: 0 }}>
+                    <span>{m.kind === "adjust" ? "الفرق (موجب زيادة، سالب نقص)" : "الكمية"}</span>
+                    <input inputMode={m.kind === "adjust" ? "text" : "numeric"} dir="ltr" value={edit.qty} onChange={(e) => setEdit({ ...edit, qty: e.target.value })} />
+                  </label>
+                  <input className="no-search" value={edit.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })} placeholder="ملاحظة (اختياري)" />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn-primary" style={{ flex: 1 }} disabled={busy || edit.qty === ""} onClick={() => act(() => api.stEditMove(m.id, { qty: Number(edit.qty), note: edit.note }), "✅ انعدّلت الحركة")}>احفظ</button>
+                    <button className="btn-secondary" style={{ flex: 1 }} disabled={busy} onClick={() => setEdit(null)}>رجوع</button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={m.id} className={`stn-hist-row${m.status !== "approved" ? " dim" : ""}`}>
+                <span><b>{KIND[m.kind]}</b>{m.status === "pending" ? " (بيستنى)" : m.status === "rejected" ? " (مرفوض)" : ""}<small>{new Date(m.created_at).toLocaleString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} · {m.by_name || "—"}{m.note ? ` · ${m.note}` : ""}</small></span>
+                <b className={`tabular-num ${m.qty > 0 ? "green" : "red"}`}>{m.qty > 0 ? `+${m.qty}` : m.qty}</b>
+                {can && (
+                  askDel === m.id ? (
+                    <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button type="button" className="stn-no" disabled={busy} onClick={() => act(() => api.stDeleteMove(m.id), "✅ انحذفت الحركة")} aria-label="أكّد الحذف">حذف</button>
+                      <button type="button" className="sc-mini-btn" onClick={() => setAskDel(null)}>لا</button>
+                    </span>
+                  ) : (
+                    <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button type="button" className="sc-mini-btn" onClick={() => setEdit({ id: m.id, qty: String(m.kind === "adjust" ? m.qty : Math.abs(m.qty)), note: m.note || "" })} aria-label="تعديل"><FiEdit2 aria-hidden="true" /></button>
+                      <button type="button" className="sc-mini-btn" style={{ color: "var(--urgent)" }} onClick={() => setAskDel(m.id)} aria-label="حذف"><FiTrash2 aria-hidden="true" /></button>
+                    </span>
+                  )
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+      {editable && <p className="text-secondary" style={{ fontSize: "0.78rem" }}>الإدخال والجرد والتالف بتتعدّل من هون. تحميل السيارات من صفحة السيارة، وبيع المحل من الكاشير.</p>}
       <button className="btn-secondary" style={{ marginTop: 12 }} onClick={onClose}>رجوع</button>
     </Sheet>
   );

@@ -232,6 +232,62 @@ router.post("/stock/moves/:id/:decision", feature("station_stock"), wrap(async (
   res.json({ ok: true });
 }));
 
+// تعديل / حذف حركة يدوية بالمحطة (إدخال، جرد، تالف) — تحميل السيارات بيتعدّل من الجولة، وبيع المحل من الكاشير
+const MANUAL = ["in", "adjust", "damage"];
+async function manualMove(id) {
+  const m = (await query(
+    "SELECT m.*, i.name, i.unit, i.product_id FROM st_moves m JOIN st_items i ON i.id = m.item_id WHERE m.id = $1",
+    [id]
+  )).rows[0];
+  if (!m) throw fail(404, "الحركة غير موجودة.");
+  if (!MANUAL.includes(m.kind)) {
+    throw fail(400, m.kind === "shop_sale" ? "هاي من بيع المحل — عدّلها من الكاشير." : "هاي من جولة سيارة — عدّلها من صفحة السيارة.");
+  }
+  return m;
+}
+async function tellOwner(req, message) {
+  const by = await userName(req.user.id);
+  await notifyUsers((u) => u.role === "super_admin", { type: "STOCK_EDITED", title: "تعديل بالمحطة", message: `✏️ ${by || "موظف"} ${message}`, url: "/station", actorId: req.user.id });
+}
+
+router.put("/stock/moves/:id", feature("station_stock"), perm("station", "edit"), wrap(async (req, res) => {
+  const m = await manualMove(req.params.id);
+  const b = req.body || {};
+  let qty;
+  if (m.kind === "adjust") {
+    qty = Math.trunc(Number(b.qty));
+    if (!Number.isFinite(qty) || qty === 0) throw fail(400, "اكتب الفرق (موجب = زيادة، سالب = نقص).");
+  } else {
+    const n = int(b.qty);
+    if (!n) throw fail(400, "اكتب الكمية.");
+    qty = m.kind === "damage" ? -n : n;
+  }
+  const note = b.note !== undefined ? String(b.note || "").trim().slice(0, 200) || null : m.note;
+  await query("UPDATE st_moves SET qty = $1, note = $2 WHERE id = $3", [qty, note, m.id]);
+  // تالف مربوط بجولة: نصحّح رقم التالف فيها
+  if (m.kind === "damage" && m.round_id && m.status === "approved" && m.product_id) {
+    await query("UPDATE st_round_items SET damaged = GREATEST(0, damaged + $1) WHERE round_id = $2 AND product_id = $3", [(-qty) - (-m.qty), m.round_id, m.product_id]);
+  }
+  await checkLowStock([m.item_id]);
+  if (qty !== m.qty) await tellOwner(req, `عدّل حركة «${KIND_AR[m.kind]}» لـ${m.name}: ${Math.abs(m.qty)} ← ${Math.abs(qty)} ${m.unit}`);
+  await logActivity({ userId: req.user.id, action: "STOCK_MOVE_EDIT", recordType: "st_move", recordId: m.id, oldValue: { qty: m.qty, note: m.note }, newValue: { qty, note } });
+  res.json({ ok: true });
+}));
+
+router.delete("/stock/moves/:id", feature("station_stock"), perm("station", "edit"), wrap(async (req, res) => {
+  const m = await manualMove(req.params.id);
+  await query("DELETE FROM st_moves WHERE id = $1", [m.id]);
+  if (m.kind === "damage" && m.round_id && m.status === "approved" && m.product_id) {
+    await query("UPDATE st_round_items SET damaged = GREATEST(0, damaged + $1) WHERE round_id = $2 AND product_id = $3", [m.qty, m.round_id, m.product_id]);
+  }
+  await query("UPDATE st_items SET alerted = false WHERE id = $1", [m.item_id]);
+  await checkLowStock([m.item_id]);
+  await tellOwner(req, `حذف حركة «${KIND_AR[m.kind]}» لـ${m.name}: ${Math.abs(m.qty)} ${m.unit}`);
+  await logActivity({ userId: req.user.id, action: "STOCK_MOVE_DELETE", recordType: "st_move", recordId: m.id, oldValue: { kind: m.kind, qty: m.qty, item: m.name, note: m.note } });
+  res.json({ ok: true });
+}));
+const KIND_AR = { in: "إدخال", adjust: "جرد", damage: "تالف" };
+
 router.get("/stock/items/:id/moves", feature("station_stock"), perm("station", "view"), wrap(async (req, res) => {
   const r = await query(
     `SELECT m.*, u.full_name AS by_name FROM st_moves m LEFT JOIN users u ON u.id = m.created_by
