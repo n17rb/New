@@ -1465,6 +1465,18 @@ function StopCard({ stop, index, picked, onBackToNext, readOnly, busy, withBusy,
         </div>
       )}
 
+      {couponOnly && !readOnly && (
+        <div className="sc-order">
+          <div className="sc-sec-row">
+            <span className="sc-sec-t" style={{ margin: 0 }}>الطلب</span>
+            <button type="button" className="sc-mini-btn" onClick={() => setEditingItems(true)}>
+              <FiEdit2 aria-hidden="true" /> ضيف شو أخذ
+            </button>
+          </div>
+          <div className="text-secondary" style={{ fontSize: "0.82rem" }}>باقة كوبونات بس — إذا أخذ مي أو أي إشي ثاني ضيفه هون</div>
+        </div>
+      )}
+
       {!readOnly && (
         <button type="button" className="sc-sell2" onClick={() => setSelling(true)}>
           <span className="sc-sell2-ic" aria-hidden="true">
