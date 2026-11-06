@@ -220,7 +220,7 @@ async function androidOn() {
 // تنبيه فوري لموبايل الأندرويد: إشعار من تطبيق موج نفسه لحساب «جهاز الإرسال» ← MacroDroid بيشتغل فورًا
 export async function pingDevice() {
   const h = jordanHour();
-  if (h < 7 || h >= 22) return; // بالليل بتستنى لـ٧ الصبح
+  void h;
   const uid = Number((await query("SELECT value FROM app_settings WHERE key = 'wa_device_user'")).rows[0]?.value) || 0;
   if (!uid) return;
   sendPushToUser(uid, { title: "موج واتساب", body: "📤 رسالة واتساب جديدة بالدور", url: "/settings/whatsapp", tag: "wa-queue" })
@@ -268,10 +268,11 @@ export async function queueCouponsUsed({ customerId, used, balance, walletToken 
   return true;
 }
 
-// الرسالة الجاية للموبايل: أول إشي الصندوق (فورًا، بين ٧ الصبح و١٠ بالليل)، وبعدين تذكير التوقعات (بوقته الصبح)
+// الرسالة الجاية للموبايل: أول إشي الصندوق (فورًا، أي ساعة)، وبعدين تذكير التوقعات (بوقته الصبح)
 export async function nextQueued() {
   const h = jordanHour();
-  if (h >= 7 && h < 22) {
+  {
+    // رسايل الكوبونات بتنبعت أي ساعة (حتى بالليل) — الزبون لازم يعرف فورًا
     await query("UPDATE wa_outbox SET status = 'expired' WHERE status = 'pending' AND created_at < now() - interval '36 hours'");
     const o = (await query("SELECT * FROM wa_outbox WHERE status = 'pending' ORDER BY created_at LIMIT 1")).rows[0];
     if (o) {

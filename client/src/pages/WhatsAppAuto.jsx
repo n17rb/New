@@ -178,7 +178,7 @@ function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onD
       <div className="wa-android-h">📱 من موبايل أندرويد — رقمك الأساسي</div>
       <p className="text-secondary" style={{ marginTop: 4, fontSize: "0.82rem" }}>
         موبايل أندرويد عليه واتساب أعمال (برقم المحل) بيشيّك كل كم دقيقة وبيبعت لحاله من التطبيق:
-        رسايل «انضافلك كوبونات» أول ما تنباع باقة (بين ٧ الصبح و١٠ بالليل)، وتذكير التوقعات الصبح. {pending > 0 ? `اليوم في ${pending} تذكير بالدور.` : ""}
+        رسايل «انضافلك كوبونات» أول ما تنباع باقة (أي ساعة، حتى بالليل)، وتذكير التوقعات الصبح. {pending > 0 ? `اليوم في ${pending} تذكير بالدور.` : ""}
       </p>
       <button type="button" className={`pr-sw${couponsAuto ? " on" : ""}`} style={{ margin: "8px 0 12px" }} disabled={busy} onClick={() => onCouponsAuto(!couponsAuto)}>
         <span className="pr-sw-t">
@@ -219,7 +219,7 @@ function AndroidCard({ couponsAuto, onCouponsAuto, token, users, deviceUser, onD
           <li>اعمل ماكرو جديد:
             <ul>
               <li><b>المُشغّل ١ (فوري):</b> Notification Received — من تطبيق المتصفح/موج، والنص فيه «رسالة واتساب جديدة».</li>
-              <li><b>المُشغّل ٢ (احتياطي وللتذكير الصبح):</b> كل ١٠ دقايق (Regular interval) بين ٧ الصبح و١٠ بالليل.</li>
+              <li><b>المُشغّل ٢ (احتياطي وللتذكير الصبح):</b> كل دقيقة (Regular interval) — بدون قيد وقت، النظام هو اللي بيحدد إمتى.</li>
               <li><b>الأفعال:</b>
                 <br />١) <b>طلب HTTP (GET)</b> على الرابط فوق، وخزّن الرد بمتغيّر نصي اسمه <code>link</code>.
                 <br />٢) إذا <code>link</code> فيه <code>wa.me</code>: <b>فتح رابط موقع</b> = <code>{"{lv=link}"}</code> ← استنى ٥ ثواني ← <b>تفاعل مع واجهة المستخدم: نقر</b> على زر الإرسال ← رجوع للرئيسية ← استنى ٦٠ ثانية ← <b>نفّذ الماكرو من جديد</b>.
