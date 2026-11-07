@@ -1623,3 +1623,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMPTZ;
 -- اتجاه السيارة وسرعتها (من تطبيق الكابتن) — عشان السهم على الخريطة
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_heading REAL;
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_speed REAL;
+
+-- رسايل الكوبونات: تفاصيل الحدث عشان ندمج بيع الباقة والتسليم برسالة وحدة
+ALTER TABLE wa_outbox ADD COLUMN IF NOT EXISTS meta JSONB;

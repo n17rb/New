@@ -176,6 +176,13 @@ export async function markQueueSent(customerId, phone) {
     `INSERT INTO wa_messages (customer_id, phone, kind, sent_on, status, wa_id) VALUES ($1,$2,'forecast',$3,'sent','android') ON CONFLICT DO NOTHING`,
     [customerId, phone, jordanDate()]
   );
+  // الرسالة الجاية بعد وقت عشوائي (١٫٥–٦ دقايق) — عشان تبين طبيعية مش برنامج
+  const gap = 90 + Math.floor(Math.random() * 271);
+  await query(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('wa_forecast_next_at', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+    [new Date(Date.now() + gap * 1000).toISOString()]
+  );
 }
 
 // ============================================================
@@ -229,45 +236,73 @@ export async function pingDevice() {
     .catch((e) => console.error("push:", e.message));
 }
 
-// «انضافلك كوبونات»: بتنحط بالصندوق، والأندرويد بيبعتها فورًا
-export async function queueCouponsAdded({ customerId, added, balance, unpaid = 0, walletToken = null, origin = null }) {
+// رسايل الكوبونات: إذا صار بيع باقة وبعده تسليم لنفس الزبون والرسالة لسا ما انبعتت،
+// بندمجهم برسالة وحدة (أسرع للزبون وأأمن لواتساب من رسالتين ورا بعض)
+const DEFAULT_COUPONS_USED = "أهلًا {الاسم} 💧\nوصلك طلبك وانخصم {المخصوم} 🎫\nرصيدك صار {الرصيد}\n\nتابع رصيدك:\n{الرابط}\n\n{المحل}";
+async function couponText(c, meta, base) {
+  const link = meta.walletToken && base ? `${base}/w/${meta.walletToken}` : "";
+  const shop = currentTenant()?.name || "";
+  const unpaid = meta.unpaid > 0 ? `باقي من ثمن الباقة: ${Number(meta.unpaid).toFixed(2)} دينار` : "";
+  let text;
+  if (meta.added > 0 && meta.used > 0) {
+    text = [
+      `✨ أهلًا ${firstName(c.name)}`,
+      `انضافلك ${couponsWord(meta.added)} 🎫`,
+      `ووصلك طلبك وانخصم ${couponsWord(meta.used)}`,
+      `رصيدك صار ${couponsWord(c.coupon_balance)}`,
+      unpaid,
+      link ? `\nتابع رصيدك أول بأول:\n${link}` : "",
+      shop ? `\n${shop} 💧` : "",
+    ].filter(Boolean).join("\n");
+  } else if (meta.added > 0) {
+    const tpl = await templateText("coupons_added", DEFAULT_COUPONS_ADDED);
+    text = tpl.replaceAll("{الاسم}", firstName(c.name)).replaceAll("{الكوبونات}", couponsWord(meta.added)).replaceAll("{الباقة}", "")
+      .replaceAll("{الرصيد}", couponsWord(c.coupon_balance)).replaceAll("{الباقي}", unpaid).replaceAll("{الرابط}", link).replaceAll("{المحل}", shop);
+  } else {
+    const tpl = await templateText("coupons_used", DEFAULT_COUPONS_USED);
+    text = tpl.replaceAll("{الاسم}", firstName(c.name)).replaceAll("{المخصوم}", couponsWord(meta.used))
+      .replaceAll("{الرصيد}", couponsWord(c.coupon_balance)).replaceAll("{الرابط}", link).replaceAll("{المحل}", shop);
+  }
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+async function queueCouponEvent(customerId, delta, walletToken, origin) {
   if (!(await androidOn())) return false;
-  const c = (await query("SELECT name, phone_normalized FROM customers WHERE id = $1", [customerId])).rows[0];
+  const c = (await query("SELECT name, phone_normalized, coupon_balance FROM customers WHERE id = $1", [customerId])).rows[0];
   if (!c?.phone_normalized) return false;
   const base = await appOrigin(origin);
-  const tpl = await templateText("coupons_added", DEFAULT_COUPONS_ADDED);
-  const text = tpl
-    .replaceAll("{الاسم}", firstName(c.name))
-    .replaceAll("{الكوبونات}", couponsWord(added))
-    .replaceAll("{الباقة}", "")
-    .replaceAll("{الرصيد}", couponsWord(balance))
-    .replaceAll("{الباقي}", unpaid > 0 ? `باقي من ثمن الباقة: ${Number(unpaid).toFixed(2)} دينار` : "")
-    .replaceAll("{الرابط}", walletToken && base ? `${base}/w/${walletToken}` : "")
-    .replaceAll("{المحل}", currentTenant()?.name || "")
-    .replace(/\n{3,}/g, "\n\n").trim();
-  await query("INSERT INTO wa_outbox (customer_id, phone, kind, text) VALUES ($1,$2,'coupons_added',$3)", [customerId, c.phone_normalized, text]);
+  const prev = (await query(
+    `SELECT id, meta FROM wa_outbox WHERE customer_id = $1 AND status = 'pending' AND kind IN ('coupons_added','coupons_used','coupons_combo')
+       AND created_at > now() - interval '15 minutes' ORDER BY id DESC LIMIT 1`,
+    [customerId]
+  )).rows[0];
+  const old = prev?.meta || {};
+  const meta = {
+    added: (old.added || 0) + (delta.added || 0),
+    used: (old.used || 0) + (delta.used || 0),
+    unpaid: (old.unpaid || 0) + (delta.unpaid || 0),
+    walletToken: walletToken || old.walletToken || null,
+  };
+  const kind = meta.added > 0 && meta.used > 0 ? "coupons_combo" : meta.added > 0 ? "coupons_added" : "coupons_used";
+  const text = await couponText(c, meta, base);
+  if (prev) {
+    await query("UPDATE wa_outbox SET text = $1, kind = $2, meta = $3 WHERE id = $4 AND status = 'pending'", [text, kind, meta, prev.id]);
+  } else {
+    await query("INSERT INTO wa_outbox (customer_id, phone, kind, text, meta) VALUES ($1,$2,$3,$4,$5)", [customerId, c.phone_normalized, kind, text, meta]);
+  }
   await pingDevice();
   return true;
 }
 
+// «انضافلك كوبونات»: بيع باقة أو إضافة
+export async function queueCouponsAdded({ customerId, added, unpaid = 0, walletToken = null, origin = null }) {
+  if (!(added > 0)) return false;
+  return queueCouponEvent(customerId, { added, unpaid }, walletToken, origin);
+}
+
 // «انخصم كوبون»: بعد التسليم بكوبونات إلكترونية
-const DEFAULT_COUPONS_USED = "أهلًا {الاسم} 💧\nوصلك طلبك وانخصم {المخصوم} 🎫\nرصيدك صار {الرصيد}\n\nتابع رصيدك:\n{الرابط}\n\n{المحل}";
-export async function queueCouponsUsed({ customerId, used, balance, walletToken = null, origin = null }) {
-  if (!(await androidOn()) || !(used > 0)) return false;
-  const c = (await query("SELECT name, phone_normalized FROM customers WHERE id = $1", [customerId])).rows[0];
-  if (!c?.phone_normalized) return false;
-  const base = await appOrigin(origin);
-  const tpl = await templateText("coupons_used", DEFAULT_COUPONS_USED);
-  const text = tpl
-    .replaceAll("{الاسم}", firstName(c.name))
-    .replaceAll("{المخصوم}", couponsWord(used))
-    .replaceAll("{الرصيد}", couponsWord(balance))
-    .replaceAll("{الرابط}", walletToken && base ? `${base}/w/${walletToken}` : "")
-    .replaceAll("{المحل}", currentTenant()?.name || "")
-    .replace(/\n{3,}/g, "\n\n").trim();
-  await query("INSERT INTO wa_outbox (customer_id, phone, kind, text) VALUES ($1,$2,'coupons_used',$3)", [customerId, c.phone_normalized, text]);
-  await pingDevice();
-  return true;
+export async function queueCouponsUsed({ customerId, used, walletToken = null, origin = null }) {
+  if (!(used > 0)) return false;
+  return queueCouponEvent(customerId, { used }, walletToken, origin);
 }
 
 // «تصحيح رصيد الكوبونات»: بعد تعديل يدوي (مثلًا انخصم زيادة بالغلط)
@@ -310,12 +345,9 @@ export async function nextQueued() {
   }
   const s = await getWaSettings();
   if (s.forecast_auto && h >= s.hour && h < s.hour + 5) {
-    // فاصل بين رسايل التوقعات (عشوائي ٦٠–١٢٠ ثانية) عشان ما تبين رسايل جماعية لواتساب
-    const last = (await query(
-      "SELECT EXTRACT(EPOCH FROM (now() - max(created_at)))::int AS ago FROM wa_messages WHERE kind = 'forecast' AND wa_id = 'android' AND sent_on = $1",
-      [jordanDate()]
-    )).rows[0]?.ago;
-    if (last != null && last < 60 + Math.floor(Math.random() * 61)) return null;
+    // فاصل عشوائي بين رسايل التوقعات (بينحدد بعد كل رسالة)
+    const nextAt = (await query("SELECT value FROM app_settings WHERE key = 'wa_forecast_next_at'")).rows[0]?.value;
+    if (nextAt && Date.now() < new Date(nextAt).getTime()) return null;
     const list = await forecastQueue();
     if (list[0]) return { source: "forecast", id: list[0].customer_id, ...list[0], left: list.length };
   }
