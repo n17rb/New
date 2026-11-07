@@ -270,6 +270,32 @@ export async function queueCouponsUsed({ customerId, used, balance, walletToken 
   return true;
 }
 
+// «تصحيح رصيد الكوبونات»: بعد تعديل يدوي (مثلًا انخصم زيادة بالغلط)
+// إذا موبايل الأندرويد شغّال بتنحط بالدور، وإلا بنرجّع النص والرقم عشان تنبعت بإيدك
+export async function couponBalanceMessage({ customerId, walletToken = null, origin = null }) {
+  const c = (await query("SELECT name, phone_normalized, coupon_balance FROM customers WHERE id = $1", [customerId])).rows[0];
+  if (!c) return null;
+  const base = await appOrigin(origin);
+  const text = [
+    `أهلًا ${firstName(c.name)} 💧`,
+    "صحّحنا رصيد كوبوناتك ✅",
+    `رصيدك هلّق ${couponsWord(c.coupon_balance)} 🎫`,
+    walletToken && base ? `\nتابع رصيدك:\n${base}/w/${walletToken}` : "",
+    currentTenant()?.name ? `\n${currentTenant().name}` : "",
+  ].filter(Boolean).join("\n");
+  return { text, phone: c.phone_normalized, balance: c.coupon_balance };
+}
+export async function queueCouponFix({ customerId, walletToken = null, origin = null }) {
+  const m = await couponBalanceMessage({ customerId, walletToken, origin });
+  if (!m?.phone) return { queued: false, ...m };
+  if (await androidOn()) {
+    await query("INSERT INTO wa_outbox (customer_id, phone, kind, text) VALUES ($1,$2,'coupons_fix',$3)", [customerId, m.phone, m.text]);
+    await pingDevice();
+    return { queued: true, ...m };
+  }
+  return { queued: false, ...m };
+}
+
 // الرسالة الجاية للموبايل: أول إشي الصندوق (فورًا، أي ساعة)، وبعدين تذكير التوقعات (بوقته الصبح)
 export async function nextQueued() {
   const h = jordanHour();

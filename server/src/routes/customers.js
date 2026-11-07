@@ -9,7 +9,7 @@ import { uploadSingleImage, saveCompressedImage } from "../middleware/upload.js"
 import { parseSearch, buildSearchSql } from "../utils/smartSearch.js";
 import { computeForecasts } from "../utils/forecast.js";
 import { getShopLocation } from "../utils/routing.js";
-import { queueCouponsAdded } from "../utils/whatsapp.js";
+import { queueCouponFix } from "../utils/whatsapp.js";
 import { ensureWalletToken } from "./invoices.js";
 
 // تلميح التوقع لكل زبون بالقائمة: كم ضايل عنده ومتى مفروض يطلب
@@ -699,7 +699,8 @@ router.get("/:id/coupon-history", async (req, res) => {
 router.post("/:id/coupons/adjust", async (req, res) => {
   if (!canAction(req.user, "adjust_coupons")) return res.status(403).json({ error: "ما عندك صلاحية تعديل رصيد الكوبونات." });
 
-  const { change_amount, reason } = req.body;
+  const { change_amount } = req.body;
+  const reason = String(req.body?.reason || "").trim().slice(0, 200) || null;
   if (!change_amount || !Number.isInteger(change_amount)) {
     return res.status(400).json({ error: "قيمة التعديل مطلوبة (عدد صحيح، ممكن سالب)." });
   }
@@ -725,12 +726,18 @@ router.post("/:id/coupons/adjust", async (req, res) => {
     newValue: { change_amount, reason, new_balance: newBalance },
   });
 
-  let wa_queued = false;
-  if (change_amount > 0 && !req.user?.inspecting) {
-    const walletToken = req.tenant?.id ? await ensureWalletToken(req.params.id, req.tenant.id).catch(() => null) : null;
-    wa_queued = await queueCouponsAdded({ customerId: Number(req.params.id), added: change_amount, balance: newBalance, walletToken, origin: req.headers.origin }).catch(() => false);
-  }
-  res.json({ balance: newBalance, wa_queued });
+  // ما بنبعت إشي لحاله — بعد التعديل بيطلع زر «ابعتله رصيده» (الموظف بيقرّر)
+  res.json({ balance: newBalance });
+});
+
+// ابعت للزبون رصيد كوبوناته (بعد تصحيح): على موبايل المحل إذا شغّال، وإلا بيرجع النص يتبعت بإيدك
+router.post("/:id/coupons/send-balance", async (req, res) => {
+  if (!canAction(req.user, "adjust_coupons")) return res.status(403).json({ error: "ما عندك صلاحية." });
+  const walletToken = req.tenant?.id ? await ensureWalletToken(req.params.id, req.tenant.id).catch(() => null) : null;
+  const r = await queueCouponFix({ customerId: Number(req.params.id), walletToken, origin: req.headers.origin });
+  if (!r?.text) return res.status(404).json({ error: "العميل غير موجود." });
+  if (!r.phone) return res.status(400).json({ error: "ما في رقم للزبون." });
+  res.json(r);
 });
 
 router.get("/:id/prices", async (req, res) => {

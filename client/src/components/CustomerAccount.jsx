@@ -142,8 +142,8 @@ function CouponWallet({ customer, onChanged }) {
         )}
 
         {canAction("adjust_coupons") && !selling && !adjusting && (
-          <button className="btn-danger-text" style={{ color: "var(--text-secondary)", marginTop: 8, fontSize: "0.85rem" }} onClick={() => setAdjusting(true)}>
-            تعديل يدوي للرصيد
+          <button className="btn-secondary icon-row" style={{ justifyContent: "center", marginTop: 8 }} onClick={() => setAdjusting(true)}>
+            ✏️ تعديل الرصيد
           </button>
         )}
       </div>
@@ -249,39 +249,89 @@ function SellPackage({ customer, onCancel, onDone }) {
 }
 
 function AdjustCoupons({ customer, onCancel, onDone }) {
-  const [value, setValue] = useState("");
+  const current = Number(customer.coupon_balance || 0);
+  const [target, setTarget] = useState(String(current));
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(null); // الرصيد الجديد بعد الحفظ
+  const [sent, setSent] = useState("");
 
-  async function save(sign) {
-    const n = parseInt(value, 10);
-    if (!n || n <= 0) return;
+  const t = parseInt(target, 10);
+  const valid = Number.isInteger(t) && t >= 0;
+  const diff = valid ? t - current : 0;
+
+  async function save() {
+    if (!valid || diff === 0) return;
     setSaving(true);
     setError("");
     try {
-      await api.adjustCouponBalance(customer.id, { change_amount: sign * n });
-      onDone();
+      const r = await api.adjustCouponBalance(customer.id, { change_amount: diff, reason: reason.trim() || null });
+      setSaved(r.balance);
     } catch (err) {
       setError(err.message);
+    } finally {
       setSaving(false);
     }
+  }
+
+  async function send() {
+    setSaving(true);
+    setError("");
+    try {
+      const r = await api.sendCouponBalance(customer.id);
+      if (r.queued) {
+        setSent("📱 الرسالة بتنبعت لحالها من موبايل المحل خلال ثواني");
+      } else {
+        window.open(`https://wa.me/${r.phone}?text=${encodeURIComponent(r.text)}`, "_blank", "noopener");
+        setSent("✓ انفتح واتساب — اكبس إرسال");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (saved != null) {
+    return (
+      <div>
+        {error && <div className="error-box">{error}</div>}
+        <div className="success-box" style={{ marginBottom: 10 }}>
+          <div style={{ fontWeight: 700 }}>✅ رصيده صار {couponsWord(saved)}</div>
+          {sent && <div style={{ fontSize: "0.85rem", marginTop: 4 }}>{sent}</div>}
+        </div>
+        {!sent && customer.phone_normalized && (
+          <button className="btn-primary icon-row" style={{ justifyContent: "center", marginBottom: 8, background: "var(--whatsapp)" }} disabled={saving} onClick={send}>
+            <FaWhatsapp aria-hidden="true" /> ابعتله رصيده الجديد
+          </button>
+        )}
+        <button className="btn-secondary" onClick={onDone}>تم</button>
+      </div>
+    );
   }
 
   return (
     <div>
       {error && <div className="error-box">{error}</div>}
-      <div className="field">
-        <label htmlFor="adj-coupons">عدد الكوبونات</label>
-        <input id="adj-coupons" type="number" min="1" inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} />
+      <div className="sheet-q" style={{ marginTop: 0 }}>كم لازم يكون رصيده الصح؟</div>
+      <div className="ei-row on" style={{ marginBottom: 6 }}>
+        <div className="ei-name"><b>الرصيد</b><small>هلّق {current}</small></div>
+        <div className="ei-step">
+          <button type="button" className="step-btn" onClick={() => setTarget(String(Math.max(0, (valid ? t : current) - 1)))} aria-label="أقل">−</button>
+          <input className="vh-qty tabular-num" inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value.replace(/\D/g, ""))} aria-label="الرصيد الصح" />
+          <button type="button" className="step-btn plus" onClick={() => setTarget(String((valid ? t : current) + 1))} aria-label="أكثر">+</button>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <button className="btn-primary icon-row" style={{ justifyContent: "center", flex: 1 }} disabled={saving || !value} onClick={() => save(1)}>
-          <FiPlus aria-hidden="true" /> زيادة
-        </button>
-        <button className="btn-secondary icon-row" style={{ justifyContent: "center", flex: 1, color: "var(--urgent)" }} disabled={saving || !value} onClick={() => save(-1)}>
-          <FiMinus aria-hidden="true" /> خصم
-        </button>
-      </div>
+      {valid && diff !== 0 && (
+        <div className={`pay-note${diff < 0 ? " warn" : ""}`} style={{ marginBottom: 8 }}>
+          {diff > 0 ? `رح نرجّعله ${couponsWord(diff)}` : `رح ننخصم منه ${couponsWord(-diff)}`} — رصيده بيصير {t}
+        </div>
+      )}
+      <input className="no-search" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="السبب (اختياري) — مثلًا انخصم كوبونين بالغلط" style={{ marginBottom: 10 }} />
+      <button className="btn-primary" style={{ marginBottom: 8 }} disabled={saving || !valid || diff === 0} onClick={save}>
+        {saving ? "لحظة…" : "احفظ الرصيد"}
+      </button>
       <button className="btn-secondary" onClick={onCancel}>إلغاء</button>
     </div>
   );

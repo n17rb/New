@@ -444,6 +444,7 @@ export const api = {
   renumberCustomers: () => request("/customers/renumber", { method: "POST" }),
   getCouponHistory: (customerId) => request(`/customers/${customerId}/coupon-history`),
   adjustCouponBalance: (customerId, body) => request(`/customers/${customerId}/coupons/adjust`, { method: "POST", body }),
+  sendCouponBalance: (customerId) => request(`/customers/${customerId}/coupons/send-balance`, { method: "POST", body: {} }),
 
   getMyNotes: () => request("/notes"),
   addMyNote: (content) => request("/notes", { method: "POST", body: { content } }),
