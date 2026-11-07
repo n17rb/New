@@ -889,6 +889,11 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
     deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: 0 })), { cash_received: cashAll });
     onCancel();
   }
+  // كليك (مخفي — بتسحب لليسار): المبلغ كامل بيستنى تأكيد صاحب المحل وقت الجرد
+  function payCliq() {
+    deliverFast(stop, eligible.map((it) => ({ item_id: it.id, coupon_qty: 0 })), { cash_received: cashAll, cliq: true });
+    onCancel();
+  }
   function payCoupons() {
     // زبون ما إله رصيد بالنظام = كوبون ورقي مباشرة بدون سؤال.
     // السؤال بيطلع بس لما يكون إله رصيد ناقص (عشان تعرف إنه رح ينخصم من رصيده)
@@ -908,13 +913,9 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
       <p className="text-secondary" style={{ marginTop: 0, fontSize: "0.82rem" }}>
         {items.map((it) => `${it.quantity} × ${it.product_name_snapshot}`).join("، ")}
       </p>
-      <div className="pay-choice-grid">
-        <button className="pay-choice-btn cash" disabled={busy} onClick={payCash}>
-          <span className="pc-ic">💵</span>
-          <span className="pc-t">كاش</span>
-          <span className="pc-v tabular-num">{cashAll.toFixed(2)} JD</span>
-        </button>
-        <button className="pay-choice-btn coupon" disabled={busy || !canCoupon} onClick={payCoupons}>
+      {/* كاش وكوبون ظاهرين — «كليك» مخفي على اليمين، بتسحب لليسار عشان يبين */}
+      <div className="pay-choice-grid pay-swipe" dir="ltr">
+        <button dir="rtl" className="pay-choice-btn coupon" disabled={busy || !canCoupon} onClick={payCoupons}>
           <span className="pc-ic">🎫</span>
           <span className="pc-t">كوبون</span>
           <span className="pc-v tabular-num">{canCoupon ? `${eligibleQty} كوبون` : "الطلب ما بيقبل كوبون"}</span>
@@ -926,6 +927,17 @@ function PayChoice({ stop, busy, deliverFast, onDetails, onCancel }) {
               {cashWithCoupons > 0 ? ` · + ${cashWithCoupons.toFixed(2)} JD كاش` : ""}
             </span>
           )}
+        </button>
+        <button dir="rtl" className="pay-choice-btn cash" disabled={busy} onClick={payCash}>
+          <span className="pc-ic">💵</span>
+          <span className="pc-t">كاش</span>
+          <span className="pc-v tabular-num">{cashAll.toFixed(2)} JD</span>
+        </button>
+        <button dir="rtl" className="pay-choice-btn cliq" disabled={busy || !(cashAll > 0)} onClick={payCliq}>
+          <span className="pc-ic">📲</span>
+          <span className="pc-t">كليك</span>
+          <span className="pc-v tabular-num">{cashAll.toFixed(2)} JD</span>
+          <span className="pc-s">بيستنى تأكيدك وقت الجرد</span>
         </button>
       </div>
       <button className="link-btn" style={{ width: "100%", justifyContent: "center", margin: "10px 0 6px" }} onClick={onDetails}>

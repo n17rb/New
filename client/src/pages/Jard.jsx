@@ -24,6 +24,63 @@ function Row({ label, value, strong, color, sub }) {
   );
 }
 
+// كليك: الزبون قال إنه حوّل وقت التسليم — بتتأكد من تلفونك: وصل ✓ أو ما وصل (بيصير دين)
+function CliqCard({ date }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState("");
+  const load = () => api.getCliq(date).then(setData).catch(() => setData({ rows: [] }));
+  useEffect(() => { if (date) load(); }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!data || data.rows.length === 0) return null;
+  const pending = data.rows.filter((r) => r.cliq_status === "pending");
+  const done = data.rows.filter((r) => r.cliq_status !== "pending");
+  const pendingSum = pending.reduce((x, r) => x + Number(r.cliq_amount), 0);
+
+  async function decide(r, action) {
+    setBusy(r.id);
+    setError("");
+    try {
+      await api.decideCliq(r.id, action);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="title-md" style={{ marginTop: 0 }}>📲 كليك {pending.length > 0 && <small className="text-secondary" style={{ fontWeight: 600 }}>· {pending.length} بيستنى ({money(pendingSum)} JD)</small>}</h2>
+      {error && <div className="error-box">{error}</div>}
+      {pending.length > 0 && <p className="text-secondary" style={{ margin: "0 0 8px", fontSize: "0.82rem" }}>شيّك تلفونك: إذا وصل التحويل اكبس «وصل»، وإذا ما وصل بيترحّل دين على الزبون.</p>}
+      <div className="mini-ledger" style={{ marginTop: 0 }}>
+        {pending.map((r) => (
+          <div key={r.id} className="mini-ledger-row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <span style={{ flex: 1, minWidth: 140 }}>
+              <b>{r.customer_name}</b>
+              <div className="text-secondary" style={{ fontSize: "0.75rem" }}>{r.driver_name || "—"} · {new Date(r.delivered_at).toLocaleString("ar-JO", { timeZone: "Asia/Amman", day: "numeric", month: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+            </span>
+            <b className="tabular-num">{money(r.cliq_amount)}</b>
+            {data.can_decide && (
+              <span style={{ display: "flex", gap: 6, width: "100%" }}>
+                <button className="btn-primary" style={{ flex: 1, padding: "8px", background: "var(--success)" }} disabled={busy === r.id} onClick={() => decide(r, "approve")}>✓ وصل</button>
+                <button className="btn-secondary" style={{ flex: 1, padding: "8px", color: "var(--urgent)" }} disabled={busy === r.id} onClick={() => decide(r, "reject")}>ما وصل ← دين</button>
+              </span>
+            )}
+          </div>
+        ))}
+        {done.map((r) => (
+          <div key={r.id} className="mini-ledger-row">
+            <span>{r.customer_name}<div className="text-secondary" style={{ fontSize: "0.75rem" }}>{r.cliq_status === "approved" ? "✓ وصل" : "✗ ما وصل — صار دين"}</div></span>
+            <span className="tabular-num" style={{ fontWeight: 700, color: r.cliq_status === "approved" ? "var(--success)" : "var(--urgent)" }}>{money(r.cliq_amount)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // الجرد اليومي: كم دخل، كم طلع، كل كابتن كم معه، ومين سدّد دين ومين قبضه
 export default function Jard() {
   const [date, setDate] = useState(null);
@@ -114,6 +171,8 @@ export default function Jard() {
               <Row label="المجموع" value={money(s.money_out)} strong color="var(--urgent)" />
             </div>
           </div>
+
+          <CliqCard date={d.date} />
 
           {(s.coupons_used > 0 || s.packages_sold > 0) && (
             <div className="card">

@@ -183,6 +183,7 @@ async function hourlyJobs() {
   await forEachTenant("الطلبات بموعد", () => checkScheduledOrders());
   await forEachTenant("التوقعات", () => checkForecastAlerts());
   await forEachTenant("الأرشفة الشهرية", () => autoMonthlyArchive(), { plan: "shop" });
+  await forEachTenant("مناطق الزباين", () => import("./utils/regionFill.js").then((m) => m.fillMissingRegions()), { plan: "shop" });
   await forEachTenant("تنظيف الإشعارات", () => pool.query("DELETE FROM notifications WHERE created_at < now() - interval '48 hours'"));
   await checkSubscriptionWarnings().catch((err) => console.error("❌ تنبيهات الاشتراك:", err.message));
   await resetDemosIfDue().catch((err) => console.error("❌ ترجيع الديمو:", err.message));

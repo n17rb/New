@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, pool, logActivity } from "../db.js";
+import { can } from "../permissions.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePerm } from "../permissions.js";
 import { jordanDate } from "../utils/forecast.js";
@@ -195,6 +196,88 @@ router.get("/", async (req, res) => {
     expenses_notes: exp.notes,
     products: bottles.rows,
   });
+});
+
+// ============================================================
+// كليك: التحويلات اللي الزبون قال إنه حوّلها وقت التسليم — صاحب المحل بيتأكد آخر اليوم
+// ============================================================
+async function insertNotification({ type, message, customerId, tripId }) {
+  await query(
+    "INSERT INTO notifications (type, message, related_customer_id, related_trip_id) VALUES ($1,$2,$3,$4)",
+    [type, message, customerId || null, tripId || null]
+  );
+}
+const canDecide = (u) => u.role === "super_admin" || can(u, "cash", "edit");
+
+router.get("/cliq", async (req, res) => {
+  const date = isDate(req.query.date) ? req.query.date : null;
+  const rows = (await query(
+    `SELECT ts.id, ts.cliq_amount, ts.cliq_status, ts.delivered_at, ts.cliq_decided_at,
+            c.id AS customer_id, c.name AS customer_name, c.phone_normalized, u.full_name AS driver_name
+     FROM trip_stops ts
+     JOIN orders o ON o.id = ts.order_id
+     JOIN customers c ON c.id = o.customer_id
+     JOIN trips t ON t.id = ts.trip_id
+     LEFT JOIN users u ON u.id = t.driver_id
+     WHERE ts.cliq_status IS NOT NULL
+       AND (ts.cliq_status = 'pending' OR ($1::date IS NOT NULL AND ${DAY_SQL("ts.delivered_at")}))
+     ORDER BY (ts.cliq_status = 'pending') DESC, ts.delivered_at DESC
+     LIMIT 300`,
+    [date]
+  )).rows;
+  res.json({ can_decide: canDecide(req.user), rows });
+});
+
+router.post("/cliq/:id/:action", async (req, res) => {
+  if (!canDecide(req.user)) return res.status(403).json({ error: "تأكيد الكليك لصاحب المحل أو اللي معه صلاحية الحساب اليومي." });
+  const action = req.params.action;
+  if (!["approve", "reject"].includes(action)) return res.status(400).json({ error: "طلب غير معروف." });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const st = (await client.query(
+      `SELECT ts.*, o.customer_id, c.name AS customer_name FROM trip_stops ts
+       JOIN orders o ON o.id = ts.order_id JOIN customers c ON c.id = o.customer_id
+       WHERE ts.id = $1 FOR UPDATE OF ts`,
+      [req.params.id]
+    )).rows[0];
+    if (!st || st.cliq_status !== "pending") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "هاد الكليك انقرر قبل." });
+    }
+    const amount = n(st.cliq_amount);
+    let newDebt = null;
+    if (action === "reject") {
+      // ما حوّل: المبلغ بيترحّل دين عليه
+      const c = (await client.query("UPDATE customers SET debt_balance = debt_balance + $1 WHERE id = $2 RETURNING debt_balance", [amount, st.customer_id])).rows[0];
+      newDebt = n(c.debt_balance);
+      await client.query(
+        `INSERT INTO customer_debt_ledger (customer_id, change_amount, reason, order_id, trip_id, balance_after, notes, created_by)
+         VALUES ($1, $2, 'order_credit', $3, $4, $5, 'كليك ما وصل', $6)`,
+        [st.customer_id, amount, st.order_id, st.trip_id, newDebt, req.user.id]
+      );
+    }
+    await client.query(
+      "UPDATE trip_stops SET cliq_status = $1, cliq_decided_at = now(), cliq_decided_by = $2 WHERE id = $3",
+      [action === "approve" ? "approved" : "rejected", req.user.id, st.id]
+    );
+    await client.query("COMMIT");
+    await logActivity({ userId: req.user.id, action: action === "approve" ? "CLIQ_APPROVE" : "CLIQ_REJECT", recordType: "trip_stop", recordId: st.id, newValue: { amount, customer: st.customer_name } }).catch(() => {});
+    if (action === "reject") {
+      await insertNotification({
+        type: "DEBT",
+        message: `💳 كليك ${st.customer_name} (${amount.toFixed(2)} JD) ما وصل — انضاف دين، صار عليه ${newDebt.toFixed(2)} JD`,
+        customerId: st.customer_id,
+        tripId: st.trip_id,
+      }).catch(() => {});
+    }
+    res.json({ ok: true, status: action === "approve" ? "approved" : "rejected", debt_balance: newDebt });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 export default router;

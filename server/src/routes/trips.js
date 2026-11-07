@@ -716,6 +716,8 @@ const round2 = (n) => Math.round(Number(n) * 100) / 100;
 //  - cash_received أكثر من المطلوب ← الزيادة بتسدّد من دينه القديم
 router.post("/stops/:stopId/deliver", async (req, res) => {
   const { item_payments, cash_received, empties, allow_paper_coupons } = req.body || {};
+  // كليك: الزبون حوّل (أو قال رح يحوّل) — ما بنحسبه كاش مع الكابتن، وبيستنى موافقة وقت الجرد
+  const cliq = req.body?.cliq === true;
 
   const stopResult = await query(
     `SELECT ts.*, c.name AS customer_name, c.coupon_balance, c.debt_balance, o.customer_id, o.status AS order_status,
@@ -822,7 +824,7 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
       `UPDATE trip_stops SET delivered_at = now(), cash_collected = $1, coupons_collected = $2,
          amount_due = $3, debt_added = $4, debt_paid = $5, returnable_delivered = $6, empties_collected = $7
        WHERE id = $8 AND delivered_at IS NULL RETURNING id`,
-      [received, totalCouponsUsed, amountDue, debtAdded, debtPaid, returnableDelivered, emptiesCollected, stop.id]
+      [cliq ? 0 : received, totalCouponsUsed, amountDue, debtAdded, debtPaid, returnableDelivered, emptiesCollected, stop.id]
     );
     if (!lock.rows[0]) {
       await client.query("ROLLBACK");
@@ -830,6 +832,9 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     }
 
     await client.query("UPDATE orders SET status = 'DELIVERED', updated_at = now() WHERE id = $1", [stop.order_id]);
+    if (cliq && received > 0) {
+      await client.query("UPDATE trip_stops SET cliq_amount = $1, cliq_status = 'pending' WHERE id = $2", [received, stop.id]);
+    }
 
     if (couponUpdates.length) {
       await client.query(
@@ -910,7 +915,8 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     invoice_token: invoiceToken,
     message: "تم تسجيل التسليم.",
     amount_due: amountDue,
-    cash_collected: received,
+    cash_collected: cliq ? 0 : received,
+    cliq_amount: cliq ? received : 0,
     debt_added: debtAdded,
     debt_paid: debtPaid,
     debt_balance: newDebt,
@@ -941,7 +947,7 @@ router.post("/stops/:stopId/deliver", async (req, res) => {
     );
     await insertNotification({
       type: "DELIVERY",
-      message: `✅ ${stop.driver_name || "السائق"} سلّم طلب ${stop.customer_name} — ${countResult.rows[0].delivered}/${countResult.rows[0].total}`,
+      message: `✅ ${stop.driver_name || "السائق"} سلّم طلب ${stop.customer_name}${cliq && received > 0 ? ` — 💳 كليك ${received.toFixed(2)} JD (بيستنى تأكيد)` : ""} — ${countResult.rows[0].delivered}/${countResult.rows[0].total}`,
       customerId: null,
       tripId: stop.trip_id,
     });
@@ -991,6 +997,7 @@ router.post("/stops/:stopId/undo-deliver", async (req, res) => {
   const stop = stopResult.rows[0];
   if (!stop) return res.status(404).json({ error: "التوقف غير موجود." });
   if (!stop.delivered_at) return res.status(400).json({ error: "هذا التوقف لسا ما تسلّم أصلًا." });
+  if (stop.cliq_status === "rejected") return res.status(400).json({ error: "الكليك تبعه انرفض وانضاف دين — عدّل الدين من صفحة الزبون بدل التراجع." });
 
   const tripResult = await query("SELECT * FROM trips WHERE id = $1", [stop.trip_id]);
   if (!canOperateTrip(req.user, tripResult.rows[0])) return res.status(403).json({ error: "غير مصرح." });
@@ -1045,7 +1052,8 @@ router.post("/stops/:stopId/undo-deliver", async (req, res) => {
     await client.query("UPDATE order_items SET coupon_quantity = 0 WHERE order_id = $1", [stop.order_id]);
     await client.query(
       `UPDATE trip_stops SET delivered_at = NULL, cash_collected = NULL, coupons_collected = 0, paper_coupons = 0, amount_due = NULL,
-         debt_added = 0, debt_paid = 0, returnable_delivered = 0, empties_collected = 0
+         debt_added = 0, debt_paid = 0, returnable_delivered = 0, empties_collected = 0,
+         cliq_amount = 0, cliq_status = NULL, cliq_decided_at = NULL, cliq_decided_by = NULL
        WHERE id = $1`,
       [stop.id]
     );

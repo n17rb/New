@@ -3196,3 +3196,10 @@ button.exp-br-h { all: unset; display: flex; justify-content: space-between; wid
 
 /* الآيفون بيقرّب الشاشة لما الخط بخانة الكتابة أصغر من 16px */
 @media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
+
+/* اختيار الدفع بالتسليم: «كليك» مخفي على اليمين — بتسحب لليسار */
+.pay-swipe { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.pay-swipe::-webkit-scrollbar { display: none; }
+.pay-swipe > .pay-choice-btn { flex: 0 0 calc(50% - 5px); scroll-snap-align: start; }
+.pay-choice-btn.cliq:not(:disabled) { border-color: #7C3AED; background: rgba(124, 58, 237, 0.08); }
+.pay-choice-btn.cliq .pc-t, .pay-choice-btn.cliq .pc-v { color: #7C3AED; }

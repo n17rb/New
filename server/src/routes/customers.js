@@ -10,6 +10,7 @@ import { parseSearch, buildSearchSql } from "../utils/smartSearch.js";
 import { computeForecasts } from "../utils/forecast.js";
 import { getShopLocation } from "../utils/routing.js";
 import { queueCouponFix } from "../utils/whatsapp.js";
+import { fillMissingRegions } from "../utils/regionFill.js";
 import { ensureWalletToken } from "./invoices.js";
 
 // تلميح التوقع لكل زبون بالقائمة: كم ضايل عنده ومتى مفروض يطلب
@@ -524,6 +525,9 @@ router.post("/", requireCanManageCustomers, async (req, res) => {
      regionId, clip(loc.governorate, 80), clip(loc.street, 150), clip(loc.building_number, 30), clip(loc.floor, 30), clip(loc.side, 30), clip(loc.access_notes, 500), clip(loc.apartment, 30), clip(loc.building_name, 100)]
   );
 
+  // ما عرفنا المنطقة؟ بناخذ منطقة أقرب زبون
+  if (!regionId && hasCoords) await fillMissingRegions(customer.id).catch(() => {});
+
   await logActivity({
     userId: req.user.id,
     action: "CREATE_CUSTOMER",
@@ -637,6 +641,7 @@ router.put("/:id", requireCanEditAddress, async (req, res) => {
     [region_id, street, building_number, building_name, floor, apartment, side,
      access_notes, latitude, longitude, maps_url, id, preferred_delivery_note, body.governorate ? String(body.governorate).slice(0, 80) : null]
   );
+  await fillMissingRegions(Number(id)).catch(() => {});
 
   await logActivity({
     userId: req.user.id,

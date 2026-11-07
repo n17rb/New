@@ -193,6 +193,8 @@ export const api = {
   saveSwotNotes: (notes) => request("/swot/notes", { method: "PUT", body: notes }),
   getTripDetail: (id) => request(`/trips/${id}`),
   createTrip: (body) => request("/trips", { method: "POST", body }),
+  getCliq: (date) => request(`/jard/cliq${date ? `?date=${date}` : ""}`),
+  decideCliq: (id, action) => request(`/jard/cliq/${id}/${action}`, { method: "POST", body: {} }),
   deliverStop: (stopId, itemPayments, extra = {}) => request(`/trips/stops/${stopId}/deliver`, { method: "POST", body: { item_payments: itemPayments, ...extra } }),
   undoDeliver: (stopId) => request(`/trips/stops/${stopId}/undo-deliver`, { method: "POST" }),
   failStop: (stopId, reason) => request(`/trips/stops/${stopId}/fail`, { method: "POST", body: { reason } }),

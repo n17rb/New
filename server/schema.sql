@@ -1626,3 +1626,11 @@ ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_speed REAL;
 
 -- رسايل الكوبونات: تفاصيل الحدث عشان ندمج بيع الباقة والتسليم برسالة وحدة
 ALTER TABLE wa_outbox ADD COLUMN IF NOT EXISTS meta JSONB;
+
+-- الدفع بكليك عند التسليم: بيضل «بيستنى» لحد ما صاحب المحل يتأكد إنه وصل (وقت الجرد)
+-- وصل = موافقة · ما وصل = بيترحّل دين على الزبون
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS cliq_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS cliq_status VARCHAR(10);
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS cliq_decided_at TIMESTAMPTZ;
+ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS cliq_decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_trip_stops_cliq ON trip_stops(cliq_status) WHERE cliq_status IS NOT NULL;
